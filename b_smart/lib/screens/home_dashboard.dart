@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:showcaseview/showcaseview.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'package:redux/redux.dart';
@@ -57,6 +58,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../utils/url_helper.dart';
 import '../widgets/dynamic_media_widget.dart';
 import '../widgets/floating_message_overlay.dart';
+import '../widgets/showcase_tooltip_actions.dart';
 import '../widgets/suggestion_follow.dart';
 import '../widgets/suggested_reels_card.dart';
 import '../models/location_place.dart';
@@ -67,6 +69,7 @@ import 'profile_screen.dart';
 import '../routes.dart';
 import 'follow_list_screen.dart';
 import 'messaging_screen.dart';
+import '../services/home_onboarding_service.dart';
 
 class _FeedHeader extends StatelessWidget {
   final List<Map<String, dynamic>> storyUsers;
@@ -249,6 +252,61 @@ class HomeDashboard extends StatefulWidget {
 
 class _HomeDashboardState extends State<HomeDashboard>
     with RouteAware, WidgetsBindingObserver {
+  // During testing we replay onboarding on every app launch.
+  // Set this to false when you want completion to persist again.
+  static const bool _showOnEveryLaunchForTesting = true;
+
+  final HomeOnboardingStep _profileStep = HomeOnboardingStep(
+    key: GlobalKey(),
+    title: '👤 Your Profile',
+    description:
+        'View your profile, manage your account, update your information, and customize your BSmart experience.',
+    tooltipPosition: TooltipPosition.bottom,
+  );
+  final HomeOnboardingStep _homeStep = HomeOnboardingStep(
+    key: GlobalKey(),
+    title: '🏠 Home Feed',
+    description:
+        'Discover the latest posts, updates, and activities from your community.',
+    tooltipPosition: TooltipPosition.top,
+  );
+  final HomeOnboardingStep _adsStep = HomeOnboardingStep(
+    key: GlobalKey(),
+    title: '📢 Advertisements',
+    description:
+        'Explore sponsored offers, promotions, and featured opportunities from businesses.',
+    tooltipPosition: TooltipPosition.top,
+  );
+  final HomeOnboardingStep _createStep = HomeOnboardingStep(
+    key: GlobalKey(),
+    title: '➕ Create',
+    description:
+        'Create a new post, upload a reel, share photos, or express your ideas with the community.',
+    isPrimaryAction: true,
+    tooltipPosition: TooltipPosition.top,
+  );
+  final HomeOnboardingStep _rocketStep = HomeOnboardingStep(
+    key: GlobalKey(),
+    title: '🚀 Discover',
+    description:
+        'Find trending creators, popular content, and exciting communities waiting for you.',
+    tooltipPosition: TooltipPosition.top,
+  );
+  final HomeOnboardingStep _reelsStep = HomeOnboardingStep(
+    key: GlobalKey(),
+    title: '🎬 Reels',
+    description:
+        'Watch engaging short videos and discover entertaining content from creators.',
+    tooltipPosition: TooltipPosition.top,
+  );
+  final HomeOnboardingStep _walletStep = HomeOnboardingStep(
+    key: GlobalKey(),
+    title: '💰 Wallet',
+    description:
+        'Track your earnings, rewards, transactions, and redeem available benefits.',
+    tooltipPosition: TooltipPosition.bottom,
+  );
+
   final FeedService _feedService = FeedService();
   final NotificationService _notificationService = NotificationService();
   final SupabaseService _supabase = SupabaseService();
@@ -322,6 +380,10 @@ class _HomeDashboardState extends State<HomeDashboard>
   bool _pendingHomeRefreshAfterRoute = false;
   Timer? _autoRefreshDebounce;
   DateTime? _lastAutoRefreshAt;
+  bool _onboardingStartQueued = false;
+  bool _onboardingHasStarted = false;
+  bool _onboardingDialogVisible = false;
+  bool _onboardingPageScrollLocked = false;
 
   bool? _parseBoolLike(dynamic value) {
     if (value is bool) return value;
@@ -442,6 +504,10 @@ class _HomeDashboardState extends State<HomeDashboard>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    HomeOnboardingService.instance.bindCallbacks(
+      onFinished: _handleOnboardingFinished,
+      onDismissed: _handleOnboardingDismissed,
+    );
     MediaPlaybackRegistry.instance.register('home-dashboard', () async {
       _activeFeedPostId = null;
       _activeFeedPostIdListenable.value = null;
@@ -474,6 +540,9 @@ class _HomeDashboardState extends State<HomeDashboard>
       _attachFeedScrollActivityListener();
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_scheduleHomeOnboarding());
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(primeMediaAuthHeaders());
       final store = StoreProvider.of<AppState>(context);
       // Force a clean, fresh feed on app open to avoid stale or partial data.
@@ -492,6 +561,173 @@ class _HomeDashboardState extends State<HomeDashboard>
 
   static const String _savedLocationPrefsKey =
       'home_dashboard_selected_location';
+
+  Future<void> _scheduleHomeOnboarding() async {
+    if (!mounted || _onboardingStartQueued || _onboardingHasStarted) return;
+    _onboardingStartQueued = true;
+
+    try {
+      if (MediaQuery.sizeOf(context).width >= 768) return;
+      if (_showOnEveryLaunchForTesting) {
+        if (!mounted || _currentIndex != 0) return;
+      } else {
+        final completed = await HomeOnboardingService.instance.isCompleted();
+        if (!mounted || completed || _currentIndex != 0) return;
+      }
+
+      // Give the home view a moment to settle so the overlay lands on the
+      // fully built layout rather than racing the first render.
+      await Future<void>.delayed(const Duration(milliseconds: 650));
+      if (!mounted || _onboardingHasStarted || _currentIndex != 0) return;
+
+      final showcase = ShowcaseView.get();
+      final keys = _homeOnboardingKeys;
+      if (keys.isEmpty) return;
+
+      _onboardingHasStarted = true;
+      _onboardingPageScrollLocked = true;
+      showcase.startShowCase(keys);
+    } catch (e) {
+      debugPrint('Home onboarding launch skipped: $e');
+    } finally {
+      _onboardingStartQueued = false;
+    }
+  }
+
+  List<GlobalKey<State<StatefulWidget>>> get _homeOnboardingKeys => [
+        _profileStep.key,
+        _homeStep.key,
+        _adsStep.key,
+        _createStep.key,
+        _rocketStep.key,
+        _reelsStep.key,
+        _walletStep.key,
+      ];
+
+  Future<void> _handleOnboardingFinished() async {
+    if (!_showOnEveryLaunchForTesting) {
+      await HomeOnboardingService.instance.markCompleted();
+    }
+    if (!mounted) return;
+    if (_onboardingDialogVisible) return;
+    _onboardingDialogVisible = true;
+    await _showWelcomeDialog();
+    if (mounted) {
+      _onboardingHasStarted = false;
+      _onboardingDialogVisible = false;
+      _onboardingPageScrollLocked = false;
+    }
+  }
+
+  Future<void> _handleOnboardingDismissed() async {
+    if (!_showOnEveryLaunchForTesting) {
+      await HomeOnboardingService.instance.markCompleted();
+    }
+    _onboardingHasStarted = false;
+    _onboardingDialogVisible = false;
+    _onboardingPageScrollLocked = false;
+  }
+
+  Future<void> _showWelcomeDialog() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        final isDark = theme.brightness == Brightness.dark;
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isDark
+                    ? const [Color(0xFF17141C), Color(0xFF0F1117)]
+                    : const [Color(0xFFFFFFFF), Color(0xFFFFF3F7)],
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: DesignTokens.instaGradient,
+                      boxShadow: [
+                        BoxShadow(
+                          color: DesignTokens.instaPink.withValues(alpha: 0.24),
+                          blurRadius: 22,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      LucideIcons.sparkles,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    '🎉 Welcome to BSmart!',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.montserrat(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    "You're ready to explore BSmart! Start connecting with people, creating content, discovering new communities, and enjoying everything the platform has to offer.",
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.montserrat(
+                      fontSize: 14,
+                      height: 1.5,
+                      fontWeight: FontWeight.w500,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(dialogContext).pop();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        backgroundColor: DesignTokens.instaPink,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        textStyle: GoogleFonts.montserrat(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      child: const Text("Let's Go"),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   Future<void> _restoreSavedLocation() async {
     try {
@@ -1403,6 +1639,7 @@ class _HomeDashboardState extends State<HomeDashboard>
   void dispose() {
     VisibilityDetectorController.instance.updateInterval =
         const Duration(milliseconds: 500);
+    HomeOnboardingService.instance.clearCallbacks();
     MediaPlaybackRegistry.instance.unregister('home-dashboard');
     unawaited(_persistFeedScrollPosition());
     _notificationSub?.cancel();
@@ -2940,6 +3177,104 @@ class _HomeDashboardState extends State<HomeDashboard>
     );
   }
 
+  Widget _buildProfileAvatar(BuildContext context, Color appBarFg) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final avatar = GestureDetector(
+      onTap: _openProfile,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 4, right: 12),
+        child: Container(
+          width: 32,
+          height: 32,
+          padding: EdgeInsets.all(_yourStoryHasActive ? 1.5 : 0),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: _yourStoryHasActive ? DesignTokens.instaGradient : null,
+            color: _yourStoryHasActive
+                ? null
+                : (isDark ? const Color(0xFF2D2D2D) : Colors.grey.shade200),
+            border: _yourStoryHasActive
+                ? null
+                : Border.all(
+                    color:
+                        isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade300,
+                  ),
+          ),
+          child: CircleAvatar(
+            radius: _yourStoryHasActive ? 14 : 16,
+            backgroundColor: _yourStoryHasActive && isDark
+                ? Colors.black
+                : (_yourStoryHasActive ? Colors.white : Colors.transparent),
+            child: CircleAvatar(
+              radius: _yourStoryHasActive ? 13 : 15,
+              backgroundColor:
+                  isDark ? const Color(0xFF3D3D3D) : Colors.grey.shade200,
+              backgroundImage: _currentUserProfile != null &&
+                      _currentUserProfile!['avatar_url'] != null &&
+                      (_currentUserProfile!['avatar_url'] as String).isNotEmpty
+                  ? NetworkImage(_currentUserProfile!['avatar_url'] as String)
+                  : null,
+              child: _currentUserProfile == null ||
+                      _currentUserProfile!['avatar_url'] == null ||
+                      (_currentUserProfile!['avatar_url'] as String).isEmpty
+                  ? Text(
+                      _currentUserProfile != null
+                          ? ((_currentUserProfile!['username'] ??
+                                      _currentUserProfile!['full_name'] ??
+                                      'U') as String)
+                                  .isNotEmpty
+                              ? ((_currentUserProfile!['username'] ??
+                                      _currentUserProfile!['full_name'] ??
+                                      'U') as String)
+                                  .substring(0, 1)
+                                  .toUpperCase()
+                              : 'U'
+                          : 'U',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold, color: appBarFg),
+                    )
+                  : null,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    return Showcase(
+      key: _profileStep.key,
+      title: _profileStep.title,
+      description: _profileStep.description,
+      tooltipActions: buildOnboardingTooltipActions(),
+      showArrow: false,
+      tooltipPosition: _profileStep.tooltipPosition,
+      titleTextStyle: GoogleFonts.montserrat(
+        fontSize: 16,
+        fontWeight: FontWeight.w800,
+        color: theme.colorScheme.onSurface,
+      ),
+      descTextStyle: GoogleFonts.montserrat(
+        fontSize: 13,
+        height: 1.4,
+        fontWeight: FontWeight.w500,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      tooltipBackgroundColor: theme.colorScheme.surface,
+      tooltipBorderRadius: BorderRadius.circular(24),
+      overlayColor: Colors.black,
+      overlayOpacity: 0.72,
+      blurValue: 1.6,
+      targetShapeBorder: const CircleBorder(),
+      targetPadding: const EdgeInsets.all(8),
+      targetTooltipGap: 14,
+      toolTipMargin: 14,
+      disableBarrierInteraction: true,
+      enableAutoScroll: false,
+      scrollAlignment: 0.45,
+      child: avatar,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _tabPageController ??= PageController(
@@ -3002,44 +3337,76 @@ class _HomeDashboardState extends State<HomeDashboard>
                     icon: Icon(LucideIcons.search, size: 24, color: appBarFg),
                   ),
                   const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).pushNamed('/wallet'),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? const Color(0xFF2D2D2D)
-                            : Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: isDark
-                                ? const Color(0xFF3D3D3D)
-                                : Colors.grey.shade200),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 20,
-                            height: 20,
-                            decoration: const BoxDecoration(
-                                gradient: DesignTokens.instaGradient,
-                                shape: BoxShape.circle),
-                            child: const Icon(LucideIcons.wallet,
-                                size: 12, color: Colors.white),
-                          ),
-                          const SizedBox(width: 6),
-                          Text('$_balance',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                  color: appBarFg)),
-                        ],
+                  Showcase(
+                    key: _walletStep.key,
+                    title: _walletStep.title,
+                    description: _walletStep.description,
+                    tooltipActions: buildOnboardingTooltipActions(),
+                    showArrow: false,
+                    tooltipPosition: _walletStep.tooltipPosition,
+                    titleTextStyle: GoogleFonts.montserrat(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: appBarFg,
+                    ),
+                    descTextStyle: GoogleFonts.montserrat(
+                      fontSize: 13,
+                      height: 1.4,
+                      fontWeight: FontWeight.w500,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    tooltipBackgroundColor: theme.colorScheme.surface,
+                    tooltipBorderRadius: BorderRadius.circular(24),
+                    overlayColor: Colors.black,
+                    overlayOpacity: 0.72,
+                    blurValue: 1.6,
+                    targetShapeBorder: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    targetPadding: const EdgeInsets.all(4),
+                    targetTooltipGap: 14,
+                    toolTipMargin: 14,
+                    disableBarrierInteraction: true,
+                    enableAutoScroll: false,
+                    scrollAlignment: 0.45,
+                    child: GestureDetector(
+                      onTap: () => Navigator.of(context).pushNamed('/wallet'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? const Color(0xFF2D2D2D)
+                              : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF3D3D3D)
+                                  : Colors.grey.shade200),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 20,
+                              height: 20,
+                              decoration: const BoxDecoration(
+                                  gradient: DesignTokens.instaGradient,
+                                  shape: BoxShape.circle),
+                              child: const Icon(LucideIcons.wallet,
+                                  size: 12, color: Colors.white),
+                            ),
+                            const SizedBox(width: 6),
+                            Text('$_balance',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: appBarFg)),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 4),
                   Stack(
                     clipBehavior: Clip.none,
                     children: [
@@ -3085,86 +3452,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                         ),
                     ],
                   ),
-                  GestureDetector(
-                    onTap: _openProfile,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 4, right: 12),
-                      child: Container(
-                        width: 32,
-                        height: 32,
-                        padding: EdgeInsets.all(_yourStoryHasActive ? 1.5 : 0),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: _yourStoryHasActive
-                              ? DesignTokens.instaGradient
-                              : null,
-                          color: _yourStoryHasActive
-                              ? null
-                              : (isDark
-                                  ? const Color(0xFF2D2D2D)
-                                  : Colors.grey.shade200),
-                          border: _yourStoryHasActive
-                              ? null
-                              : Border.all(
-                                  color: isDark
-                                      ? const Color(0xFF3D3D3D)
-                                      : Colors.grey.shade300,
-                                ),
-                        ),
-                        child: CircleAvatar(
-                          radius: _yourStoryHasActive ? 14 : 16,
-                          backgroundColor: _yourStoryHasActive && isDark
-                              ? Colors.black
-                              : (_yourStoryHasActive
-                                  ? Colors.white
-                                  : Colors.transparent),
-                          child: CircleAvatar(
-                            radius: _yourStoryHasActive ? 13 : 15,
-                            backgroundColor: isDark
-                                ? const Color(0xFF3D3D3D)
-                                : Colors.grey.shade200,
-                            backgroundImage: _currentUserProfile != null &&
-                                    _currentUserProfile!['avatar_url'] !=
-                                        null &&
-                                    (_currentUserProfile!['avatar_url']
-                                            as String)
-                                        .isNotEmpty
-                                ? NetworkImage(
-                                    _currentUserProfile!['avatar_url']
-                                        as String)
-                                : null,
-                            child: _currentUserProfile == null ||
-                                    _currentUserProfile!['avatar_url'] ==
-                                        null ||
-                                    (_currentUserProfile!['avatar_url']
-                                            as String)
-                                        .isEmpty
-                                ? Text(
-                                    _currentUserProfile != null
-                                        ? ((_currentUserProfile!['username'] ??
-                                                    _currentUserProfile![
-                                                        'full_name'] ??
-                                                    'U') as String)
-                                                .isNotEmpty
-                                            ? ((_currentUserProfile![
-                                                        'username'] ??
-                                                    _currentUserProfile![
-                                                        'full_name'] ??
-                                                    'U') as String)
-                                                .substring(0, 1)
-                                                .toUpperCase()
-                                            : 'U'
-                                        : 'U',
-                                    style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: appBarFg),
-                                  )
-                                : null,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  _buildProfileAvatar(context, appBarFg),
                 ],
               ),
             ),
@@ -3589,6 +3877,11 @@ class _HomeDashboardState extends State<HomeDashboard>
                 ? BottomNav(
                     currentIndex: _currentIndex,
                     onTap: _onNavTap,
+                    homeStep: _homeStep,
+                    adsStep: _adsStep,
+                    createStep: _createStep,
+                    rocketStep: _rocketStep,
+                    reelsStep: _reelsStep,
                   )
                 : const SizedBox.shrink()),
       );
@@ -3599,6 +3892,9 @@ class _HomeDashboardState extends State<HomeDashboard>
         ScrollConfiguration(
           behavior: const _NoGlowScrollBehavior(),
           child: PageView.builder(
+            physics: _onboardingPageScrollLocked
+                ? const NeverScrollableScrollPhysics()
+                : const PageScrollPhysics(),
             controller: _tabPageController,
             itemCount: _swipeTabs.length,
             onPageChanged: (page) {
@@ -4223,10 +4519,14 @@ class _SuggestedAdsPlaceholder extends StatelessWidget {
                     padding: EdgeInsets.all(10),
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Icon(
-                    LucideIcons.badgeDollarSign,
-                    size: 18,
+                : Image.asset(
+                    'assets/bsmart_icons/2.png',
+                    width: 24,
+                    height: 24,
+                    fit: BoxFit.contain,
                     color: titleColor.withValues(alpha: 0.75),
+                    colorBlendMode: BlendMode.srcIn,
+                    filterQuality: FilterQuality.high,
                   ),
           ),
           const SizedBox(width: 12),

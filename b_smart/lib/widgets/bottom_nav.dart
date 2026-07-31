@@ -1,13 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:showcaseview/showcaseview.dart';
 import '../theme/design_tokens.dart';
+import '../services/home_onboarding_service.dart';
+import 'showcase_tooltip_actions.dart';
 
 class BottomNav extends StatefulWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
+  final HomeOnboardingStep? homeStep;
+  final HomeOnboardingStep? adsStep;
+  final HomeOnboardingStep? createStep;
+  final HomeOnboardingStep? rocketStep;
+  final HomeOnboardingStep? reelsStep;
 
-  const BottomNav({super.key, required this.currentIndex, required this.onTap});
+  const BottomNav({
+    super.key,
+    required this.currentIndex,
+    required this.onTap,
+    this.homeStep,
+    this.adsStep,
+    this.createStep,
+    this.rocketStep,
+    this.reelsStep,
+  });
 
   @override
   State<BottomNav> createState() => _BottomNavState();
@@ -40,16 +58,43 @@ class _BottomNavState extends State<BottomNav> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildNavItem(context, 0, LucideIcons.house, 'Home',
-                    isActive: widget.currentIndex == 0),
-                _buildNavItem(
-                    context, 1, LucideIcons.badgeDollarSign, 'Spotlights',
-                    isActive: widget.currentIndex == 1),
-                _buildCreateButton(context),
-                _buildNavItem(context, 3, LucideIcons.rocket, 'Boosts',
-                    isActive: widget.currentIndex == 3),
-                _buildNavItem(context, 4, LucideIcons.clapperboard, 'bSparks',
-                    isActive: widget.currentIndex == 4),
+                _buildShowcaseNavItem(
+                  context,
+                  step: widget.homeStep,
+                  index: 0,
+                  icon: LucideIcons.house,
+                  isActive: widget.currentIndex == 0,
+                ),
+                _buildShowcaseNavItem(
+                  context,
+                  step: widget.adsStep,
+                  index: 1,
+                  icon: LucideIcons.badgeDollarSign,
+                  isActive: widget.currentIndex == 1,
+                  customIcon: _buildSpotlightIcon(
+                    context,
+                    isActive: widget.currentIndex == 1,
+                  ),
+                ),
+                _buildShowcaseCreateButton(context),
+                _buildShowcaseNavItem(
+                  context,
+                  step: widget.rocketStep,
+                  index: 3,
+                  icon: LucideIcons.rocket,
+                  isActive: widget.currentIndex == 3,
+                ),
+                _buildShowcaseNavItem(
+                  context,
+                  step: widget.reelsStep,
+                  index: 4,
+                  icon: LucideIcons.clapperboard,
+                  isActive: widget.currentIndex == 4,
+                  customIcon: _buildBSparksIcon(
+                    context,
+                    isActive: widget.currentIndex == 4,
+                  ),
+                ),
               ],
             ),
           ],
@@ -58,29 +103,52 @@ class _BottomNavState extends State<BottomNav> {
     );
   }
 
-  Widget _buildNavItem(
-      BuildContext context, int index, IconData icon, String label,
-      {required bool isActive}) {
+  Widget _buildShowcaseNavItem(
+    BuildContext context, {
+    required HomeOnboardingStep? step,
+    required int index,
+    required IconData icon,
+    required bool isActive,
+    Widget? customIcon,
+  }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    return InkWell(
+    final child = InkWell(
       onTap: () => widget.onTap(index),
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-        child: Icon(
-          icon,
-          size: 26,
-          color: isActive
-              ? DesignTokens.instaPink
-              : (isDark ? Colors.white : Colors.black),
+        child: SizedBox(
+          width: 30,
+          height: 30,
+          child: Center(
+            child: customIcon ??
+                Icon(
+                  icon,
+                  size: 26,
+                  color: isActive
+                      ? DesignTokens.instaPink
+                      : (isDark ? Colors.white : Colors.black),
+                ),
+          ),
         ),
       ),
     );
+
+    return _wrapShowcase(
+      context,
+      step: step,
+      isPrimary: false,
+      child: child,
+      targetShapeBorder: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      targetPadding: const EdgeInsets.all(4),
+    );
   }
 
-  Widget _buildCreateButton(BuildContext context) {
-    return Transform.translate(
+  Widget _buildShowcaseCreateButton(BuildContext context) {
+    final button = Transform.translate(
       offset: const Offset(0, -8),
       child: GestureDetector(
         onTap: () {
@@ -125,6 +193,108 @@ class _BottomNavState extends State<BottomNav> {
           ),
         ),
       ),
+    );
+
+    return _wrapShowcase(
+      context,
+      step: widget.createStep,
+      isPrimary: true,
+      child: button,
+      targetShapeBorder: const CircleBorder(),
+      targetPadding: const EdgeInsets.all(8),
+    );
+  }
+
+  Widget _wrapShowcase(
+    BuildContext context, {
+    required HomeOnboardingStep? step,
+    required Widget child,
+    required ShapeBorder targetShapeBorder,
+    required EdgeInsets targetPadding,
+    required bool isPrimary,
+  }) {
+    if (step == null) return child;
+
+    final theme = Theme.of(context);
+    const overlayColor = Colors.black;
+    final tooltipBackgroundColor = theme.cardColor;
+    final titleStyle = GoogleFonts.montserrat(
+      fontSize: isPrimary ? 18 : 16,
+      fontWeight: FontWeight.w800,
+      color: theme.colorScheme.onSurface,
+      height: 1.2,
+    );
+    final descStyle = GoogleFonts.montserrat(
+      fontSize: 13,
+      height: 1.4,
+      fontWeight: FontWeight.w500,
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+
+    return Showcase(
+      key: step.key,
+      title: step.title,
+      description: step.description,
+      tooltipActions: buildOnboardingTooltipActions(),
+      showArrow: false,
+      tooltipPosition: step.tooltipPosition,
+      titleTextStyle: titleStyle,
+      descTextStyle: descStyle,
+      tooltipBackgroundColor: tooltipBackgroundColor,
+      tooltipBorderRadius: BorderRadius.circular(isPrimary ? 28 : 24),
+      overlayColor: overlayColor,
+      overlayOpacity: isPrimary ? 0.72 : 0.72,
+      blurValue: isPrimary ? 1.8 : 1.6,
+      targetShapeBorder: targetShapeBorder,
+      targetPadding: targetPadding,
+      targetTooltipGap: isPrimary ? 18 : 12,
+      toolTipMargin: isPrimary ? 20 : 14,
+      disableBarrierInteraction: true,
+      enableAutoScroll: false,
+      scrollAlignment: 0.45,
+      child: child,
+    );
+  }
+
+  Widget _buildSpotlightIcon(
+    BuildContext context, {
+    required bool isActive,
+  }) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final color = isActive
+        ? DesignTokens.instaPink
+        : (isDark ? Colors.white : Colors.black);
+
+    return Image.asset(
+      'assets/bsmart_icons/2.png',
+      width: 28,
+      height: 28,
+      fit: BoxFit.contain,
+      color: color,
+      colorBlendMode: BlendMode.srcIn,
+      filterQuality: FilterQuality.high,
+    );
+  }
+
+  Widget _buildBSparksIcon(
+    BuildContext context, {
+    required bool isActive,
+  }) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final color = isActive
+        ? DesignTokens.instaPink
+        : (isDark ? Colors.white : Colors.black);
+
+    return Image.asset(
+      'assets/bsmart_icons/1.png',
+      width: 28,
+      height: 28,
+      fit: BoxFit.contain,
+      color: color,
+      colorBlendMode: BlendMode.srcIn,
+      filterQuality: FilterQuality.high,
     );
   }
 }

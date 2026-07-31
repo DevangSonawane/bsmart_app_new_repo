@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:showcaseview/showcaseview.dart';
 import '../theme/design_tokens.dart';
 import '../theme/theme_scope.dart';
+import '../services/home_onboarding_service.dart';
+import 'showcase_tooltip_actions.dart';
 
 /// Desktop sidebar matching React: collapsible on hover, nav items, Create dropdown.
 class Sidebar extends StatefulWidget {
@@ -12,6 +16,11 @@ class Sidebar extends StatefulWidget {
   final VoidCallback? onCreatePost;
   final VoidCallback? onUploadReel;
   final VoidCallback? onCreateAd;
+  final HomeOnboardingStep? homeStep;
+  final HomeOnboardingStep? adsStep;
+  final HomeOnboardingStep? createStep;
+  final HomeOnboardingStep? rocketStep;
+  final HomeOnboardingStep? reelsStep;
 
   const Sidebar({
     super.key,
@@ -21,6 +30,11 @@ class Sidebar extends StatefulWidget {
     this.onCreatePost,
     this.onUploadReel,
     this.onCreateAd,
+    this.homeStep,
+    this.adsStep,
+    this.createStep,
+    this.rocketStep,
+    this.reelsStep,
   });
 
   @override
@@ -126,23 +140,31 @@ class _SidebarState extends State<Sidebar> {
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 children: [
-                  _NavItem(
-                      icon: LucideIcons.house,
-                      label: 'nav_home'.tr(),
-                      index: 0,
-                      currentIndex: widget.currentIndex,
-                      hovered: _hovered,
-                      onTap: () => widget.onNavTap(0),
-                      inactiveColor: inactiveColor),
-                  _NavItem(
-                      icon: LucideIcons.target,
-                      label: 'nav_ads'.tr(),
-                      index: 1,
-                      currentIndex: widget.currentIndex,
-                      hovered: _hovered,
-                      onTap: () => widget.onNavTap(1),
-                      inactiveColor: inactiveColor),
-                  _CreateItem(
+                  _buildNavItemWithShowcase(
+                    context,
+                    step: widget.homeStep,
+                    icon: LucideIcons.house,
+                    label: 'nav_home'.tr(),
+                    index: 0,
+                    currentIndex: widget.currentIndex,
+                    hovered: _hovered,
+                    onTap: () => widget.onNavTap(0),
+                    inactiveColor: inactiveColor,
+                  ),
+                  _buildNavItemWithShowcase(
+                    context,
+                    step: widget.adsStep,
+                    icon: LucideIcons.target,
+                    label: 'nav_ads'.tr(),
+                    index: 1,
+                    currentIndex: widget.currentIndex,
+                    hovered: _hovered,
+                    onTap: () => widget.onNavTap(1),
+                    inactiveColor: inactiveColor,
+                  ),
+                  _buildCreateItemWithShowcase(
+                    context,
+                    step: widget.createStep,
                     currentIndex: widget.currentIndex,
                     isVendor: widget.isVendor,
                     hovered: _hovered,
@@ -164,22 +186,28 @@ class _SidebarState extends State<Sidebar> {
                       widget.onCreateAd?.call();
                     },
                   ),
-                  _NavItem(
-                      icon: LucideIcons.rocket,
-                      label: 'nav_promote'.tr(),
-                      index: 3,
-                      currentIndex: widget.currentIndex,
-                      hovered: _hovered,
-                      onTap: () => widget.onNavTap(3),
-                      inactiveColor: inactiveColor),
-                  _NavItem(
-                      icon: LucideIcons.clapperboard,
-                      label: 'nav_reels'.tr(),
-                      index: 4,
-                      currentIndex: widget.currentIndex,
-                      hovered: _hovered,
-                      onTap: () => widget.onNavTap(4),
-                      inactiveColor: inactiveColor),
+                  _buildNavItemWithShowcase(
+                    context,
+                    step: widget.rocketStep,
+                    icon: LucideIcons.rocket,
+                    label: 'nav_promote'.tr(),
+                    index: 3,
+                    currentIndex: widget.currentIndex,
+                    hovered: _hovered,
+                    onTap: () => widget.onNavTap(3),
+                    inactiveColor: inactiveColor,
+                  ),
+                  _buildNavItemWithShowcase(
+                    context,
+                    step: widget.reelsStep,
+                    icon: LucideIcons.clapperboard,
+                    label: 'nav_reels'.tr(),
+                    index: 4,
+                    currentIndex: widget.currentIndex,
+                    hovered: _hovered,
+                    onTap: () => widget.onNavTap(4),
+                    inactiveColor: inactiveColor,
+                  ),
                   _NavItem(
                       icon: LucideIcons.user,
                       label: 'nav_profile'.tr(),
@@ -238,6 +266,127 @@ class _SidebarState extends State<Sidebar> {
           ],
         ),
       ),
+    );
+  }
+}
+
+extension _SidebarShowcase on _SidebarState {
+  Widget _buildNavItemWithShowcase(
+    BuildContext context, {
+    required HomeOnboardingStep? step,
+    required IconData icon,
+    required String label,
+    required int index,
+    required int currentIndex,
+    required bool hovered,
+    required VoidCallback onTap,
+    required Color inactiveColor,
+  }) {
+    final child = _NavItem(
+      icon: icon,
+      label: label,
+      index: index,
+      currentIndex: currentIndex,
+      hovered: hovered,
+      onTap: onTap,
+      inactiveColor: inactiveColor,
+    );
+
+    return _wrapShowcase(
+      context,
+      step: step,
+      isPrimary: false,
+      targetShapeBorder: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      targetPadding: const EdgeInsets.all(4),
+      child: child,
+    );
+  }
+
+  Widget _buildCreateItemWithShowcase(
+    BuildContext context, {
+    required HomeOnboardingStep? step,
+    required int currentIndex,
+    required bool isVendor,
+    required bool hovered,
+    required bool dropdownOpen,
+    required VoidCallback onTap,
+    required VoidCallback onDismiss,
+    VoidCallback? onCreatePost,
+    VoidCallback? onUploadReel,
+    VoidCallback? onCreateAd,
+  }) {
+    final child = _CreateItem(
+      currentIndex: currentIndex,
+      isVendor: isVendor,
+      hovered: hovered,
+      dropdownOpen: dropdownOpen,
+      onTap: onTap,
+      onDismiss: onDismiss,
+      onCreatePost: onCreatePost,
+      onUploadReel: onUploadReel,
+      onCreateAd: onCreateAd,
+    );
+
+    return _wrapShowcase(
+      context,
+      step: step,
+      isPrimary: true,
+      targetShapeBorder: const CircleBorder(),
+      targetPadding: const EdgeInsets.all(8),
+      child: child,
+    );
+  }
+
+  Widget _wrapShowcase(
+    BuildContext context, {
+    required HomeOnboardingStep? step,
+    required bool isPrimary,
+    required ShapeBorder targetShapeBorder,
+    required EdgeInsets targetPadding,
+    required Widget child,
+  }) {
+    if (step == null) return child;
+
+    final theme = Theme.of(context);
+    const overlayColor = Colors.black;
+    final tooltipBg = theme.colorScheme.surface;
+    final titleStyle = GoogleFonts.montserrat(
+      fontSize: isPrimary ? 18 : 16,
+      fontWeight: FontWeight.w800,
+      color: theme.colorScheme.onSurface,
+      height: 1.2,
+    );
+    final descStyle = GoogleFonts.montserrat(
+      fontSize: 13,
+      fontWeight: FontWeight.w500,
+      height: 1.4,
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+
+    return Showcase(
+      key: step.key,
+      title: step.title,
+      description: step.description,
+      tooltipActions: buildOnboardingTooltipActions(),
+      showArrow: false,
+      tooltipPosition: step.tooltipPosition,
+      tooltipBackgroundColor: tooltipBg,
+      titleTextStyle: titleStyle,
+      descTextStyle: descStyle,
+      tooltipBorderRadius: BorderRadius.circular(isPrimary ? 28 : 24),
+      overlayColor: overlayColor,
+      overlayOpacity: isPrimary ? 0.72 : 0.72,
+      blurValue: isPrimary ? 1.8 : 1.6,
+      targetShapeBorder: targetShapeBorder,
+      targetPadding: targetPadding,
+      targetTooltipGap: isPrimary ? 18 : 12,
+      toolTipMargin: isPrimary ? 20 : 14,
+      disableBarrierInteraction: true,
+      enableAutoScroll: false,
+      scrollAlignment: 0.45,
+      child: child,
     );
   }
 }

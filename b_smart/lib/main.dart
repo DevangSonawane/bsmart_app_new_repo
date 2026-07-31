@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter/services.dart';
+import 'package:showcaseview/showcaseview.dart';
 import 'firebase_options.dart';
 import 'screens/auth/login/login_screen.dart';
 import 'screens/home_dashboard.dart';
@@ -30,6 +31,7 @@ import 'utils/system_ui.dart';
 import 'widgets/profile_setup_gate.dart';
 import 'utils/app_navigator.dart';
 import 'services/push_service.dart';
+import 'services/home_onboarding_service.dart';
 import 'services/session_reset_service.dart';
 import 'utils/timezone_service.dart';
 
@@ -190,7 +192,21 @@ void main() async {
         useOnlyLangCode: true,
         child: ThemeScope(
           notifier: themeNotifier,
-          child: const BSmartApp(),
+          child: ShowCaseWidget(
+            builder: (context) => const BSmartApp(),
+            enableAutoScroll: false,
+            disableBarrierInteraction: true,
+            disableScaleAnimation: false,
+            disableMovingAnimation: false,
+            blurValue: 1.5,
+            scrollDuration: const Duration(milliseconds: 320),
+            onFinish: () {
+              HomeOnboardingService.instance.handleFinished();
+            },
+            onDismiss: (_) {
+              HomeOnboardingService.instance.handleDismissed();
+            },
+          ),
         ),
       ),
     ));
