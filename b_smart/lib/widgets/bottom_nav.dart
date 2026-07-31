@@ -33,6 +33,7 @@ class BottomNav extends StatefulWidget {
 
 class _BottomNavState extends State<BottomNav> {
   bool _rotating = false;
+  static const double _navIconBoxSize = 34;
 
   @override
   Widget build(BuildContext context) {
@@ -119,13 +120,13 @@ class _BottomNavState extends State<BottomNav> {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
         child: SizedBox(
-          width: 30,
-          height: 30,
+          width: _navIconBoxSize,
+          height: _navIconBoxSize,
           child: Center(
             child: customIcon ??
                 Icon(
                   icon,
-                  size: 26,
+                  size: 30,
                   color: isActive
                       ? DesignTokens.instaPink
                       : (isDark ? Colors.white : Colors.black),
@@ -266,14 +267,9 @@ class _BottomNavState extends State<BottomNav> {
         ? DesignTokens.instaPink
         : (isDark ? Colors.white : Colors.black);
 
-    return Image.asset(
+    return _buildAssetIcon(
       'assets/bsmart_icons/2.png',
-      width: 28,
-      height: 28,
-      fit: BoxFit.contain,
       color: color,
-      colorBlendMode: BlendMode.srcIn,
-      filterQuality: FilterQuality.high,
     );
   }
 
@@ -287,14 +283,35 @@ class _BottomNavState extends State<BottomNav> {
         ? DesignTokens.instaPink
         : (isDark ? Colors.white : Colors.black);
 
-    return Image.asset(
+    return _buildAssetIcon(
       'assets/bsmart_icons/1.png',
-      width: 28,
-      height: 28,
-      fit: BoxFit.contain,
       color: color,
-      colorBlendMode: BlendMode.srcIn,
-      filterQuality: FilterQuality.high,
+    );
+  }
+
+  Widget _buildAssetIcon(
+    String assetPath, {
+    required Color color,
+  }) {
+    return SizedBox(
+      width: 30,
+      height: 30,
+      child: ClipRect(
+        child: Center(
+          child: Transform.scale(
+            scale: 1.75,
+            child: Image.asset(
+              assetPath,
+              width: 20,
+              height: 20,
+              fit: BoxFit.contain,
+              color: color,
+              colorBlendMode: BlendMode.srcIn,
+              filterQuality: FilterQuality.high,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
