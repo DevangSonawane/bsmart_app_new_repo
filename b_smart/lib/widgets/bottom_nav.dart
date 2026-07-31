@@ -268,7 +268,7 @@ class _BottomNavState extends State<BottomNav> {
         : (isDark ? Colors.white : Colors.black);
 
     return Icon(
-      LucideIcons.tvMinimalPlay,
+      LucideIcons.circlePlay,
       size: 30,
       color: color,
     );
@@ -285,7 +285,7 @@ class _BottomNavState extends State<BottomNav> {
         : (isDark ? Colors.white : Colors.black);
 
     return Icon(
-      LucideIcons.play,
+      LucideIcons.zap,
       size: 30,
       color: color,
     );
