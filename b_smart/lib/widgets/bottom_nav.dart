@@ -267,8 +267,9 @@ class _BottomNavState extends State<BottomNav> {
         ? DesignTokens.instaPink
         : (isDark ? Colors.white : Colors.black);
 
-    return _buildBoldAssetIcon(
-      'assets/bsmart_icons/2.png',
+    return Icon(
+      LucideIcons.tvMinimalPlay,
+      size: 30,
       color: color,
     );
   }
@@ -283,55 +284,13 @@ class _BottomNavState extends State<BottomNav> {
         ? DesignTokens.instaPink
         : (isDark ? Colors.white : Colors.black);
 
-    return _buildBoldAssetIcon(
-      'assets/bsmart_icons/1.png',
+    return Icon(
+      LucideIcons.play,
+      size: 30,
       color: color,
     );
   }
 
-  Widget _buildBoldAssetIcon(
-    String assetPath, {
-    required Color color,
-  }) {
-    return SizedBox(
-      width: 34,
-      height: 34,
-      child: ClipRect(
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            for (final offset in const [
-              Offset(-0.6, 0),
-              Offset(0.6, 0),
-              Offset(0, -0.6),
-              Offset(0, 0.6),
-            ])
-              Transform.translate(
-                offset: offset,
-                child: Image.asset(
-                  assetPath,
-                  width: 30,
-                  height: 30,
-                  fit: BoxFit.contain,
-                  color: color.withValues(alpha: 0.8),
-                  colorBlendMode: BlendMode.srcIn,
-                  filterQuality: FilterQuality.high,
-                ),
-              ),
-            Image.asset(
-              assetPath,
-              width: 30,
-              height: 30,
-              fit: BoxFit.contain,
-              color: color,
-              colorBlendMode: BlendMode.srcIn,
-              filterQuality: FilterQuality.high,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _BottomNavShapePainter extends CustomPainter {

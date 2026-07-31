@@ -252,9 +252,9 @@ class HomeDashboard extends StatefulWidget {
 
 class _HomeDashboardState extends State<HomeDashboard>
     with RouteAware, WidgetsBindingObserver {
-  // During testing we replay onboarding on every app launch.
-  // Set this to false when you want completion to persist again.
-  static const bool _showOnEveryLaunchForTesting = true;
+  // First-run onboarding only. Set this to true temporarily if you want to
+  // replay the walkthrough on every app launch during testing.
+  static const bool _showOnEveryLaunchForTesting = false;
 
   final HomeOnboardingStep _profileStep = HomeOnboardingStep(
     key: GlobalKey(),
