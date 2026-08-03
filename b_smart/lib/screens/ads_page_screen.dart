@@ -3255,12 +3255,13 @@ class _AdVideoItemState extends State<AdVideoItem>
                                 ),
                                 Expanded(
                                   child: Row(
-                                    mainAxisSize: MainAxisSize.min,
+                                    mainAxisSize: MainAxisSize.max,
                                     children: [
-                                      Flexible(
+                                      Expanded(
                                         child: Text(
                                           preview,
                                           maxLines: 1,
+                                          softWrap: false,
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(
                                             color: Colors.white,
@@ -3270,23 +3271,28 @@ class _AdVideoItemState extends State<AdVideoItem>
                                         ),
                                       ),
                                       if (isLong) ...[
-                                        const SizedBox(width: 8),
-                                        GestureDetector(
-                                          behavior: HitTestBehavior.opaque,
-                                          onTap: () => unawaited(
-                                            _showCaptionSheet(caption),
-                                          ),
-                                          child: const Padding(
-                                            padding: EdgeInsets.symmetric(
-                                              horizontal: 6,
-                                              vertical: 6,
+                                        const SizedBox(width: 4),
+                                        IntrinsicWidth(
+                                          child: GestureDetector(
+                                            behavior: HitTestBehavior.opaque,
+                                            onTap: () => unawaited(
+                                              _showCaptionSheet(caption),
                                             ),
-                                            child: Text(
-                                              'Read more',
-                                              style: TextStyle(
-                                                color: Color(0xCCFFFFFF),
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w800,
+                                            child: const Padding(
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: 6,
+                                                vertical: 6,
+                                              ),
+                                              child: Text(
+                                                'Read more',
+                                                maxLines: 1,
+                                                softWrap: false,
+                                                overflow: TextOverflow.visible,
+                                                style: TextStyle(
+                                                  color: Color(0xCCFFFFFF),
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
                                               ),
                                             ),
                                           ),

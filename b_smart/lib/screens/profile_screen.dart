@@ -2678,7 +2678,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         context,
         isReels: true,
         isOwnProfile: isMe,
-        emptyIcon: LucideIcons.video,
+        emptyIcon: LucideIcons.clapperboard,
         emptyTitle: 'No bSparks Yet',
         createButtonLabel: 'Create new reel',
         onCreatePressed: () => _openCreateUpload(mode: UploadMode.reel),
@@ -2853,7 +2853,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         context,
         isReels: false,
         isOwnProfile: isMe,
-        emptyIcon: LucideIcons.messageCircle,
+        emptyIcon: LucideIcons.zap,
         emptyTitle: 'No Buzz Yet',
         createButtonLabel: 'Create new tweet',
         onCreatePressed: () => Navigator.of(context).pushNamed('/tweet'),
@@ -3008,7 +3008,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   top: 6,
                   right: 6,
                   child: Icon(
-                    LucideIcons.video,
+                    LucideIcons.clapperboard,
                     color: Colors.white,
                     size: 16,
                   ),
@@ -3338,9 +3338,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final tabs = <Tab>[
           const Tab(icon: Icon(LucideIcons.layoutGrid)),
           const Tab(icon: Icon(LucideIcons.image)),
-          const Tab(icon: Icon(LucideIcons.video)),
-          const Tab(icon: Icon(LucideIcons.messageCircle)),
-          const Tab(icon: Icon(LucideIcons.megaphone)),
+          const Tab(icon: Icon(LucideIcons.zap)),
+          const Tab(icon: Icon(LucideIcons.zap)),
+          const Tab(icon: Icon(LucideIcons.rocket)),
         ];
 
         Widget privacyPlaceholder({
@@ -3429,7 +3429,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ? privacyPlaceholder(
                   title: 'Pulse is private',
                   subtitle: 'Only approved followers can see these reels.',
-                  icon: LucideIcons.video,
+                  icon: LucideIcons.clapperboard,
                 )
               : _buildReelsGrid(isMe: isMe),
           ListView(
@@ -3447,7 +3447,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ? privacyPlaceholder(
                   title: 'Pulse is private',
                   subtitle: 'Only approved followers can see this content.',
-                  icon: LucideIcons.megaphone,
+                  icon: LucideIcons.rocket,
                 )
               : (isVendor
                   ? Padding(
@@ -3459,7 +3459,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           context,
                           isReels: false,
                           isOwnProfile: isMe,
-                          emptyIcon: LucideIcons.megaphone,
+                          emptyIcon: LucideIcons.rocket,
                           emptyTitle: 'No Boosts Yet',
                           showCreateButton: false,
                         )
