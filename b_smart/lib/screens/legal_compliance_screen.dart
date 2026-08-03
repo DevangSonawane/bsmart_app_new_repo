@@ -7,9 +7,122 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../api/api.dart';
 import '../theme/design_tokens.dart';
+import '../utils/csv_download.dart';
 
-class LegalComplianceScreen extends StatelessWidget {
+class LegalComplianceScreen extends StatefulWidget {
   const LegalComplianceScreen({super.key});
+
+  @override
+  State<LegalComplianceScreen> createState() => _LegalComplianceScreenState();
+}
+
+class _LegalComplianceScreenState extends State<LegalComplianceScreen> {
+  final LegalDataApi _legalDataApi = LegalDataApi();
+  bool _downloadingData = false;
+  bool _deletingData = false;
+
+  Future<void> _downloadMyData() async {
+    if (_downloadingData) return;
+    setState(() => _downloadingData = true);
+    try {
+      final csv = await _legalDataApi.exportMyData();
+      final fileName =
+          'bsmart-my-data-${DateTime.now().toIso8601String().replaceAll(':', '-')}.csv';
+      final savedTo = await saveCsvDownload(
+        fileName: fileName,
+        csvContent: csv,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Data export ready: $savedTo')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not export data: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _downloadingData = false);
+    }
+  }
+
+  Future<void> _confirmDeleteMyData() async {
+    if (_deletingData) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text('settings_delete_my_data'.tr()),
+          content: const Text(
+            'This will clear your posts, reels, tweets, promote reels, and chat data. Your account will stay active.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text('common_cancel'.tr()),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red.shade600,
+              ),
+              child: Text('common_continue'.tr()),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+    setState(() => _deletingData = true);
+    try {
+      final res = await _legalDataApi.deleteMyData();
+      final removed = res['removed'];
+      final message = res['message']?.toString().trim();
+      final summary = _removedSummary(removed);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            summary.isNotEmpty
+                ? summary
+                : (message?.isNotEmpty == true
+                    ? message!
+                    : 'Your data has been deleted.'),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not delete data: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _deletingData = false);
+    }
+  }
+
+  String _removedSummary(dynamic removed) {
+    if (removed is! Map) return '';
+    final map = Map<String, dynamic>.from(removed);
+    final parts = <String>[];
+    void addPart(String label, String key) {
+      final value = map[key];
+      if (value == null) return;
+      final count = int.tryParse(value.toString());
+      if (count == null) return;
+      parts.add('$count $label');
+    }
+
+    addPart('posts/reels', 'posts_and_reels');
+    addPart('tweets', 'tweets');
+    addPart('promoted reels', 'promote_reels');
+    addPart('messages', 'messages');
+    addPart('hidden conversations', 'conversations_hidden');
+
+    if (parts.isEmpty) return '';
+    return 'Deleted: ${parts.join(', ')}.';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -93,10 +206,8 @@ class LegalComplianceScreen extends StatelessWidget {
                   iconBg: const Color(0xFFF0FDF4),
                   label: 'settings_download_my_data'.tr(),
                   subtitle: 'settings_download_my_data_subtitle'.tr(),
-                  onTap: () => _showUnavailable(
-                    context,
-                    'settings_download_my_data'.tr(),
-                  ),
+                  busy: _downloadingData,
+                  onTap: _downloadMyData,
                 ),
                 const Divider(height: 1),
                 _dataRow(
@@ -106,10 +217,8 @@ class LegalComplianceScreen extends StatelessWidget {
                   iconBg: const Color(0xFFFEF2F2),
                   label: 'settings_delete_my_data'.tr(),
                   subtitle: 'settings_delete_my_data_subtitle'.tr(),
-                  onTap: () => _showUnavailable(
-                    context,
-                    'settings_delete_my_data'.tr(),
-                  ),
+                  busy: _deletingData,
+                  onTap: _confirmDeleteMyData,
                 ),
               ],
             ),
@@ -302,12 +411,13 @@ class LegalComplianceScreen extends StatelessWidget {
     required Color iconBg,
     required String label,
     required String subtitle,
+    bool busy = false,
     required VoidCallback onTap,
   }) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: busy ? null : onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
@@ -347,11 +457,23 @@ class LegalComplianceScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(
-                LucideIcons.chevronRight,
-                size: 18,
-                color: Theme.of(context).hintColor,
-              ),
+              if (busy)
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Theme.of(context).hintColor,
+                    ),
+                  ),
+                )
+              else
+                Icon(
+                  LucideIcons.chevronRight,
+                  size: 18,
+                  color: Theme.of(context).hintColor,
+                ),
             ],
           ),
         ),
