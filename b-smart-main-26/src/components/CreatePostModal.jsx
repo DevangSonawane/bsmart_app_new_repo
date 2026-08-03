@@ -1925,7 +1925,7 @@ const CreatePostModal = ({ isOpen, onClose, initialType = 'post', onOpenAdModal 
           ) : postType === 'tweet' && step === 'share' ? (
             <>
               <button onClick={handleClose} className="text-sm font-medium text-gray-700 dark:text-gray-200">Cancel</button>
-              <h2 className="font-semibold text-base text-center dark:text-white flex-1">New tweet</h2>
+              <h2 className="font-semibold text-base text-center dark:text-white flex-1">New Buzz</h2>
               <button
                 onClick={() => handleNextStep('publish')}
                 disabled={isSubmitting || (!caption.trim() && media.length === 0)}

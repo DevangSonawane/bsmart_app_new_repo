@@ -234,7 +234,7 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
                     ),
                     const Spacer(),
                     Text(
-                      'New tweet',
+                      'New Buzz',
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                         color: colors.onSurface,

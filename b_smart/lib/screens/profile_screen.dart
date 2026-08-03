@@ -2855,7 +2855,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         isOwnProfile: isMe,
         emptyIcon: LucideIcons.cloudLightning,
         emptyTitle: 'No Buzz Yet',
-        createButtonLabel: 'Create new tweet',
+        createButtonLabel: 'Create new Buzz',
         onCreatePressed: () => Navigator.of(context).pushNamed('/tweet'),
       );
     }
