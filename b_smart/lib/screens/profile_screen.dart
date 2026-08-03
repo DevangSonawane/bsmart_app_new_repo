@@ -2853,7 +2853,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         context,
         isReels: false,
         isOwnProfile: isMe,
-        emptyIcon: LucideIcons.zap,
+        emptyIcon: LucideIcons.cloudLightning,
         emptyTitle: 'No Buzz Yet',
         createButtonLabel: 'Create new tweet',
         onCreatePressed: () => Navigator.of(context).pushNamed('/tweet'),
@@ -3339,7 +3339,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const Tab(icon: Icon(LucideIcons.layoutGrid)),
           const Tab(icon: Icon(LucideIcons.image)),
           const Tab(icon: Icon(LucideIcons.zap)),
-          const Tab(icon: Icon(LucideIcons.zap)),
+          const Tab(icon: Icon(LucideIcons.cloudLightning)),
           const Tab(icon: Icon(LucideIcons.rocket)),
         ];
 
