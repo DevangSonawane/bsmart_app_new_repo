@@ -1587,11 +1587,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
                       return TextButton(
                         onPressed: _posting || !hasText ? null : _postComment,
                         child: Text(
-                          'Moment',
+                          'Post',
                           style: TextStyle(
-                            color: hasText
-                                ? const Color(0xFF3B82F6)
-                                : theme.colorScheme.onSurfaceVariant,
+                            color: const Color(0xFF3B82F6),
                             fontWeight: FontWeight.w600,
                           ),
                         ),

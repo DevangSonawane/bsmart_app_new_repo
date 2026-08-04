@@ -5088,7 +5088,7 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Text(
-                              'Moment',
+                              'Post',
                               style: TextStyle(
                                   fontWeight: FontWeight.w800,
                                   color: Color(0xFF3B82F6)),

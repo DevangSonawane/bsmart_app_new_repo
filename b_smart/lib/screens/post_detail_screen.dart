@@ -2585,11 +2585,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     return TextButton(
                       onPressed:
                           _postingComment || !hasText ? null : _postComment,
-                      child: Text('Moment',
+                      child: Text('Post',
                           style: TextStyle(
-                              color: hasText
-                                  ? theme.colorScheme.primary
-                                  : secondaryText,
+                              color: const Color(0xFF3B82F6),
                               fontSize: 18,
                               fontWeight: FontWeight.w700)),
                     );

@@ -1948,10 +1948,9 @@ class _PostDetailModalState extends State<PostDetailModal> {
                   return TextButton(
                     onPressed:
                         _postingComment || !hasText ? null : _postComment,
-                    child: Text('Moment',
+                    child: Text('Post',
                         style: TextStyle(
-                            color:
-                                !hasText ? Colors.grey : DesignTokens.instaPink,
+                            color: const Color(0xFF3B82F6),
                             fontWeight: FontWeight.w600)),
                   );
                 },

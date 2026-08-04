@@ -780,17 +780,26 @@ class _PromoteCommentsSheetState extends State<PromoteCommentsSheet> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        IconButton(
+                        TextButton(
                           onPressed: _posting ? null : _send,
-                          icon: _posting
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF3B82F6),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 10,
+                            ),
+                          ),
+                          child: _posting
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
                                   child:
                                       CircularProgressIndicator(strokeWidth: 2),
                                 )
-                              : const Icon(LucideIcons.send),
-                          color: DesignTokens.instaPink,
+                              : const Text(
+                                  'Post',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
                         ),
                       ],
                     ),
