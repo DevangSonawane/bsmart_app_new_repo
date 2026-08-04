@@ -544,7 +544,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
     if (!hasToken) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please log in to like posts')),
+          const SnackBar(content: Text('Please log in to like moments')),
         );
       }
       return;
@@ -711,7 +711,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
     if (!hasToken) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please log in to save posts')),
+          const SnackBar(content: Text('Please log in to save moments')),
         );
       }
       return;
@@ -1558,7 +1558,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
                                                         const SizedBox(
                                                             height: 16),
                                                         Text(
-                                                          'Deleting post...',
+                                                          'Deleting moment...',
                                                           style: TextStyle(
                                                             color: Theme.of(
                                                                     context)
@@ -1592,7 +1592,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
                                                         const SizedBox(
                                                             height: 8),
                                                         Text(
-                                                          'Are you sure you want to delete this post? This action cannot be undone.',
+                                                          'Are you sure you want to delete this moment? This action cannot be undone.',
                                                           textAlign:
                                                               TextAlign.center,
                                                           style: TextStyle(

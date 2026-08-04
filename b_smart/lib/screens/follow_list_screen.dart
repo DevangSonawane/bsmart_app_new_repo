@@ -931,7 +931,7 @@ class _FollowListScreenState extends State<FollowListScreen>
                     ),
                   if (newPosts != null && newPosts.toInt() > 0)
                     Text(
-                      '${newPosts.toInt()} new posts',
+                      '${newPosts.toInt()} new moments',
                       style: TextStyle(
                         color: cs.primary,
                         fontSize: 12,
@@ -955,8 +955,7 @@ class _FollowListScreenState extends State<FollowListScreen>
                     unawaited(_openChatForUser(participantId: uid));
                   },
                 )
-              else if (mode == FollowListMode.followers &&
-                  widget.isOwnProfile)
+              else if (mode == FollowListMode.followers && widget.isOwnProfile)
                 isFollowing
                     ? _ActionButton(
                         label: _openingConversationForUserId == uid
@@ -1014,10 +1013,10 @@ class _FollowListScreenState extends State<FollowListScreen>
               else
                 IconButton(
                   onPressed: () => _openRowActionsSheet(
-                        targetUserId: uid,
-                        username: username,
-                        isFollowing: isFollowing,
-                      ),
+                    targetUserId: uid,
+                    username: username,
+                    isFollowing: isFollowing,
+                  ),
                   padding: EdgeInsets.zero,
                   constraints:
                       const BoxConstraints.tightFor(width: 36, height: 36),
@@ -2088,8 +2087,7 @@ class _ActionButton extends StatelessWidget {
         (isPrimary
             ? const Color(0xFF3B82F6)
             : cs.onSurface.withValues(alpha: 0.10));
-    final fg =
-        foregroundOverride ?? (isPrimary ? Colors.white : cs.onSurface);
+    final fg = foregroundOverride ?? (isPrimary ? Colors.white : cs.onSurface);
     return SizedBox(
       height: 32,
       child: OutlinedButton(

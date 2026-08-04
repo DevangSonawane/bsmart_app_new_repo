@@ -122,7 +122,7 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Please login to post'),
+            content: const Text('Please login to share a moment'),
             action: SnackBarAction(label: 'Login', onPressed: _goToLogin),
           ),
         );
@@ -136,10 +136,10 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Posting Restricted'),
+          title: const Text('Publishing Restricted'),
           content: Text(
             'You have ${strikes?.policyStrikes ?? 0} policy violations. '
-            'Posting is restricted. Please contact support if you believe this is an error.',
+            'Publishing is restricted. Please contact support if you believe this is an error.',
           ),
           actions: [
             TextButton(
@@ -291,7 +291,7 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
         Navigator.of(context).pop(); // Close loading
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to post: ${e.toString()}'),
+            content: Text('Failed to share moment: ${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -574,7 +574,7 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
             children: [
               RadioListTile<PrivacyLevel>(
                 title: Text('Public'),
-                subtitle: Text('Anyone can see this post'),
+                subtitle: Text('Anyone can see this moment'),
                 value: PrivacyLevel.public,
               ),
               RadioListTile<PrivacyLevel>(

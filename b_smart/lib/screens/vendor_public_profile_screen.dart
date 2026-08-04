@@ -83,8 +83,10 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
             vendor['userId'] ??
             vendor['user'],
       );
-      final rawUserId =
-          data['user_id'] ?? data['userId'] ?? vendor['user_id'] ?? vendor['userId'];
+      final rawUserId = data['user_id'] ??
+          data['userId'] ??
+          vendor['user_id'] ??
+          vendor['userId'];
       final vendorUserId = (user['_id'] ??
               user['id'] ??
               ((rawUserId is String || rawUserId is num) ? rawUserId : null) ??
@@ -134,13 +136,13 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
       if (!mounted) return;
       setState(() {
         _ads = list;
-        _adsError = hadSuccess ? null : 'Could not load ads.';
+        _adsError = hadSuccess ? null : 'Could not load spotlights.';
         _adsLoading = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _adsError = 'Could not load ads.';
+        _adsError = 'Could not load spotlights.';
         _ads = const [];
         _adsLoading = false;
       });
@@ -172,7 +174,8 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
       }
     }
 
-    Future<void> toggle(BuildContext sheetCtx, StateSetter setSheetState) async {
+    Future<void> toggle(
+        BuildContext sheetCtx, StateSetter setSheetState) async {
       if (toggling) return;
       toggling = true;
       error = null;
@@ -270,7 +273,10 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
 
   List<String> _stringList(dynamic raw) {
     if (raw is List) {
-      return raw.map((e) => e?.toString() ?? '').where((s) => s.trim().isNotEmpty).toList();
+      return raw
+          .map((e) => e?.toString() ?? '')
+          .where((s) => s.trim().isNotEmpty)
+          .toList();
     }
     return const <String>[];
   }
@@ -295,7 +301,8 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
 
   String? _avatarUrl(Map<String, dynamic> data) {
     final user = _map(data['user_id']);
-    final url = (data['avatar_url'] ?? user['avatar_url'] ?? '').toString().trim();
+    final url =
+        (data['avatar_url'] ?? user['avatar_url'] ?? '').toString().trim();
     return url.isEmpty ? null : url;
   }
 
@@ -319,14 +326,18 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
         color: isDark ? const Color(0xFF141414) : Colors.white,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.08),
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.12)
+              : Colors.black.withValues(alpha: 0.08),
         ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.65)),
+            Icon(icon,
+                size: 12,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.65)),
             const SizedBox(width: 6),
           ],
           Text(
@@ -394,8 +405,13 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
 
     final businessDetails = _map(data['business_details']);
     final companyDetails = _map(data['company_details']);
-    final industry = (companyDetails['industry'] ?? businessDetails['industry_category'] ?? '').toString().trim();
-    final coverage = (businessDetails['service_coverage'] ?? '').toString().trim();
+    final industry = (companyDetails['industry'] ??
+            businessDetails['industry_category'] ??
+            '')
+        .toString()
+        .trim();
+    final coverage =
+        (businessDetails['service_coverage'] ?? '').toString().trim();
     final country = (businessDetails['country'] ?? '').toString().trim();
 
     return Scaffold(
@@ -416,7 +432,11 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
                               gradient: LinearGradient(
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
-                                colors: [Color(0xFFF09433), Color(0xFFDC2743), Color(0xFFBC1888)],
+                                colors: [
+                                  Color(0xFFF09433),
+                                  Color(0xFFDC2743),
+                                  Color(0xFFBC1888)
+                                ],
                               ),
                             ),
                           )
@@ -446,11 +466,10 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
                     right: 12,
                     child: FilledButton.tonalIcon(
                       onPressed: () {
-                        final vendorId = (_data?['_id'] ??
-                                _data?['id'] ??
-                                widget.userId)
-                            .toString()
-                            .trim();
+                        final vendorId =
+                            (_data?['_id'] ?? _data?['id'] ?? widget.userId)
+                                .toString()
+                                .trim();
                         _showMoreActions(
                           companyName: companyName,
                           vendorId: vendorId,
@@ -481,7 +500,9 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
                       color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(
-                        color: isDark ? Colors.white.withValues(alpha: 0.14) : Colors.black.withValues(alpha: 0.10),
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.14)
+                            : Colors.black.withValues(alpha: 0.10),
                         width: 3,
                       ),
                       boxShadow: [
@@ -534,7 +555,8 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
                                   color: Color(0xFF0095F6),
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.check, size: 14, color: Colors.white),
+                                child: const Icon(Icons.check,
+                                    size: 14, color: Colors.white),
                               ),
                             ],
                           ],
@@ -544,10 +566,14 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
                           spacing: 8,
                           runSpacing: 8,
                           children: [
-                            if (industry.isNotEmpty) _pill(industry, icon: Icons.local_offer_outlined),
-                            if (coverage.isNotEmpty) _pill(coverage, icon: Icons.place_outlined),
+                            if (industry.isNotEmpty)
+                              _pill(industry, icon: Icons.local_offer_outlined),
+                            if (coverage.isNotEmpty)
+                              _pill(coverage, icon: Icons.place_outlined),
                             if (country.isNotEmpty) _pill(country),
-                            if (verified) _pill('Verified Business', icon: Icons.verified_outlined),
+                            if (verified)
+                              _pill('Verified Business',
+                                  icon: Icons.verified_outlined),
                           ],
                         ),
                       ],
@@ -569,7 +595,8 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
                       icon: Icons.open_in_new,
                       label: 'Visit Website',
                       boxShadow: const [],
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ],
@@ -585,7 +612,9 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
                 color: isDark ? const Color(0xFF111111) : Colors.white,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.08),
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.12)
+                      : Colors.black.withValues(alpha: 0.08),
                 ),
               ),
               child: TabBar(
@@ -593,12 +622,18 @@ class _VendorPublicProfileScreenState extends State<VendorPublicProfileScreen>
                 indicator: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   gradient: const LinearGradient(
-                    colors: [Color(0xFFF09433), Color(0xFFDC2743), Color(0xFFBC1888)],
+                    colors: [
+                      Color(0xFFF09433),
+                      Color(0xFFDC2743),
+                      Color(0xFFBC1888)
+                    ],
                   ),
                 ),
                 labelColor: Colors.white,
-                unselectedLabelColor: theme.colorScheme.onSurface.withValues(alpha: 0.70),
-                labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                unselectedLabelColor:
+                    theme.colorScheme.onSurface.withValues(alpha: 0.70),
+                labelStyle:
+                    const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
                 tabs: const [
                   Tab(text: 'Info'),
                   Tab(text: 'Spotlights'),
@@ -649,9 +684,15 @@ class _InfoTab extends StatelessWidget {
     final company = _map(data['company_details']);
     final business = _map(data['business_details']);
 
-    final about = _pick(company['about'] ?? business['about'] ?? data['bio'] ?? data['description']);
-    final since = _pick(company['established_year'] ?? company['founded'] ?? business['founded']);
-    final services = _pick(business['services'] ?? business['service_offerings']);
+    final about = _pick(company['about'] ??
+        business['about'] ??
+        data['bio'] ??
+        data['description']);
+    final since = _pick(company['established_year'] ??
+        company['founded'] ??
+        business['founded']);
+    final services =
+        _pick(business['services'] ?? business['service_offerings']);
 
     Widget card(String title, String body, {IconData? icon}) {
       if (body.trim().isEmpty) return const SizedBox.shrink();
@@ -692,7 +733,9 @@ class _InfoTab extends StatelessWidget {
         card('About', about, icon: Icons.info_outline),
         card('Established', since, icon: Icons.calendar_month_outlined),
         card('Services', services, icon: Icons.work_outline),
-        if (about.trim().isEmpty && services.trim().isEmpty && since.trim().isEmpty)
+        if (about.trim().isEmpty &&
+            services.trim().isEmpty &&
+            since.trim().isEmpty)
           Padding(
             padding: const EdgeInsets.all(24),
             child: Text(
@@ -767,7 +810,8 @@ class _AdsTab extends StatelessWidget {
       itemCount: ads.length,
       itemBuilder: (context, index) {
         final ad = ads[index];
-        final thumb = (ad.imageUrl ?? '').trim().isNotEmpty ? ad.imageUrl! : null;
+        final thumb =
+            (ad.imageUrl ?? '').trim().isNotEmpty ? ad.imageUrl! : null;
         return InkWell(
           onTap: () => Navigator.of(context).pushNamed('/ads/${ad.id}/details'),
           child: Container(
@@ -813,7 +857,8 @@ class _ContactTab extends StatelessWidget {
           icon: Icons.public,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(
-              builder: (_) => ExternalLinkScreen(url: website, title: 'Website'),
+              builder: (_) =>
+                  ExternalLinkScreen(url: website, title: 'Website'),
             ),
           ),
         ),
@@ -940,7 +985,9 @@ class _ContactTile extends StatelessWidget {
             color: theme.colorScheme.onSurface.withValues(alpha: 0.85),
           ),
         ),
-        trailing: Icon(Icons.open_in_new, size: 16, color: theme.colorScheme.onSurface.withValues(alpha: 0.35)),
+        trailing: Icon(Icons.open_in_new,
+            size: 16,
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.35)),
       ),
     );
   }

@@ -833,7 +833,7 @@ class _ReelsScreenState extends State<ReelsScreen>
     if (!hasToken) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please log in to save posts')),
+          const SnackBar(content: Text('Please log in to save bSparks')),
         );
       }
       return;

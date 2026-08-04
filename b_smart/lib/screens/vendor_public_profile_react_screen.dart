@@ -175,7 +175,8 @@ class _VendorPublicProfileReactScreenState
       return;
     }
 
-    final profileState = _followStateFromResponse(_data ?? const <String, dynamic>{});
+    final profileState =
+        _followStateFromResponse(_data ?? const <String, dynamic>{});
     if (profileState != 'not_following') {
       if (!mounted) return;
       setState(() => _followState = profileState);
@@ -401,13 +402,13 @@ class _VendorPublicProfileReactScreenState
       if (!mounted) return;
       setState(() {
         _ads = list;
-        _adsError = hadSuccess ? null : 'Could not load ads.';
+        _adsError = hadSuccess ? null : 'Could not load spotlights.';
         _adsLoading = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _adsError = 'Could not load ads.';
+        _adsError = 'Could not load spotlights.';
         _ads = const [];
         _adsLoading = false;
       });
@@ -813,8 +814,8 @@ class _VendorPublicProfileReactScreenState
     final vendorDocId = (data['_id'] ?? data['id'])?.toString().trim() ?? '';
     final notificationTargetId =
         vendorDocId.isNotEmpty ? vendorDocId : (_vendorUserId ?? widget.userId);
-    final followersCount =
-        _followersCountOverride ?? _readCount(data, const [
+    final followersCount = _followersCountOverride ??
+        _readCount(data, const [
           'followers_count',
           'followersCount',
           'followers',
@@ -1018,7 +1019,11 @@ class _VendorHeader extends StatelessWidget {
                   : const LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [Color(0xFFFB923C), Color(0xFFEC4899), Color(0xFF8B5CF6)],
+                      colors: [
+                        Color(0xFFFB923C),
+                        Color(0xFFEC4899),
+                        Color(0xFF8B5CF6)
+                      ],
                     ));
           final buttonFg = isFollowing || isRequested ? text : Colors.white;
           Widget followButton() {
@@ -1089,6 +1094,7 @@ class _VendorHeader extends StatelessWidget {
               ),
             );
           }
+
           return SizedBox(
             height: coverHeight + infoHeight,
             width: double.infinity,

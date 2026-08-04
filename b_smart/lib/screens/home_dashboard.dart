@@ -267,7 +267,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     key: GlobalKey(),
     title: '🏠 Home Feed',
     description:
-        'Discover the latest posts, updates, and activities from your community.',
+        'Discover the latest moments, updates, and activities from your community.',
     tooltipPosition: TooltipPosition.top,
   );
   final HomeOnboardingStep _adsStep = HomeOnboardingStep(
@@ -281,7 +281,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     key: GlobalKey(),
     title: '➕ Create',
     description:
-        'Create a new post, upload a reel, share photos, or express your ideas with the community.',
+        'Create a new moment, upload a bSpark, share photos, or express your ideas with the community.',
     isPrimaryAction: true,
     tooltipPosition: TooltipPosition.top,
   );
@@ -2373,7 +2373,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     if (!hasToken) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please log in to like posts')),
+          const SnackBar(content: Text('Please log in to like moments')),
         );
       }
       return;
@@ -2517,7 +2517,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     if (!hasToken) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please log in to save posts')),
+          const SnackBar(content: Text('Please log in to save moments')),
         );
       }
       return;
@@ -2695,7 +2695,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                                             Text(
                                               post.isTweet
                                                   ? 'Deleting tweet...'
-                                                  : 'Deleting post...',
+                                                  : 'Deleting moment...',
                                               style: TextStyle(
                                                 color: Theme.of(context)
                                                     .textTheme
@@ -2723,7 +2723,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                                             ),
                                             const SizedBox(height: 8),
                                             Text(
-                                              'Are you sure you want to delete this ${post.isTweet ? 'tweet' : 'post'}? This action cannot be undone.',
+                                              'Are you sure you want to delete this ${post.isTweet ? 'tweet' : 'moment'}? This action cannot be undone.',
                                               textAlign: TextAlign.center,
                                               style: TextStyle(
                                                   color: Theme.of(context)
@@ -3114,7 +3114,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                     ? 'home_dashboard_create_ads'.tr()
                     : 'home_dashboard_create_post'.tr()),
                 subtitle: Text(
-                  _isVendor ? 'Upload ad campaign' : 'Photo or video',
+                  _isVendor ? 'Upload spotlight campaign' : 'Photo or video',
                   style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(ctx).colorScheme.onSurfaceVariant),
@@ -3542,7 +3542,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                'Create your first post from the + button',
+                                'Create your first moment from the + button',
                                 style: TextStyle(
                                   fontSize: 13,
                                   color: Theme.of(context)
@@ -3693,7 +3693,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                                         padding:
                                             EdgeInsets.fromLTRB(14, 12, 14, 6),
                                         child: Text(
-                                          'Suggested ad',
+                                          'Suggested spotlight',
                                           style: TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 13,
@@ -3804,7 +3804,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                                             size: 40),
                                         const SizedBox(height: 8),
                                         Text(
-                                          'Failed to load post',
+                                          'Failed to load moment',
                                           style: TextStyle(
                                             color: Theme.of(context)
                                                 .colorScheme
@@ -4336,7 +4336,7 @@ class _DesktopNotificationsButtonState
                             _NotificationTile(
                                 icon: LucideIcons.heart,
                                 iconColor: DesignTokens.instaPink,
-                                title: 'Mike liked your post',
+                                title: 'Mike liked your moment',
                                 time: '1 hour ago'),
                             _NotificationTile(
                                 icon: LucideIcons.messageCircle,
@@ -4546,7 +4546,7 @@ class _SuggestedAdsPlaceholder extends StatelessWidget {
                 Text(
                   isLoading
                       ? 'Loading suggestions…'
-                      : 'No ad suggestions right now.',
+                      : 'No spotlight suggestions right now.',
                   style: TextStyle(
                     fontSize: 12,
                     height: 1.2,

@@ -649,7 +649,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (!hasToken) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please log in to save posts')),
+          const SnackBar(content: Text('Please log in to save moments')),
         );
       }
       return;
@@ -1874,7 +1874,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                                         height:
                                                                             16),
                                                                     Text(
-                                                                      'Deleting post...',
+                                                                      'Deleting moment...',
                                                                       style:
                                                                           TextStyle(
                                                                         color: Theme.of(context)
@@ -1913,7 +1913,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                                         height:
                                                                             8),
                                                                     Text(
-                                                                      'Are you sure you want to delete this post? This action cannot be undone.',
+                                                                      'Are you sure you want to delete this moment? This action cannot be undone.',
                                                                       textAlign:
                                                                           TextAlign
                                                                               .center,
@@ -2038,7 +2038,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content:
-                                        Text('Please log in to like posts'),
+                                        Text('Please log in to like moments'),
                                   ),
                                 );
                               }

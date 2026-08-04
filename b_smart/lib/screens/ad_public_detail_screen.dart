@@ -129,7 +129,7 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
     if (id.isEmpty) {
       setState(() {
         _loading = false;
-        _error = 'Invalid ad id';
+        _error = 'Invalid spotlight id';
       });
       return;
     }
@@ -156,7 +156,7 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Could not load ad.';
+        _error = 'Could not load spotlight.';
         _loading = false;
       });
     }
