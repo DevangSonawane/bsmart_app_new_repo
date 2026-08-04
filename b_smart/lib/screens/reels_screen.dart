@@ -19,6 +19,7 @@ import '../services/supabase_service.dart';
 import '../services/ui_surface_memory_service.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
+import '../theme/theme_scope.dart';
 import '../widgets/comments_sheet.dart';
 import '../widgets/share_content_modal.dart';
 import '../widgets/content_report_sheet.dart';
@@ -78,6 +79,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   Future<void> _poolOps = Future<void>.value();
   int _poolGeneration = 0;
   bool _autoplayKickScheduled = false;
+  bool _disableAutoPlay = false;
   static const double _audioOnScreenThreshold = 0.10;
   bool _audioGateOpen = true;
   PageRoute<dynamic>? _subscribedRoute;
@@ -203,6 +205,15 @@ class _ReelsScreenState extends State<ReelsScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final newDisableAutoPlay = ThemeScope.of(context).disableAutoPlay;
+    if (_disableAutoPlay != newDisableAutoPlay) {
+      _disableAutoPlay = newDisableAutoPlay;
+      if (_disableAutoPlay) {
+        unawaited(_pauseVisibleReelPlayback());
+      } else if (_playbackAllowed && _reels.isNotEmpty) {
+        unawaited(_activateCurrentReelPlayback());
+      }
+    }
     final route = ModalRoute.of(context);
     if (route is PageRoute && route != _subscribedRoute) {
       if (_subscribedRoute != null) {
@@ -644,6 +655,23 @@ class _ReelsScreenState extends State<ReelsScreen>
     } catch (_) {}
   }
 
+  Future<void> _pauseVisibleReelPlayback() async {
+    final controller = _controllerForIndex(_currentIndex);
+    if (controller != null) {
+      try {
+        await controller.pause();
+        await controller.setVolume(0);
+      } catch (_) {}
+    }
+    for (final index in _videoControllers.keys) {
+      if (index == _currentIndex) continue;
+      await _pauseControllerForIndex(index);
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   Future<void> _setControllerVolumeSafely(
     VideoPlayerController? controller,
     double volume,
@@ -667,12 +695,14 @@ class _ReelsScreenState extends State<ReelsScreen>
         (_playbackAllowed && _audioGateOpen && !_isMuted) ? 1 : 0,
       );
       if (!mounted || _controllerForIndex(index) != controller) return;
-      if (_playbackAllowed) {
+      if (_playbackAllowed && !_disableAutoPlay) {
         await controller.play();
         _lastStartedIndex = index;
         debugPrint(
           '[Reels] video started playing index=$index id=${_reels[index].id}',
         );
+      } else {
+        await controller.pause();
       }
     } catch (e) {
       debugPrint(
@@ -694,7 +724,15 @@ class _ReelsScreenState extends State<ReelsScreen>
     for (final i in otherIndexes) {
       await _pauseControllerForIndex(i);
     }
-    if (_userPaused) return;
+    if (_userPaused || _disableAutoPlay) {
+      final current = _controllerForIndex(index);
+      if (current != null) {
+        try {
+          await current.pause();
+        } catch (_) {}
+      }
+      return;
+    }
     await _playControllerForIndex(index);
   }
 

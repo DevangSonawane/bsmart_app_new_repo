@@ -196,8 +196,8 @@ void main() async {
             builder: (context) => const BSmartApp(),
             enableAutoScroll: false,
             disableBarrierInteraction: true,
-            disableScaleAnimation: false,
-            disableMovingAnimation: false,
+            disableScaleAnimation: themeNotifier.reduceMotion,
+            disableMovingAnimation: themeNotifier.reduceMotion,
             blurValue: 1.5,
             scrollDuration: const Duration(milliseconds: 320),
             onFinish: () {
@@ -336,11 +336,14 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
 
     final themeNotifier = ThemeScope.of(context);
     final themeMode = themeNotifier.themeMode;
-    final lightTheme =
-        themeNotifier.highContrastMode ? AppTheme.highContrastTheme() : AppTheme.theme;
-    final darkTheme = themeNotifier.highContrastMode
-        ? AppTheme.highContrastDarkTheme()
-        : AppTheme.darkTheme;
+    final lightTheme = AppTheme.lightTheme(
+      highContrast: themeNotifier.highContrastMode,
+      reduceMotion: themeNotifier.reduceMotion,
+    );
+    final darkTheme = AppTheme.themedDark(
+      highContrast: themeNotifier.highContrastMode,
+      reduceMotion: themeNotifier.reduceMotion,
+    );
 
     return MaterialApp(
       title: 'app_name'.tr(),

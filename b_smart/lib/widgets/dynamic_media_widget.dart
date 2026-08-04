@@ -8,6 +8,7 @@ import '../api/api_client.dart';
 import '../services/media_aspect_cache.dart';
 import '../services/media_playback_registry.dart';
 import '../services/video_pool.dart';
+import '../theme/theme_scope.dart';
 import '../utils/url_helper.dart';
 import 'safe_network_image.dart';
 
@@ -67,6 +68,7 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   bool _videoFailed = false;
   String? _registeredPauseId;
   bool _muteListenerAttached = false;
+  bool _disableAutoPlay = false;
 
   bool get _hasVideoFilter {
     if (!widget.isVideo) return false;
@@ -353,6 +355,24 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final newDisableAutoPlay = ThemeScope.of(context).disableAutoPlay;
+    if (_disableAutoPlay == newDisableAutoPlay) return;
+    final wasDisabled = _disableAutoPlay;
+    _disableAutoPlay = newDisableAutoPlay;
+    if (!widget.isVideo) return;
+    if (_disableAutoPlay) {
+      unawaited(_pauseVideoForPreference());
+    } else if (widget.isActive || _videoCtl != null) {
+      // If autoplay was re-enabled while this item is active, resume it.
+      if (!wasDisabled || widget.isActive) {
+        unawaited(_resumeVideoIfNeeded());
+      }
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant DynamicMediaWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.id != widget.id) {
@@ -441,8 +461,12 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     _loadingVideo = true;
     if (mounted) setState(() {});
     try {
-      final ctl =
-          await VideoPool.instance.attachWithPlayback(widget.id, url, autoplay: false);
+      final shouldAutoplay = !_disableAutoPlay;
+      final ctl = await VideoPool.instance.attachWithPlayback(
+        widget.id,
+        url,
+        autoplay: shouldAutoplay,
+      );
       if (!mounted) {
         _loadingVideo = false;
         return;
@@ -453,7 +477,9 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
         return;
       }
       await _syncVolumeToMuteState(controller: ctl);
-      await ctl.play();
+      if (!shouldAutoplay) {
+        await ctl.pause();
+      }
       if (!mounted || !widget.isActive) {
         await VideoPool.instance.pauseIf(widget.id);
         _loadingVideo = false;
@@ -500,13 +526,17 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     final url = widget.url.trim();
     if (url.isEmpty) return;
     try {
+      final shouldAutoplay = !_disableAutoPlay;
       final ctl = await VideoPool.instance.attachWithPlayback(
         widget.id,
         url,
-        autoplay: true,
+        autoplay: shouldAutoplay,
       );
       if (!mounted) return;
       await _syncVolumeToMuteState(controller: ctl);
+      if (!shouldAutoplay) {
+        await ctl.pause();
+      }
       setState(() {
         _videoCtl = ctl;
         _ratio = ctl.value.isInitialized
@@ -524,6 +554,18 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
       return ctl.value.isInitialized;
     } catch (_) {
       return false;
+    }
+  }
+
+  Future<void> _pauseVideoForPreference() async {
+    final ctl = _videoCtl;
+    if (!_isControllerUsable(ctl)) return;
+    try {
+      await ctl!.pause();
+      await ctl.setVolume(0);
+    } catch (_) {}
+    if (mounted) {
+      setState(() {});
     }
   }
 
@@ -568,9 +610,10 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     final ctl = controller ?? _videoCtl;
     if (!_isControllerUsable(ctl)) return;
     try {
-      final volume = widget.isVideo && widget.isActive && !VideoPool.instance.isMuted
-          ? 1.0
-          : 0.0;
+      final volume =
+          widget.isVideo && widget.isActive && !VideoPool.instance.isMuted
+              ? 1.0
+              : 0.0;
       await ctl!.setVolume(volume);
     } catch (_) {}
   }
@@ -598,10 +641,13 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   @override
   Widget build(BuildContext context) {
     final aspect = _ratio ?? (widget.isVideo ? 9 / 16 : 4 / 5);
+    final reduceMotion = ThemeScope.of(context).reduceMotion;
     return RepaintBoundary(
       child: AspectRatio(
         aspectRatio: aspect,
-        child: widget.isVideo ? _buildVideo() : _buildImage(),
+        child: widget.isVideo
+            ? _buildVideo(reduceMotion: reduceMotion)
+            : _buildImage(),
       ),
     );
   }
@@ -619,7 +665,7 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     );
   }
 
-  Widget _buildVideo() {
+  Widget _buildVideo({required bool reduceMotion}) {
     // Start loading as soon as widget is active, don't wait for build
     if (widget.isActive &&
         _videoCtl == null &&
@@ -652,7 +698,9 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
           thumb,
           if (ctl != null && canShowVideo)
             AnimatedOpacity(
-              duration: const Duration(milliseconds: 180),
+              duration: reduceMotion
+                  ? Duration.zero
+                  : const Duration(milliseconds: 180),
               curve: Curves.easeOut,
               opacity: 1,
               child: _applyFilterToWidget(
@@ -666,7 +714,8 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
                 ),
               ),
             ),
-          if (widget.isActive && (isBuffering || (_loadingVideo && !_videoFailed)))
+          if (widget.isActive &&
+              (isBuffering || (_loadingVideo && !_videoFailed)))
             const Positioned.fill(
               child: IgnorePointer(
                 child: Center(
