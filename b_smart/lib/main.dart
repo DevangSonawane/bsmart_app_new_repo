@@ -11,6 +11,8 @@ import 'firebase_options.dart';
 import 'screens/auth/login/login_screen.dart';
 import 'screens/home_dashboard.dart';
 import 'theme/app_theme.dart';
+import 'preferences/content_preferences_notifier.dart';
+import 'preferences/content_preferences_scope.dart';
 import 'theme/theme_notifier.dart';
 import 'theme/theme_scope.dart';
 import 'state/store.dart';
@@ -165,11 +167,18 @@ void main() async {
     setGlobalStore(store);
 
     ThemeNotifier themeNotifier;
+    ContentPreferencesNotifier contentPreferencesNotifier;
     try {
       themeNotifier = await ThemeNotifier.create();
     } catch (e) {
       debugPrint('Error initializing ThemeNotifier: $e');
       themeNotifier = ThemeNotifier(initialThemeMode: ThemeMode.system);
+    }
+    try {
+      contentPreferencesNotifier = await ContentPreferencesNotifier.create();
+    } catch (e) {
+      debugPrint('Error initializing ContentPreferencesNotifier: $e');
+      contentPreferencesNotifier = ContentPreferencesNotifier();
     }
 
     runApp(StoreProvider<AppState>(
@@ -192,20 +201,23 @@ void main() async {
         useOnlyLangCode: true,
         child: ThemeScope(
           notifier: themeNotifier,
-          child: ShowCaseWidget(
-            builder: (context) => const BSmartApp(),
-            enableAutoScroll: false,
-            disableBarrierInteraction: true,
-            disableScaleAnimation: themeNotifier.reduceMotion,
-            disableMovingAnimation: themeNotifier.reduceMotion,
-            blurValue: 1.5,
-            scrollDuration: const Duration(milliseconds: 320),
-            onFinish: () {
-              HomeOnboardingService.instance.handleFinished();
-            },
-            onDismiss: (_) {
-              HomeOnboardingService.instance.handleDismissed();
-            },
+          child: ContentPreferencesScope(
+            notifier: contentPreferencesNotifier,
+            child: ShowCaseWidget(
+              builder: (context) => const BSmartApp(),
+              enableAutoScroll: false,
+              disableBarrierInteraction: true,
+              disableScaleAnimation: themeNotifier.reduceMotion,
+              disableMovingAnimation: themeNotifier.reduceMotion,
+              blurValue: 1.5,
+              scrollDuration: const Duration(milliseconds: 320),
+              onFinish: () {
+                HomeOnboardingService.instance.handleFinished();
+              },
+              onDismiss: (_) {
+                HomeOnboardingService.instance.handleDismissed();
+              },
+            ),
           ),
         ),
       ),

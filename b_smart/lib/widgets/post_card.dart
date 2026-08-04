@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/feed_post_model.dart';
+import '../preferences/content_preferences_scope.dart';
 import '../services/video_pool.dart';
 import '../utils/url_helper.dart';
 import '../utils/location_utils.dart';
@@ -195,8 +196,7 @@ class _PostCardState extends State<PostCard> {
   }
 
   Future<void> _openPostLocation(FeedPost post) async {
-    final place = post.locationPlace ??
-        locationPlaceFromDynamic(post.location);
+    final place = post.locationPlace ?? locationPlaceFromDynamic(post.location);
     if (place == null || place.searchText.isEmpty) return;
     await openLocationInMaps(place);
   }
@@ -289,9 +289,15 @@ class _PostCardState extends State<PostCard> {
   Widget build(BuildContext context) {
     final post = widget.post;
     final theme = Theme.of(context);
+    final contentPreferences = ContentPreferencesScope.of(context);
     final isDark = theme.brightness == Brightness.dark;
     if (post.isTweet) {
-      return _buildTweetCard(post, theme, isDark);
+      return _buildTweetCard(
+        post,
+        theme,
+        isDark,
+        autoPlayVideos: contentPreferences.autoPlayVideos,
+      );
     }
     final mediaUrls = post.mediaUrls;
     final isCarousel = _isCarousel;
@@ -322,6 +328,9 @@ class _PostCardState extends State<PostCard> {
             ? _isVideoUrl(mediaUrls[_mediaIndex])
             : false)
         : singleIsVideo;
+    final autoplayEnabled = post.mediaType == PostMediaType.reel
+        ? contentPreferences.autoPlayPulse
+        : contentPreferences.autoPlayVideos;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -348,6 +357,7 @@ class _PostCardState extends State<PostCard> {
                         thumbnailUrl: post.thumbnailUrl,
                         isVideo: singleIsVideo,
                         isActive: widget.isActive && tabActive,
+                        autoPlay: autoplayEnabled,
                         initialAspectRatio: post.aspectRatio,
                         filterName: filterForIndex(0),
                         adjustments: adjustmentsForIndex(0),
@@ -364,6 +374,7 @@ class _PostCardState extends State<PostCard> {
                             thumbnailUrl: post.thumbnailUrl,
                             isVideo: singleIsVideo,
                             isActive: isActive,
+                            autoPlay: autoplayEnabled,
                             initialAspectRatio: post.aspectRatio,
                             filterName: filterForIndex(0),
                             adjustments: adjustmentsForIndex(0),
@@ -408,6 +419,7 @@ class _PostCardState extends State<PostCard> {
                                   isActive: widget.isActive &&
                                       tabActive &&
                                       _mediaIndex == i,
+                                  autoPlay: autoplayEnabled,
                                   initialAspectRatio: itemAspect,
                                   filterName: filterForIndex(i),
                                   adjustments: adjustmentsForIndex(i),
@@ -426,6 +438,7 @@ class _PostCardState extends State<PostCard> {
                                       thumbnailUrl: post.thumbnailUrl,
                                       isVideo: isVideo,
                                       isActive: isActive,
+                                      autoPlay: autoplayEnabled,
                                       initialAspectRatio: itemAspect,
                                       filterName: filterForIndex(i),
                                       adjustments: adjustmentsForIndex(i),
@@ -635,7 +648,12 @@ class _PostCardState extends State<PostCard> {
     );
   }
 
-  Widget _buildTweetCard(FeedPost post, ThemeData theme, bool isDark) {
+  Widget _buildTweetCard(
+    FeedPost post,
+    ThemeData theme,
+    bool isDark, {
+    required bool autoPlayVideos,
+  }) {
     final colors = theme.colorScheme;
     final mediaUrls = post.mediaUrls;
     final content = (post.caption ?? '').trim();
@@ -956,6 +974,7 @@ class _PostCardState extends State<PostCard> {
             thumbnailUrl: post.thumbnailUrl,
             isVideo: _isVideoUrl(mediaUrls.first),
             isActive: widget.isActive && widget.isTabActive,
+            autoPlay: autoPlayVideos,
             initialAspectRatio: post.aspectRatio,
             filterName: null,
             adjustments: null,
@@ -979,6 +998,7 @@ class _PostCardState extends State<PostCard> {
                   isVideo: isVideo,
                   isActive:
                       widget.isActive && widget.isTabActive && _mediaIndex == i,
+                  autoPlay: autoPlayVideos,
                   initialAspectRatio: post.aspectRatio,
                   filterName: null,
                   adjustments: null,
@@ -1219,8 +1239,8 @@ class _PostCardState extends State<PostCard> {
         : (post.isAd && adCompany.isNotEmpty && adCompany != post.userName
             ? adCompany
             : '');
-    final location = (post.locationPlace?.displayText ?? post.location ?? '')
-        .trim();
+    final location =
+        (post.locationPlace?.displayText ?? post.location ?? '').trim();
     final primaryText =
         theme.brightness == Brightness.dark ? Colors.white : Colors.black;
     final secondaryText = theme.brightness == Brightness.dark
@@ -1298,18 +1318,17 @@ class _PostCardState extends State<PostCard> {
                             ),
                           ),
                           if (!post.isAd && location.isNotEmpty) ...[
-                            if (subtitleName.isNotEmpty)
-                              ...[
-                                const SizedBox(width: 6),
-                                Text(
-                                  '·',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: secondaryText,
-                                  ),
+                            if (subtitleName.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Text(
+                                '·',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: secondaryText,
                                 ),
-                                const SizedBox(width: 6),
-                              ],
+                              ),
+                              const SizedBox(width: 6),
+                            ],
                             Flexible(
                               child: InkWell(
                                 onTap: () => _openPostLocation(post),

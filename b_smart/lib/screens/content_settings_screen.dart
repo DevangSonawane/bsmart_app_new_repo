@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme/design_tokens.dart';
+import '../preferences/content_preferences_scope.dart';
 
 class ContentSettingsScreen extends StatefulWidget {
   const ContentSettingsScreen({super.key});
@@ -16,8 +17,7 @@ class ContentSettingsScreen extends StatefulWidget {
 
 class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
   static const String _defaultLanguagePrefsKey = 'content_default_language';
-  static const String _optionalLanguagesPrefsKey =
-      'content_optional_languages';
+  static const String _optionalLanguagesPrefsKey = 'content_optional_languages';
 
   final Set<String> _selectedInterests = <String>{'Tech', 'Travel'};
   final Set<String> _followTopics = <String>{'Creativity', 'Business'};
@@ -25,9 +25,6 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
   bool _sensitiveContentFilter = true;
   bool _adultContentFilter = true;
   bool _politicalContentFilter = false;
-
-  bool _autoPlayVideos = true;
-  bool _autoPlayPulse = false;
 
   String _defaultLanguage = 'English';
   final List<String> _optionalLanguages = <String>['Hindi', 'Tamil'];
@@ -54,6 +51,7 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final contentPreferences = ContentPreferencesScope.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final bottomInset = MediaQuery.of(context).padding.bottom;
     final appLanguage = _languageLabelForLocale(context.locale);
@@ -194,17 +192,18 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
                   title: 'content_preferences_auto_play_videos'.tr(),
                   subtitle:
                       'content_preferences_auto_play_videos_subtitle'.tr(),
-                  value: _autoPlayVideos,
-                  onChanged: (value) => setState(() => _autoPlayVideos = value),
+                  value: contentPreferences.autoPlayVideos,
+                  onChanged: (value) =>
+                      unawaited(contentPreferences.setAutoPlayVideos(value)),
                 ),
                 const Divider(height: 1),
                 _toggleRow(
                   icon: LucideIcons.circleDot,
                   title: 'content_preferences_auto_play_pulse'.tr(),
-                  subtitle:
-                      'content_preferences_auto_play_pulse_subtitle'.tr(),
-                  value: _autoPlayPulse,
-                  onChanged: (value) => setState(() => _autoPlayPulse = value),
+                  subtitle: 'content_preferences_auto_play_pulse_subtitle'.tr(),
+                  value: contentPreferences.autoPlayPulse,
+                  onChanged: (value) =>
+                      unawaited(contentPreferences.setAutoPlayPulse(value)),
                 ),
               ],
             ),
@@ -259,7 +258,8 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
                     title: 'content_preferences_default_language'.tr(),
                     options: _availableLanguages,
                     current: _defaultLanguage,
-                    onSelected: (value) => unawaited(_setDefaultLanguage(value)),
+                    onSelected: (value) =>
+                        unawaited(_setDefaultLanguage(value)),
                   ),
                 ),
                 const Divider(height: 1),
@@ -292,7 +292,8 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
                   subtitle:
                       'content_preferences_auto_translation_subtitle'.tr(),
                   value: _autoTranslation,
-                  onChanged: (value) => setState(() => _autoTranslation = value),
+                  onChanged: (value) =>
+                      setState(() => _autoTranslation = value),
                 ),
               ],
             ),
@@ -343,8 +344,10 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final labelColor =
+        isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor =
+        isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
 
     return Material(
       color: Colors.transparent,
@@ -409,8 +412,10 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final labelColor = isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
-    final hintColor = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+    final labelColor =
+        isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
+    final hintColor =
+        isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
     final inactiveThumbColor =
         isDark ? const Color(0xFFE5E7EB) : const Color(0xFF4B5563);
     final inactiveTrackColor =
@@ -634,8 +639,9 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
         prefs.getString(_defaultLanguagePrefsKey) ?? _defaultLanguage;
     final storedOptionalLanguages =
         prefs.getStringList(_optionalLanguagesPrefsKey) ?? const <String>[];
-    final normalizedOptionalLanguages =
-        _normalizeLanguages(storedOptionalLanguages.toSet(), exclude: storedDefaultLanguage);
+    final normalizedOptionalLanguages = _normalizeLanguages(
+        storedOptionalLanguages.toSet(),
+        exclude: storedDefaultLanguage);
 
     if (!mounted) return;
     setState(() {
@@ -673,7 +679,8 @@ class _ContentSettingsScreenState extends State<ContentSettingsScreen> {
   }
 
   Future<void> _setOptionalLanguages(Set<String> languages) async {
-    final normalized = _normalizeLanguages(languages, exclude: _defaultLanguage);
+    final normalized =
+        _normalizeLanguages(languages, exclude: _defaultLanguage);
     if (!mounted) return;
     setState(() {
       _optionalLanguages

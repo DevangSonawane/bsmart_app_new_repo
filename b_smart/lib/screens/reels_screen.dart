@@ -19,6 +19,7 @@ import '../services/supabase_service.dart';
 import '../services/ui_surface_memory_service.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
+import '../preferences/content_preferences_scope.dart';
 import '../theme/theme_scope.dart';
 import '../widgets/comments_sheet.dart';
 import '../widgets/share_content_modal.dart';
@@ -205,7 +206,8 @@ class _ReelsScreenState extends State<ReelsScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final newDisableAutoPlay = ThemeScope.of(context).disableAutoPlay;
+    final newDisableAutoPlay = ThemeScope.of(context).disableAutoPlay ||
+        !ContentPreferencesScope.of(context).autoPlayPulse;
     if (_disableAutoPlay != newDisableAutoPlay) {
       _disableAutoPlay = newDisableAutoPlay;
       if (_disableAutoPlay) {

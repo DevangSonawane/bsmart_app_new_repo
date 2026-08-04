@@ -8,6 +8,7 @@ import '../api/api_client.dart';
 import '../services/media_aspect_cache.dart';
 import '../services/media_playback_registry.dart';
 import '../services/video_pool.dart';
+import '../preferences/content_preferences_scope.dart';
 import '../theme/theme_scope.dart';
 import '../utils/url_helper.dart';
 import 'safe_network_image.dart';
@@ -20,6 +21,7 @@ class DynamicMediaWidget extends StatefulWidget {
   final String? thumbnailUrl;
   final bool isVideo;
   final bool isActive;
+  final bool autoPlay;
   final double? initialAspectRatio;
   final String? filterName;
   final Map<String, int>? adjustments;
@@ -31,6 +33,7 @@ class DynamicMediaWidget extends StatefulWidget {
     this.thumbnailUrl,
     required this.isVideo,
     required this.isActive,
+    this.autoPlay = true,
     this.initialAspectRatio,
     this.filterName,
     this.adjustments,
@@ -69,6 +72,7 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   String? _registeredPauseId;
   bool _muteListenerAttached = false;
   bool _disableAutoPlay = false;
+  bool _contentAutoPlayEnabled = true;
 
   bool get _hasVideoFilter {
     if (!widget.isVideo) return false;
@@ -358,15 +362,18 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final newDisableAutoPlay = ThemeScope.of(context).disableAutoPlay;
-    if (_disableAutoPlay == newDisableAutoPlay) return;
-    final wasDisabled = _disableAutoPlay;
+    final newContentAutoPlayEnabled =
+        ContentPreferencesScope.of(context).autoPlayVideos;
+    final effectiveAutoPlay = newContentAutoPlayEnabled && !newDisableAutoPlay;
+    final wasAutoplayEnabled = _contentAutoPlayEnabled && !_disableAutoPlay;
     _disableAutoPlay = newDisableAutoPlay;
+    _contentAutoPlayEnabled = newContentAutoPlayEnabled;
+    if (wasAutoplayEnabled == effectiveAutoPlay) return;
     if (!widget.isVideo) return;
-    if (_disableAutoPlay) {
+    if (!effectiveAutoPlay) {
       unawaited(_pauseVideoForPreference());
     } else if (widget.isActive || _videoCtl != null) {
-      // If autoplay was re-enabled while this item is active, resume it.
-      if (!wasDisabled || widget.isActive) {
+      if (widget.isActive) {
         unawaited(_resumeVideoIfNeeded());
       }
     }
@@ -461,7 +468,8 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     _loadingVideo = true;
     if (mounted) setState(() {});
     try {
-      final shouldAutoplay = !_disableAutoPlay;
+      final shouldAutoplay =
+          widget.autoPlay && _contentAutoPlayEnabled && !_disableAutoPlay;
       final ctl = await VideoPool.instance.attachWithPlayback(
         widget.id,
         url,
@@ -526,7 +534,8 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     final url = widget.url.trim();
     if (url.isEmpty) return;
     try {
-      final shouldAutoplay = !_disableAutoPlay;
+      final shouldAutoplay =
+          widget.autoPlay && _contentAutoPlayEnabled && !_disableAutoPlay;
       final ctl = await VideoPool.instance.attachWithPlayback(
         widget.id,
         url,
