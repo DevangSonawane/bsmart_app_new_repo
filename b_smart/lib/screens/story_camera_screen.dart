@@ -4495,7 +4495,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
       final isVideoStory = _editingVideoFile != null;
       // final screenSize = MediaQuery.of(context).size;
       debugPrint('\n════════════════════════════════════════');
-      debugPrint('🚀 Starting Story Post');
+      debugPrint('🚀 Starting Glimpse Post');
       debugPrint('════════════════════════════════════════');
       debugPrint('Close Friends: $isCloseFriends');
       debugPrint('Media type: ${isVideoStory ? 'video' : 'image'}');
@@ -4514,7 +4514,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
                     child: CircularProgressIndicator(
                         color: Colors.white, strokeWidth: 2)),
                 SizedBox(width: 16),
-                Text('Posting story...'),
+                Text('Posting glimpse...'),
               ],
             ),
             duration: Duration(seconds: 30),
@@ -4778,7 +4778,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
 
       debugPrint('✅ Create response: $createResponse');
       debugPrint('\n════════════════════════════════════════');
-      debugPrint('🎉 Story posted successfully!');
+      debugPrint('🎉 Glimpse posted successfully!');
       debugPrint('════════════════════════════════════════\n');
 
       if (mounted) {
@@ -4786,10 +4786,10 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '${isCloseFriends ? 'Posted to Close Friends ✓' : 'Posted to Your Story ✓'}\u2063${DateTime.now().microsecondsSinceEpoch}',
+              '${isCloseFriends ? 'Posted to Close Friends ✓' : 'Posted to Your Glimpse ✓'}\u2063${DateTime.now().microsecondsSinceEpoch}',
               semanticsLabel: isCloseFriends
                   ? 'Posted to Close Friends ✓'
-                  : 'Posted to Your Story ✓',
+                  : 'Posted to Your Glimpse ✓',
             ),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),

@@ -776,7 +776,7 @@ class _ShareContentModalState extends State<ShareContentModal> {
                           ),
                           Expanded(
                             child: _FooterAction(
-                              label: 'Add to story',
+                              label: 'Add to Glimpse',
                               icon: LucideIcons.plus,
                               onTap: _addToStory,
                             ),

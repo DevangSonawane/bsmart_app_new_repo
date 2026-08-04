@@ -165,12 +165,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   bool _isMessageNotification(NotificationItem notification) {
     final type = notification.typeKey.trim().toLowerCase();
-    return type.contains('message') || type.contains('chat') || type.contains('dm');
+    return type.contains('message') ||
+        type.contains('chat') ||
+        type.contains('dm');
   }
 
   bool _isSupportNotification(NotificationItem notification) {
     final type = notification.typeKey.trim().toLowerCase();
-    if (type.contains('support') || type.contains('help') || type.contains('query')) {
+    if (type.contains('support') ||
+        type.contains('help') ||
+        type.contains('query')) {
       return true;
     }
     final metadata = notification.metadata ?? const <String, dynamic>{};
@@ -287,10 +291,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final participantId = _participantIdFromNotification(notification);
     if (participantId.isNotEmpty) {
       try {
-        final conversation =
-            await ChatApi().createOrGetConversation(participantId: participantId);
+        final conversation = await ChatApi()
+            .createOrGetConversation(participantId: participantId);
         if (!mounted) return;
-        final id = (conversation['_id'] ?? conversation['id'])?.toString().trim() ?? '';
+        final id =
+            (conversation['_id'] ?? conversation['id'])?.toString().trim() ??
+                '';
         if (id.isNotEmpty) {
           Navigator.of(context).push(
             MaterialPageRoute(
@@ -316,7 +322,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final queryId = _supportQueryIdFromNotification(notification);
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ContactSupportScreen(initialQueryId: queryId.isEmpty ? null : queryId),
+        builder: (_) => ContactSupportScreen(
+            initialQueryId: queryId.isEmpty ? null : queryId),
       ),
     );
   }
@@ -451,7 +458,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       backgroundColor: isDark ? Colors.black : Colors.white,
       body: SafeArea(
         child: RefreshIndicator(
-      onRefresh: () async {
+          onRefresh: () async {
             setState(() => _page = 1);
             await _loadNotifications(force: true);
           },
@@ -1035,16 +1042,17 @@ class _NotificationRow extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
-                            child: isActing && followRequestActionState == 'accept'
-                                ? const SizedBox(
-                                    width: 12,
-                                    height: 12,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Text('Confirm'),
+                            child:
+                                isActing && followRequestActionState == 'accept'
+                                    ? const SizedBox(
+                                        width: 12,
+                                        height: 12,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Text('Confirm'),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1055,8 +1063,9 @@ class _NotificationRow extends StatelessWidget {
                                 ? null
                                 : () => onFollowDecision?.call('decline'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor:
-                                  isDark ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6),
+                              backgroundColor: isDark
+                                  ? const Color(0xFF1F2937)
+                                  : const Color(0xFFF3F4F6),
                               foregroundColor:
                                   isDark ? Colors.white : Colors.black87,
                               padding: const EdgeInsets.symmetric(
@@ -1071,7 +1080,8 @@ class _NotificationRow extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
-                            child: isActing && followRequestActionState == 'decline'
+                            child: isActing &&
+                                    followRequestActionState == 'decline'
                                 ? SizedBox(
                                     width: 12,
                                     height: 12,
@@ -1334,19 +1344,19 @@ const _memberTypeConfig = {
     icon: LucideIcons.megaphone,
     bgColor: Color(0xFFEFF6FF),
     iconColor: Color(0xFF2563EB),
-    label: 'Ad',
+    label: 'Spotlights',
   ),
   'post_posted': _TypeConfig(
     icon: LucideIcons.image,
     bgColor: Color(0xFFECFDF5),
     iconColor: Color(0xFF16A34A),
-    label: 'Post',
+    label: 'Moments',
   ),
   'reel_posted': _TypeConfig(
     icon: LucideIcons.video,
     bgColor: Color(0xFFFDF2F8),
     iconColor: Color(0xFFEC4899),
-    label: 'Reel',
+    label: 'bSparks',
   ),
 };
 
@@ -1355,43 +1365,43 @@ const _vendorTypeConfig = {
     icon: LucideIcons.badgeCheck,
     bgColor: Color(0xFFDCFCE7),
     iconColor: Color(0xFF16A34A),
-    label: 'Ad Approved',
+    label: 'Spotlights Approved',
   ),
   'ad_rejected': _TypeConfig(
     icon: LucideIcons.circleX,
     bgColor: Color(0xFFFEE2E2),
     iconColor: Color(0xFFDC2626),
-    label: 'Ad Rejected',
+    label: 'Spotlights Rejected',
   ),
   'ad_submitted': _TypeConfig(
     icon: LucideIcons.megaphone,
     bgColor: Color(0xFFDBEAFE),
     iconColor: Color(0xFF3B82F6),
-    label: 'Ad Submitted',
+    label: 'Spotlights Submitted',
   ),
   'ad_expired': _TypeConfig(
     icon: LucideIcons.circleX,
     bgColor: Color(0xFFF3F4F6),
     iconColor: Color(0xFF6B7280),
-    label: 'Ad Expired',
+    label: 'Spotlights Expired',
   ),
   'ad_like': _TypeConfig(
     icon: LucideIcons.heart,
     bgColor: Color(0xFFFCE7F3),
     iconColor: Color(0xFFEC4899),
-    label: 'Ad Like',
+    label: 'Spotlights Like',
   ),
   'ad_comment': _TypeConfig(
     icon: LucideIcons.messageCircle,
     bgColor: Color(0xFFFFEDD5),
     iconColor: Color(0xFFF97316),
-    label: 'Ad Comment',
+    label: 'Spotlights Comment',
   ),
   'ad_view': _TypeConfig(
     icon: LucideIcons.target,
     bgColor: Color(0xFFE0F2FE),
     iconColor: Color(0xFF0EA5E9),
-    label: 'Ad View',
+    label: 'Spotlights View',
   ),
   'wallet_credit': _TypeConfig(
     icon: LucideIcons.trendingUp,
@@ -1409,19 +1419,19 @@ const _vendorTypeConfig = {
     icon: LucideIcons.receipt,
     bgColor: Color(0xFFFEF3C7),
     iconColor: Color(0xFFF59E0B),
-    label: 'Ad Spend',
+    label: 'Spotlights Spend',
   ),
   'post_posted': _TypeConfig(
     icon: LucideIcons.image,
     bgColor: Color(0xFFECFDF5),
     iconColor: Color(0xFF16A34A),
-    label: 'Post',
+    label: 'Moments',
   ),
   'reel_posted': _TypeConfig(
     icon: LucideIcons.video,
     bgColor: Color(0xFFFDF2F8),
     iconColor: Color(0xFFEC4899),
-    label: 'Reel',
+    label: 'bSparks',
   ),
   'refund': _TypeConfig(
     icon: LucideIcons.wallet,
@@ -1433,7 +1443,7 @@ const _vendorTypeConfig = {
     icon: LucideIcons.zap,
     bgColor: Color(0xFFEDE9FE),
     iconColor: Color(0xFF8B5CF6),
-    label: 'Campaign',
+    label: 'Campaigns',
   ),
   'follow': _TypeConfig(
     icon: LucideIcons.userPlus,

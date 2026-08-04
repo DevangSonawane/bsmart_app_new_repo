@@ -513,7 +513,7 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
 
         if (created.isNotEmpty) {
           UploadProgressOverlay.update(
-            message: 'Reel shared successfully!',
+            message: 'bSpark shared successfully!',
             progress: 1.0,
           );
         } else {
@@ -701,7 +701,7 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('New Reel'),
+        title: const Text('New bSpark'),
         actions: [
           TextButton(
             onPressed: _isSubmitting ? null : _submit,

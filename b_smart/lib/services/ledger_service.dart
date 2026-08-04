@@ -21,7 +21,7 @@ class LedgerService {
         amount: 50,
         timestamp: now.subtract(const Duration(hours: 2)),
         status: LedgerTransactionStatus.completed,
-        description: 'Watched Ad: Special Offer',
+        description: 'Watched Spotlight: Special Offer',
         relatedId: 'ad-1',
       ),
       LedgerTransaction(
@@ -41,7 +41,7 @@ class LedgerService {
         amount: 50,
         timestamp: now.subtract(const Duration(days: 1, hours: 5)),
         status: LedgerTransactionStatus.completed,
-        description: 'Watched Ad: Product Launch',
+        description: 'Watched Spotlight: Product Launch',
         relatedId: 'ad-2',
       ),
       LedgerTransaction(

@@ -2651,7 +2651,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                 return ListTile(
                   leading: const Icon(Icons.delete_outline, color: Colors.red),
                   title: Text(
-                    post.isTweet ? 'Delete Tweet' : 'Delete Post',
+                    post.isTweet ? 'Delete Buzz' : 'Delete Moment',
                     style: const TextStyle(color: Colors.red),
                   ),
                   onTap: () async {
@@ -2713,8 +2713,8 @@ class _HomeDashboardState extends State<HomeDashboard>
                                             const SizedBox(height: 4),
                                             Text(
                                               post.isTweet
-                                                  ? 'Delete Tweet?'
-                                                  : 'Delete Post?',
+                                                  ? 'Delete Buzz?'
+                                                  : 'Delete Moment?',
                                               textAlign: TextAlign.center,
                                               style: const TextStyle(
                                                 fontSize: 18,
@@ -3149,7 +3149,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                     child: const Icon(LucideIcons.video,
                         color: Colors.white, size: 22),
                   ),
-                  title: const Text('Upload Reel'),
+                  title: const Text('Upload bSpark'),
                   subtitle: Text('Short video',
                       style: TextStyle(
                           fontSize: 12,

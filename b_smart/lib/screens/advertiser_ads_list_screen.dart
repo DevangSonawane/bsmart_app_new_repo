@@ -11,7 +11,8 @@ class AdvertiserAdsListScreen extends StatefulWidget {
   const AdvertiserAdsListScreen({super.key});
 
   @override
-  State<AdvertiserAdsListScreen> createState() => _AdvertiserAdsListScreenState();
+  State<AdvertiserAdsListScreen> createState() =>
+      _AdvertiserAdsListScreenState();
 }
 
 class _AdvertiserAdsListScreenState extends State<AdvertiserAdsListScreen> {
@@ -109,7 +110,7 @@ class _AdvertiserAdsListScreenState extends State<AdvertiserAdsListScreen> {
       await _adsService.deleteAd(ad.id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ad deleted successfully.')),
+        const SnackBar(content: Text('Spotlight deleted successfully.')),
       );
       await _load();
     } catch (e) {
@@ -136,14 +137,16 @@ class _AdvertiserAdsListScreenState extends State<AdvertiserAdsListScreen> {
                       height: 44,
                       child: ListView(
                         scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
                         children: _categories
                             .map((c) => Padding(
                                   padding: const EdgeInsets.only(right: 8),
                                   child: ChoiceChip(
                                     label: Text(c.name),
                                     selected: _selectedCategory == c.id,
-                                    onSelected: (_) => _onCategorySelected(c.id),
+                                    onSelected: (_) =>
+                                        _onCategorySelected(c.id),
                                   ),
                                 ))
                             .toList(),
@@ -157,7 +160,8 @@ class _AdvertiserAdsListScreenState extends State<AdvertiserAdsListScreen> {
                               itemCount: _ads.length,
                               itemBuilder: (context, index) {
                                 final ad = _ads[index];
-                                final analytics = _advertiserService.getAdAnalytics(ad.id);
+                                final analytics =
+                                    _advertiserService.getAdAnalytics(ad.id);
                                 return Card(
                                   margin: const EdgeInsets.only(bottom: 12),
                                   child: ListTile(
@@ -169,20 +173,26 @@ class _AdvertiserAdsListScreenState extends State<AdvertiserAdsListScreen> {
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                       clipBehavior: Clip.antiAlias,
-                                      child: ad.imageUrl != null && ad.imageUrl!.isNotEmpty
-                                          ? Image.network(ad.imageUrl!, fit: BoxFit.cover)
+                                      child: ad.imageUrl != null &&
+                                              ad.imageUrl!.isNotEmpty
+                                          ? Image.network(ad.imageUrl!,
+                                              fit: BoxFit.cover)
                                           : const Icon(Icons.video_library),
                                     ),
                                     title: Text(ad.title),
                                     subtitle: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        Text('Category: ${ad.category ?? 'Uncategorized'}'),
-                                        Text('Likes: ${ad.likesCount} | Comments: ${ad.commentsCount}'),
+                                        Text(
+                                            'Category: ${ad.category ?? 'Uncategorized'}'),
+                                        Text(
+                                            'Likes: ${ad.likesCount} | Comments: ${ad.commentsCount}'),
                                         if (analytics != null)
                                           Text(
                                             'Impressions: ${analytics.totalImpressions} | Views: ${analytics.totalViews}',
-                                            style: const TextStyle(fontSize: 12),
+                                            style:
+                                                const TextStyle(fontSize: 12),
                                           ),
                                       ],
                                     ),
@@ -191,7 +201,9 @@ class _AdvertiserAdsListScreenState extends State<AdvertiserAdsListScreen> {
                                         if (value == 'analytics') {
                                           Navigator.of(context).push(
                                             MaterialPageRoute(
-                                              builder: (context) => AdvertiserAnalyticsScreen(adId: ad.id),
+                                              builder: (context) =>
+                                                  AdvertiserAnalyticsScreen(
+                                                      adId: ad.id),
                                             ),
                                           );
                                           return;

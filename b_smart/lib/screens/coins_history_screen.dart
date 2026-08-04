@@ -29,7 +29,7 @@ class _CoinsHistoryScreenState extends State<CoinsHistoryScreen> {
             status: _selectedStatus,
           )
         : await _walletService.getTransactions();
-        
+
     if (mounted) {
       setState(() {
         _transactions = transactions;
@@ -70,7 +70,7 @@ class _CoinsHistoryScreenState extends State<CoinsHistoryScreen> {
   String _getTransactionTypeLabel(LedgerTransactionType type) {
     switch (type) {
       case LedgerTransactionType.adReward:
-        return 'Ad Reward';
+        return 'Spotlight Reward';
       case LedgerTransactionType.giftReceived:
         return 'Gift Received';
       case LedgerTransactionType.giftSent:
@@ -134,7 +134,7 @@ class _CoinsHistoryScreenState extends State<CoinsHistoryScreen> {
                       },
                     ),
                     _buildFilterChip(
-                      'Ad bCoins',
+                      'Spotlight bCoins',
                       _selectedType == LedgerTransactionType.adReward,
                       () {
                         setState(() {
@@ -152,10 +152,10 @@ class _CoinsHistoryScreenState extends State<CoinsHistoryScreen> {
                           // Ideally this should filter for both, but for now we reset or pick one
                           // If we want to support multiple types, we need to change _selectedType to a list
                           // For now, let's just show received gifts as a default or keep the original behavior (null)
-                          // The original code set it to null, which means "All". 
+                          // The original code set it to null, which means "All".
                           // Let's set it to giftReceived for now so the chip becomes active.
                           // Or better, let's just fix the compilation error.
-                          _selectedType = LedgerTransactionType.giftReceived; 
+                          _selectedType = LedgerTransactionType.giftReceived;
                           _loadTransactions();
                         });
                       },
@@ -182,7 +182,8 @@ class _CoinsHistoryScreenState extends State<CoinsHistoryScreen> {
                       itemBuilder: (context, index) {
                         final transaction = _transactions[index];
                         final isPositive = transaction.amount > 0;
-                        final iconColor = _getTransactionColor(transaction.type);
+                        final iconColor =
+                            _getTransactionColor(transaction.type);
 
                         return Card(
                           margin: const EdgeInsets.only(bottom: 12),

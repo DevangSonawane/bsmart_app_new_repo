@@ -1013,7 +1013,7 @@ class _GroupChatConversationScreenState
               for (final entry in seenBy)
                 entry is Map
                     ? (entry['_id'] ?? entry['id'] ?? entry['user_id'])
-                        ?.toString() ??
+                            ?.toString() ??
                         ''
                     : entry?.toString() ?? '',
             }..remove('');
@@ -1801,8 +1801,7 @@ class _GroupChatConversationScreenState
                             scrollPhysics: const ClampingScrollPhysics(),
                             showUserAvatars: false,
                             showUserNames: true,
-                            isAttachmentUploading:
-                                _sending || _uploadingMedia,
+                            isAttachmentUploading: _sending || _uploadingMedia,
                             isLastPage: !_hasMore,
                             customBottomWidget: const SizedBox.shrink(),
                             messageWidthRatio: 0.62,
@@ -2008,9 +2007,8 @@ class _GroupChatConversationScreenState
                                 child: ImageMessageContent(
                                   urls: [UrlHelper.normalizeUrl(image.uri)],
                                   caption: '',
-                                  isOutgoing:
-                                      image.author.id ==
-                                          (_currentUserId ?? '').trim(),
+                                  isOutgoing: image.author.id ==
+                                      (_currentUserId ?? '').trim(),
                                 ),
                               );
                             },
@@ -2100,8 +2098,8 @@ class _GroupChatConversationScreenState
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
-                                      color: cs.onSurface
-                                          .withValues(alpha: 0.55),
+                                      color:
+                                          cs.onSurface.withValues(alpha: 0.55),
                                     ),
                                   ),
                                 ),
@@ -2119,13 +2117,11 @@ class _GroupChatConversationScreenState
                                   _reactToMessage(raw, '❤️');
                                 },
                                 child: VoiceMessageContent(
-                                  audioUrl:
-                                      UrlHelper.normalizeUrl(audio.uri),
+                                  audioUrl: UrlHelper.normalizeUrl(audio.uri),
                                   totalDurationSeconds:
                                       audio.duration.inSeconds,
-                                  isOutgoing:
-                                      audio.author.id ==
-                                          (_currentUserId ?? '').trim(),
+                                  isOutgoing: audio.author.id ==
+                                      (_currentUserId ?? '').trim(),
                                 ),
                               );
                             },
@@ -3498,10 +3494,10 @@ class _GroupChatConversationScreenState
     final isDark = theme.brightness == Brightness.dark;
 
     final contentLabel = switch (type) {
-      'reel' => 'Reel',
-      'post' => 'Post',
-      'tweet' => 'Tweet',
-      'ad' => 'Ad',
+      'reel' => 'bSpark',
+      'post' => 'Moment',
+      'tweet' => 'Buzz',
+      'ad' => 'Spotlight',
       _ => type,
     };
 
@@ -3823,7 +3819,7 @@ class _GroupChatConversationScreenState
                                   children: [
                                     Flexible(
                                       child: Text(
-                                        creator.isNotEmpty ? creator : 'Reel',
+                                        creator.isNotEmpty ? creator : 'bSpark',
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(

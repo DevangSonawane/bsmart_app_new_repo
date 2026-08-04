@@ -14,7 +14,8 @@ class NotificationService {
 
   final ApiClient _client = ApiClient();
   List<NotificationItem> _notifications = [];
-  final StreamController<List<NotificationItem>> _controller = StreamController.broadcast();
+  final StreamController<List<NotificationItem>> _controller =
+      StreamController.broadcast();
   StreamSubscription<dynamic>? _subscription;
   String? _activeUserId;
 
@@ -45,7 +46,8 @@ class NotificationService {
       typeFilter: typeFilter,
       isRead: isRead,
     );
-    return NotificationPage(items: _sortedCopy(filtered), total: filtered.length);
+    return NotificationPage(
+        items: _sortedCopy(filtered), total: filtered.length);
   }
 
   String _normalizeType(String? value) {
@@ -68,7 +70,14 @@ class NotificationService {
       'comment': const ['comment', 'ad_comment'],
       'follow': const ['follow', 'follow_request', 'follow_accepted'],
       'mention': const ['mention', 'tag', 'tagged'],
-      'ad': const ['ad', 'ad_approved', 'ad_rejected', 'ad_submitted', 'ad_expired', 'ad_view'],
+      'ad': const [
+        'ad',
+        'ad_approved',
+        'ad_rejected',
+        'ad_submitted',
+        'ad_expired',
+        'ad_view'
+      ],
     };
     final aliases = filterAliases[normalizedFilter];
     if (aliases != null && aliases.contains(type)) return true;
@@ -157,7 +166,8 @@ class NotificationService {
   }) async {
     await _bindToCurrentUser();
     if (!forceRefresh && _notifications.isNotEmpty) {
-      return _pageFromCachedNotifications(typeFilter: typeFilter, isRead: isRead);
+      return _pageFromCachedNotifications(
+          typeFilter: typeFilter, isRead: isRead);
     }
     try {
       final normalizedFilter = _normalizeType(typeFilter);
@@ -179,7 +189,8 @@ class NotificationService {
       if (isRead != null) {
         query['isRead'] = isRead ? 'true' : 'false';
       }
-      final res = await _client.get('$_basePath/notifications', queryParams: query);
+      final res =
+          await _client.get('$_basePath/notifications', queryParams: query);
       final parsed = _parseNotifications(res);
       final filtered = _filterNotifications(
         parsed,
@@ -189,11 +200,14 @@ class NotificationService {
       if (updateCache) {
         _replaceCache(filtered);
       }
-      final resultItems = updateCache ? _sortedCopy(_notifications) : _sortedCopy(filtered);
+      final resultItems =
+          updateCache ? _sortedCopy(_notifications) : _sortedCopy(filtered);
       int total = filtered.length;
       if (res is Map<String, dynamic>) {
-        final v = res['total'] ?? (res['data'] is Map ? (res['data'] as Map)['total'] : null);
-        final hasFilter = normalizedFilter.isNotEmpty && normalizedFilter != 'all';
+        final v = res['total'] ??
+            (res['data'] is Map ? (res['data'] as Map)['total'] : null);
+        final hasFilter =
+            normalizedFilter.isNotEmpty && normalizedFilter != 'all';
         if (!hasFilter) {
           if (v is int) total = v;
           if (v is num) total = v.toInt();
@@ -204,7 +218,8 @@ class NotificationService {
     } catch (_) {
       // keep cached notifications if network/API fails
     }
-    return NotificationPage(items: _sortedCopy(_notifications), total: _notifications.length);
+    return NotificationPage(
+        items: _sortedCopy(_notifications), total: _notifications.length);
   }
 
   Future<int> getUnreadCount() async {
@@ -228,7 +243,9 @@ class NotificationService {
           final value = res['unread_count'] ??
               res['unreadCount'] ??
               res['count'] ??
-              (res['data'] is Map ? (res['data'] as Map)['unread_count'] : null);
+              (res['data'] is Map
+                  ? (res['data'] as Map)['unread_count']
+                  : null);
           if (value is int) return value;
           if (value is num) return value.toInt();
           if (value is String) return int.tryParse(value) ?? 0;
@@ -281,9 +298,8 @@ class NotificationService {
       } catch (_) {}
     } catch (_) {}
 
-    _notifications = _notifications
-        .map((n) => n.copyWith(isRead: true))
-        .toList();
+    _notifications =
+        _notifications.map((n) => n.copyWith(isRead: true)).toList();
     _controller.add(_sortedCopy(_notifications));
   }
 
@@ -320,8 +336,10 @@ class NotificationService {
   }
 
   // Add new notification (for new ads, etc.)
-  Future<void> addNotification(NotificationItem notification, {String? userId}) async {
-    final scopeUserId = _normalizeUserId(userId) ?? await _resolveCurrentUserId();
+  Future<void> addNotification(NotificationItem notification,
+      {String? userId}) async {
+    final scopeUserId =
+        _normalizeUserId(userId) ?? await _resolveCurrentUserId();
     if (scopeUserId == null) {
       return;
     }
@@ -333,15 +351,15 @@ class NotificationService {
     _controller.add(_sortedCopy(_notifications));
   }
 
-  // Simulate receiving a new ad notification
+  // Simulate receiving a new Spotlight notification
   void addNewAdNotification(String adId, String adTitle) {
     final notification = NotificationItem(
       id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
       typeKey: 'ad',
-      title: 'New Ad Available',
+      title: 'New Spotlight Available',
       message: adTitle.isNotEmpty
           ? '$adTitle - Check it out now!'
-          : 'A new ad has been added. Check it out now.',
+          : 'A new spotlight has been added. Check it out now.',
       timestamp: DateTime.now(),
       isRead: false,
       relatedId: adId,

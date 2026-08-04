@@ -1327,7 +1327,7 @@ class _AdsPageScreenState extends State<AdsPageScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    (ad.caption ?? ad.description ?? 'Ad').trim(),
+                    (ad.caption ?? ad.description ?? 'Spotlight').trim(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -2445,7 +2445,7 @@ class _AdVideoItemState extends State<AdVideoItem>
               Navigator.of(context).pushNamed('/ads/${widget.ad.id}/details');
             },
             icon: Icons.desktop_windows_outlined,
-            label: 'Visit Ad Details',
+            label: 'Visit Spotlight Details',
           ),
         ),
         const SizedBox(width: 10),
@@ -5088,7 +5088,7 @@ class _AdCommentsSheetState extends State<AdCommentsSheet> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Text(
-                              'Post',
+                              'Moment',
                               style: TextStyle(
                                   fontWeight: FontWeight.w800,
                                   color: Color(0xFF3B82F6)),

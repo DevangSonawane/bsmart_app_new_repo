@@ -1622,9 +1622,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
           backgroundColor: appBarBg,
           surfaceTintColor: appBarBg,
-          title: Text('Post', style: TextStyle(color: primaryText)),
+          title: Text('Moment', style: TextStyle(color: primaryText)),
         ),
-        body: const Center(child: Text('Post not found')),
+        body: const Center(child: Text('Moment not found')),
       );
     }
 
@@ -1677,7 +1677,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         backgroundColor: appBarBg,
         surfaceTintColor: appBarBg,
         elevation: 0,
-        title: Text('Post',
+        title: Text('Moment',
             style: TextStyle(
                 fontSize: 18, fontWeight: FontWeight.w600, color: primaryText)),
         centerTitle: true,
@@ -1804,7 +1804,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                           leading: const Icon(
                                               Icons.delete_outline,
                                               color: Colors.red),
-                                          title: const Text('Delete Post',
+                                          title: const Text('Delete Moment',
                                               style:
                                                   TextStyle(color: Colors.red)),
                                           onTap: () async {
@@ -1899,7 +1899,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                                         height:
                                                                             4),
                                                                     const Text(
-                                                                      'Delete Post?',
+                                                                      'Delete Moment?',
                                                                       textAlign:
                                                                           TextAlign
                                                                               .center,
@@ -1962,7 +1962,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                                                 if (ok) {
                                                                                   if (mounted) {
                                                                                     Navigator.pop(context);
-                                                                                    messenger.showSnackBar(const SnackBar(content: Text('Post deleted')));
+                                                                                    messenger.showSnackBar(const SnackBar(content: Text('Moment deleted')));
                                                                                     try {
                                                                                       StoreProvider.of<AppState>(context).dispatch(RemovePost(widget.postId));
                                                                                     } catch (_) {}
@@ -2585,7 +2585,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     return TextButton(
                       onPressed:
                           _postingComment || !hasText ? null : _postComment,
-                      child: Text('Post',
+                      child: Text('Moment',
                           style: TextStyle(
                               color: hasText
                                   ? theme.colorScheme.primary

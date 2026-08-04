@@ -158,7 +158,8 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
       }
 
       watchedSeconds++;
-      final percentage = (watchedSeconds / (_currentAd?.watchDurationSeconds ?? 1)) * 100;
+      final percentage =
+          (watchedSeconds / (_currentAd?.watchDurationSeconds ?? 1)) * 100;
 
       setState(() {
         if (_watchSession != null) {
@@ -185,7 +186,8 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
     if (_isPaused) {
       // Resume
       if (_pauseStartTime != null) {
-        final pauseDuration = DateTime.now().difference(_pauseStartTime!).inSeconds;
+        final pauseDuration =
+            DateTime.now().difference(_pauseStartTime!).inSeconds;
         _totalPauseDuration += pauseDuration;
         _pauseStartTime = null;
       }
@@ -231,7 +233,7 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Ad watch cancelled: $reason'),
+        content: Text('Spotlight watch cancelled: $reason'),
         backgroundColor: Colors.orange,
       ),
     );
@@ -266,7 +268,8 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
     }
 
     // Re-validate eligibility
-    final eligibility = _eligibilityService.checkEligibility(_userId, _currentAd!);
+    final eligibility =
+        _eligibilityService.checkEligibility(_userId, _currentAd!);
     if (!eligibility.isEligible) {
       _logRewardDebug(
         'Completion blocked by eligibility adId=${_currentAd!.id} userId=$_userId reason=${eligibility.reason}',
@@ -278,7 +281,7 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
     // Credit rewards via ledger
     final success = await _walletService.addCoinsViaLedger(
       amount: _currentAd!.coinReward,
-      description: 'Watched Ad: ${_currentAd!.title}',
+      description: 'Watched Spotlight: ${_currentAd!.title}',
       adId: _currentAd!.id,
       metadata: {
         'watchPercentage': watchPercentage,
@@ -304,7 +307,8 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
       }
 
       // Record in eligibility service
-      _eligibilityService.recordAdWatch(_userId, _currentAd!.id, _currentAd!.coinReward);
+      _eligibilityService.recordAdWatch(
+          _userId, _currentAd!.id, _currentAd!.coinReward);
       _logRewardDebug(
         'Eligibility service updated adId=${_currentAd!.id} userId=$_userId coins=${_currentAd!.coinReward}',
       );
@@ -348,7 +352,8 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
   void _handleLike() {
     // Log engagement (doesn't affect reward)
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Ad liked'), duration: Duration(seconds: 1)),
+      const SnackBar(
+          content: Text('Spotlight liked'), duration: Duration(seconds: 1)),
     );
   }
 
@@ -357,7 +362,7 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Comment on Ad'),
+        title: const Text('Comment on Spotlight'),
         content: const TextField(
           decoration: InputDecoration(hintText: 'Enter your comment'),
           maxLines: 3,
@@ -445,8 +450,10 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _buildCapacityItem('bCoins', capacity.remainingCoins, capacity.earnedToday),
-                  _buildCapacityItem('Spotlights', capacity.remainingAds, capacity.adsWatchedToday),
+                  _buildCapacityItem(
+                      'bCoins', capacity.remainingCoins, capacity.earnedToday),
+                  _buildCapacityItem('Spotlights', capacity.remainingAds,
+                      capacity.adsWatchedToday),
                 ],
               ),
             ],
@@ -460,7 +467,8 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
             itemCount: _availableAds.length,
             itemBuilder: (context, index) {
               final ad = _availableAds[index];
-              final eligibility = _eligibilityService.checkEligibility(_userId, ad);
+              final eligibility =
+                  _eligibilityService.checkEligibility(_userId, ad);
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 16),
@@ -481,7 +489,8 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
                               color: Colors.blue.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: const Icon(Icons.ads_click, color: Colors.blue),
+                            child:
+                                const Icon(Icons.ads_click, color: Colors.blue),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -517,7 +526,8 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(LucideIcons.coins, size: 16, color: Colors.white),
+                                const Icon(LucideIcons.coins,
+                                    size: 16, color: Colors.white),
                                 const SizedBox(width: 4),
                                 Text(
                                   '+${ad.coinReward}',
@@ -536,11 +546,13 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
                       const SizedBox(height: 12),
                       Row(
                         children: [
-                          Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
+                          Icon(Icons.access_time,
+                              size: 16, color: Colors.grey[600]),
                           const SizedBox(width: 4),
                           Text(
                             '${ad.watchDurationSeconds}s',
-                            style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                            style: TextStyle(
+                                color: Colors.grey[600], fontSize: 12),
                           ),
                           const Spacer(),
                           if (!eligibility.isEligible)
@@ -568,7 +580,9 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
                             ),
                           ),
                           icon: const Icon(Icons.play_arrow),
-                          label: Text(eligibility.isEligible ? 'Watch & Earn ${ad.coinReward} bCoins' : 'Not Available'),
+                          label: Text(eligibility.isEligible
+                              ? 'Watch & Earn ${ad.coinReward} bCoins'
+                              : 'Not Available'),
                         ),
                       ),
                     ],
@@ -621,7 +635,8 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
               alignment: Alignment.center,
               children: [
                 // Placeholder for video
-                const Icon(Icons.play_circle_outline, size: 100, color: Colors.white54),
+                const Icon(Icons.play_circle_outline,
+                    size: 100, color: Colors.white54),
                 // Progress bar
                 Positioned(
                   bottom: 0,
@@ -630,7 +645,8 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
                   child: LinearProgressIndicator(
                     value: progress,
                     backgroundColor: Colors.grey[800],
-                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+                    valueColor:
+                        const AlwaysStoppedAnimation<Color>(Colors.blue),
                     minHeight: 4,
                   ),
                 ),
@@ -639,7 +655,8 @@ class _WatchAdsScreenEnhancedState extends State<WatchAdsScreenEnhanced>
                   top: 16,
                   right: 16,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: Colors.black54,
                       borderRadius: BorderRadius.circular(20),

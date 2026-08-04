@@ -46,9 +46,10 @@ class _CreateCameraScreenState extends State<CreateCameraScreen> {
     try {
       final XFile? file = await _picker.pickImage(
         source: ImageSource.camera,
-        preferredCameraDevice: _isFrontCamera ? CameraDevice.front : CameraDevice.rear,
+        preferredCameraDevice:
+            _isFrontCamera ? CameraDevice.front : CameraDevice.rear,
       );
-      
+
       if (file != null) {
         final media = MediaItem(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -68,20 +69,22 @@ class _CreateCameraScreenState extends State<CreateCameraScreen> {
       }
     }
   }
-  
+
   Future<void> _captureVideo() async {
-     try {
+    try {
       final XFile? file = await _picker.pickVideo(
         source: ImageSource.camera,
-        preferredCameraDevice: _isFrontCamera ? CameraDevice.front : CameraDevice.rear,
-        maxDuration: const Duration(seconds: CreateService.maxVideoDurationSeconds),
+        preferredCameraDevice:
+            _isFrontCamera ? CameraDevice.front : CameraDevice.rear,
+        maxDuration:
+            const Duration(seconds: CreateService.maxVideoDurationSeconds),
       );
-      
+
       if (file != null) {
-        // Get video duration if possible (ImagePicker doesn't provide it directly, 
-        // but CreateService.validateMedia checks it. 
+        // Get video duration if possible (ImagePicker doesn't provide it directly,
+        // but CreateService.validateMedia checks it.
         // For now we assume it's valid or rely on server/later checks)
-        
+
         final media = MediaItem(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
           type: MediaType.video,
@@ -188,7 +191,8 @@ class _CreateCameraScreenState extends State<CreateCameraScreen> {
                 ),
                 // AI Features
                 IconButton(
-                  icon: const Icon(Icons.auto_awesome, color: Colors.white, size: 28),
+                  icon: const Icon(Icons.auto_awesome,
+                      color: Colors.white, size: 28),
                   onPressed: () {
                     setState(() {
                       _showAIPanel = !_showAIPanel;
@@ -199,7 +203,8 @@ class _CreateCameraScreenState extends State<CreateCameraScreen> {
                 ),
                 // Music
                 IconButton(
-                  icon: const Icon(Icons.music_note, color: Colors.white, size: 28),
+                  icon: const Icon(Icons.music_note,
+                      color: Colors.white, size: 28),
                   onPressed: () {
                     setState(() {
                       _showMusicPanel = !_showMusicPanel;
@@ -247,24 +252,27 @@ class _CreateCameraScreenState extends State<CreateCameraScreen> {
                           child: const Icon(Icons.image, color: Colors.white),
                         ),
                         onPressed: () async {
-                           try {
-                             final XFile? file = await _picker.pickImage(source: ImageSource.gallery);
-                             if (file != null) {
-                               final media = MediaItem(
-                                 id: DateTime.now().millisecondsSinceEpoch.toString(),
-                                 type: MediaType.image,
-                                 filePath: file.path,
-                                 createdAt: DateTime.now(),
-                               );
-                               if (!mounted) return;
-                               _navigateToEdit(media);
-                             }
-                           } catch (e) {
-                             if (!mounted) return;
-                             ScaffoldMessenger.of(context).showSnackBar(
-                               SnackBar(content: Text('Error picking file: $e')),
-                             );
-                           }
+                          try {
+                            final XFile? file = await _picker.pickImage(
+                                source: ImageSource.gallery);
+                            if (file != null) {
+                              final media = MediaItem(
+                                id: DateTime.now()
+                                    .millisecondsSinceEpoch
+                                    .toString(),
+                                type: MediaType.image,
+                                filePath: file.path,
+                                createdAt: DateTime.now(),
+                              );
+                              if (!mounted) return;
+                              _navigateToEdit(media);
+                            }
+                          } catch (e) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Error picking file: $e')),
+                            );
+                          }
                         },
                       ),
 
@@ -295,7 +303,9 @@ class _CreateCameraScreenState extends State<CreateCameraScreen> {
                       // Filters Toggle
                       IconButton(
                         icon: Icon(
-                          _showFilters ? Icons.filter_alt : Icons.filter_alt_outlined,
+                          _showFilters
+                              ? Icons.filter_alt
+                              : Icons.filter_alt_outlined,
                           color: Colors.white,
                           size: 32,
                         ),
@@ -406,13 +416,14 @@ class _CreateCameraScreenState extends State<CreateCameraScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _buildAIFeatureButton('Background Removal', Icons.auto_fix_high),
+                _buildAIFeatureButton(
+                    'Background Removal', Icons.auto_fix_high),
                 _buildAIFeatureButton('Face Enhancement', Icons.face),
                 _buildAIFeatureButton('Auto Crop', Icons.crop),
                 _buildAIFeatureButton('Object Detection', Icons.search),
                 _buildAIFeatureButton('Caption Suggestion', Icons.text_fields),
                 _buildAIFeatureButton('Video Stabilize', Icons.video_stable),
-                _buildAIFeatureButton('Highlight Reel', Icons.movie),
+                _buildAIFeatureButton('Highlight bSpark', Icons.movie),
               ],
             ),
           ],
@@ -466,15 +477,20 @@ class _CreateCameraScreenState extends State<CreateCameraScreen> {
             const SizedBox(height: 16),
             Expanded(
               child: ListView.builder(
-                itemCount: musicTracks.length + 2, // +2 for "Extract Audio" and "Record Audio"
+                itemCount: musicTracks.length +
+                    2, // +2 for "Extract Audio" and "Record Audio"
                 itemBuilder: (context, index) {
                   if (index == 0) {
                     return ListTile(
-                      leading: const Icon(Icons.audiotrack, color: Colors.white),
-                      title: const Text('Extract Audio from Video', style: TextStyle(color: Colors.white)),
+                      leading:
+                          const Icon(Icons.audiotrack, color: Colors.white),
+                      title: const Text('Extract Audio from Video',
+                          style: TextStyle(color: Colors.white)),
                       onTap: () {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Extract audio feature coming soon')),
+                          const SnackBar(
+                              content:
+                                  Text('Extract audio feature coming soon')),
                         );
                       },
                     );
@@ -482,10 +498,13 @@ class _CreateCameraScreenState extends State<CreateCameraScreen> {
                   if (index == 1) {
                     return ListTile(
                       leading: const Icon(Icons.mic, color: Colors.white),
-                      title: const Text('Record Your Own Audio', style: TextStyle(color: Colors.white)),
+                      title: const Text('Record Your Own Audio',
+                          style: TextStyle(color: Colors.white)),
                       onTap: () {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Record audio feature coming soon')),
+                          const SnackBar(
+                              content:
+                                  Text('Record audio feature coming soon')),
                         );
                       },
                     );
@@ -501,7 +520,8 @@ class _CreateCameraScreenState extends State<CreateCameraScreen> {
                       ),
                       child: const Icon(Icons.music_note, color: Colors.white),
                     ),
-                    title: Text(track.title, style: const TextStyle(color: Colors.white)),
+                    title: Text(track.title,
+                        style: const TextStyle(color: Colors.white)),
                     subtitle: Text(
                       '${track.artist} • ${track.duration.inSeconds}s',
                       style: TextStyle(color: Colors.grey[400]),

@@ -947,7 +947,7 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
             if (canBoost)
               ListTile(
                 leading: const Icon(Icons.trending_up),
-                title: const Text('Boost Post'),
+                title: const Text('Boost Moment'),
                 onTap: () {
                   Navigator.pop(context);
                   Navigator.of(context).push(

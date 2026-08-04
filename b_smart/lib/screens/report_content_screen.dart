@@ -28,15 +28,15 @@ class _ReportContentScreenState extends State<ReportContentScreen> {
   String _typeLabel(String raw) {
     switch (raw.trim().toLowerCase()) {
       case 'post':
-        return 'Post';
+        return 'Moment';
       case 'reel':
-        return 'Reel';
+        return 'bSpark';
       case 'story':
-        return 'Story';
+        return 'Glimpse';
       case 'ad':
-        return 'Ad';
+        return 'Spotlight';
       case 'tweet':
-        return 'Tweet';
+        return 'Buzz';
       case 'comment':
         return 'Comment';
       default:

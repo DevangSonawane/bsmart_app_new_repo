@@ -43,7 +43,8 @@ class AdvertiserDashboardScreen extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.business, size: 32, color: Colors.blue),
+                        const Icon(Icons.business,
+                            size: 32, color: Colors.blue),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
@@ -92,12 +93,17 @@ class AdvertiserDashboardScreen extends StatelessWidget {
               mainAxisSpacing: 12,
               childAspectRatio: 1.5,
               children: [
-                _buildMetricCard('Total Spotlights', '${metrics.totalAdsCreated}'),
+                _buildMetricCard(
+                    'Total Spotlights', '${metrics.totalAdsCreated}'),
                 _buildMetricCard('Active Spotlights', '${metrics.activeAds}'),
-                _buildMetricCard('Spotlights Remaining', '${metrics.adsRemainingInPlan}'),
-                _buildMetricCard('Total Impressions', _formatNumber(metrics.totalImpressions)),
-                _buildMetricCard('Rewarded Users', _formatNumber(metrics.totalRewardedUsers)),
-                _buildMetricCard('Watch Hours', metrics.totalWatchHours.toStringAsFixed(1)),
+                _buildMetricCard(
+                    'Spotlights Remaining', '${metrics.adsRemainingInPlan}'),
+                _buildMetricCard('Total Impressions',
+                    _formatNumber(metrics.totalImpressions)),
+                _buildMetricCard('Rewarded Users',
+                    _formatNumber(metrics.totalRewardedUsers)),
+                _buildMetricCard(
+                    'Watch Hours', metrics.totalWatchHours.toStringAsFixed(1)),
               ],
             ),
             const SizedBox(height: 24),
@@ -117,9 +123,12 @@ class AdvertiserDashboardScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _buildDetailRow('Total bCoins Purchased', _formatNumber(metrics.totalCoinsPurchased)),
-                    _buildDetailRow('Available bCoins', _formatNumber(metrics.coinsAvailable)),
-                    _buildDetailRow('bCoins Consumed', _formatNumber(metrics.coinsConsumed)),
+                    _buildDetailRow('Total bCoins Purchased',
+                        _formatNumber(metrics.totalCoinsPurchased)),
+                    _buildDetailRow('Available bCoins',
+                        _formatNumber(metrics.coinsAvailable)),
+                    _buildDetailRow('bCoins Consumed',
+                        _formatNumber(metrics.coinsConsumed)),
                     const SizedBox(height: 8),
                     LinearProgressIndicator(
                       value: metrics.totalCoinsPurchased > 0
@@ -147,7 +156,7 @@ class AdvertiserDashboardScreen extends StatelessWidget {
                 color: Colors.green[50],
                 child: ListTile(
                   leading: const Icon(Icons.trending_up, color: Colors.green),
-                  title: const Text('Best Performing Ad'),
+                  title: const Text('Best Performing Spotlight'),
                   subtitle: Text(metrics.bestPerformingAd!.companyName),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
@@ -165,8 +174,9 @@ class AdvertiserDashboardScreen extends StatelessWidget {
               Card(
                 color: Colors.orange[50],
                 child: ListTile(
-                  leading: const Icon(Icons.trending_down, color: Colors.orange),
-                  title: const Text('Lowest Performing Ad'),
+                  leading:
+                      const Icon(Icons.trending_down, color: Colors.orange),
+                  title: const Text('Lowest Performing Spotlight'),
                   subtitle: Text(metrics.lowestPerformingAd!.companyName),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
@@ -198,12 +208,13 @@ class AdvertiserDashboardScreen extends StatelessWidget {
                     onPressed: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (context) => const AdvertiserCreateAdScreen(),
+                          builder: (context) =>
+                              const AdvertiserCreateAdScreen(),
                         ),
                       );
                     },
                     icon: const Icon(Icons.add),
-                    label: const Text('Create Ad'),
+                    label: const Text('Create Spotlight'),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
@@ -252,7 +263,9 @@ class AdvertiserDashboardScreen extends StatelessWidget {
                   child: OutlinedButton.icon(
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Contact: ${account.salesOfficerContact ?? 'sales@bsmart.com'}')),
+                        SnackBar(
+                            content: Text(
+                                'Contact: ${account.salesOfficerContact ?? 'sales@bsmart.com'}')),
                       );
                     },
                     icon: const Icon(Icons.support_agent),

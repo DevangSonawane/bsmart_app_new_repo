@@ -666,7 +666,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
               for (final entry in seenBy)
                 entry is Map
                     ? (entry['_id'] ?? entry['id'] ?? entry['user_id'])
-                        ?.toString() ??
+                            ?.toString() ??
                         ''
                     : entry?.toString() ?? '',
             }..remove('');
@@ -1681,8 +1681,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                             scrollPhysics: const ClampingScrollPhysics(),
                             showUserAvatars: false,
                             showUserNames: false,
-                            isAttachmentUploading:
-                                _sending || _uploadingMedia,
+                            isAttachmentUploading: _sending || _uploadingMedia,
                             isLastPage: !_hasMore,
                             customBottomWidget: const SizedBox.shrink(),
                             messageWidthRatio: 0.62,
@@ -1888,9 +1887,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                                 child: ImageMessageContent(
                                   urls: [UrlHelper.normalizeUrl(image.uri)],
                                   caption: '',
-                                  isOutgoing:
-                                      image.author.id ==
-                                          (_currentUserId ?? '').trim(),
+                                  isOutgoing: image.author.id ==
+                                      (_currentUserId ?? '').trim(),
                                 ),
                               );
                             },
@@ -1914,8 +1912,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                               if (message.id == _headerSystemMessageId()) {
                                 return Container(
                                   width: double.infinity,
-                                  color: Theme.of(context)
-                                      .scaffoldBackgroundColor,
+                                  color:
+                                      Theme.of(context).scaffoldBackgroundColor,
                                   child: Padding(
                                     padding: const EdgeInsets.fromLTRB(
                                       12,
@@ -1944,8 +1942,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
-                                      color: cs.onSurface
-                                          .withValues(alpha: 0.55),
+                                      color:
+                                          cs.onSurface.withValues(alpha: 0.55),
                                     ),
                                   ),
                                 ),
@@ -1963,13 +1961,11 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                                   _reactToMessage(raw, '❤️');
                                 },
                                 child: VoiceMessageContent(
-                                  audioUrl: UrlHelper.normalizeUrl(
-                                      audio.uri),
+                                  audioUrl: UrlHelper.normalizeUrl(audio.uri),
                                   totalDurationSeconds:
                                       audio.duration.inSeconds,
-                                  isOutgoing:
-                                      audio.author.id ==
-                                          (_currentUserId ?? '').trim(),
+                                  isOutgoing: audio.author.id ==
+                                      (_currentUserId ?? '').trim(),
                                 ),
                               );
                             },
@@ -3481,10 +3477,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     final isDark = theme.brightness == Brightness.dark;
 
     final contentLabel = switch (type) {
-      'reel' => 'Reel',
-      'post' => 'Post',
-      'tweet' => 'Tweet',
-      'ad' => 'Ad',
+      'reel' => 'bSpark',
+      'post' => 'Moment',
+      'tweet' => 'Buzz',
+      'ad' => 'Spotlight',
       _ => type,
     };
 
@@ -3693,7 +3689,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
               Container(
                 width: 54,
                 height: 54,
-              decoration: BoxDecoration(
+                decoration: BoxDecoration(
                   color: cs.onSurface.withValues(alpha: 0.10),
                   shape: BoxShape.circle,
                   border: Border.all(
@@ -3806,7 +3802,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                                   children: [
                                     Flexible(
                                       child: Text(
-                                        creator.isNotEmpty ? creator : 'Reel',
+                                        creator.isNotEmpty ? creator : 'bSpark',
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(

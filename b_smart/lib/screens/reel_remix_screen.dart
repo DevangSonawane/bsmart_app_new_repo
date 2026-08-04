@@ -18,7 +18,7 @@ class ReelRemixScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(useAudioOnly ? 'Use This Audio' : 'Remix Reel'),
+        title: Text(useAudioOnly ? 'Use This Audio' : 'Remix bSpark'),
         backgroundColor: Colors.transparent,
         foregroundColor: InstagramTheme.textBlack,
       ),
@@ -41,7 +41,7 @@ class ReelRemixScreen extends StatelessWidget {
                   const Icon(Icons.video_library, size: 60, color: Colors.grey),
                   const SizedBox(height: 8),
                   Text(
-                    'Original Reel',
+                    'Original bSpark',
                     style: TextStyle(color: Colors.grey[600]),
                   ),
                 ],

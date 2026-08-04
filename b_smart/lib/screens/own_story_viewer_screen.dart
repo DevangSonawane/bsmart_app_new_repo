@@ -946,7 +946,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                         onTap: () {
                           Navigator.of(ctx).pop();
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Story archived')),
+                            const SnackBar(content: Text('Glimpse archived')),
                           );
                         },
                       ),
@@ -978,11 +978,11 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                         },
                       ),
                       _buildMoreAction(
-                        label: 'Story settings',
+                        label: 'Glimpse settings',
                         onTap: () {
                           Navigator.of(ctx).pop();
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Story settings')),
+                            const SnackBar(content: Text('Glimpse settings')),
                           );
                         },
                       ),
@@ -2126,8 +2126,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Story deleted\u2063${DateTime.now().microsecondsSinceEpoch}',
-            semanticsLabel: 'Story deleted',
+            'Glimpse deleted\u2063${DateTime.now().microsecondsSinceEpoch}',
+            semanticsLabel: 'Glimpse deleted',
           ),
         ),
       );

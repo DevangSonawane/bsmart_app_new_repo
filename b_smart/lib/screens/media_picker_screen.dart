@@ -23,12 +23,14 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
         _selectedOrder.remove(index);
       } else {
         if (_selected.length >= 10) {
-          final removed = _selectedOrder.isNotEmpty ? _selectedOrder.removeAt(0) : null;
+          final removed =
+              _selectedOrder.isNotEmpty ? _selectedOrder.removeAt(0) : null;
           if (removed != null) {
             _selected.remove(removed);
           }
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('You can only select up to 10 photos or videos')),
+            const SnackBar(
+                content: Text('You can only select up to 10 photos or videos')),
           );
         }
         _selected.add(index);
@@ -50,7 +52,8 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop<List<ImageProvider>>(<ImageProvider>[]),
+          onPressed: () =>
+              Navigator.of(context).pop<List<ImageProvider>>(<ImageProvider>[]),
         ),
         title: Text(_multiSelect ? 'Select Multiple' : 'Recent'),
         actions: [
@@ -86,7 +89,8 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
               itemBuilder: (context, index) {
                 final img = _items[index];
                 final selected = _selected.contains(index);
-                final badge = selected ? _selectedOrder.indexOf(index) + 1 : null;
+                final badge =
+                    selected ? _selectedOrder.indexOf(index) + 1 : null;
                 return GestureDetector(
                   onTap: () {
                     if (_multiSelect) {
@@ -122,7 +126,8 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
                           child: Center(
                             child: Text(
                               selected ? '$badge' : '',
-                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 12),
                             ),
                           ),
                         ),
@@ -144,7 +149,7 @@ class _MediaPickerScreenState extends State<MediaPickerScreen> {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: _selected.isEmpty ? null : _confirm,
-                    child: const Text('Add to Story'),
+                    child: const Text('Add to Glimpse'),
                   ),
                 ),
               ],

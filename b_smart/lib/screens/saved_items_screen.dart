@@ -165,7 +165,8 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
       item['promoteReelId'],
       item['promote_reel_id'],
       item['promote_reel'] is Map
-          ? (item['promote_reel'] as Map)['_id'] ?? (item['promote_reel'] as Map)['id']
+          ? (item['promote_reel'] as Map)['_id'] ??
+              (item['promote_reel'] as Map)['id']
           : null,
     ];
     for (final candidate in candidates) {
@@ -318,23 +319,29 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
 
     if (source == null) return null;
     final mapped = _promoteService.mapPromote(source);
-    final promoteId = (mapped['id'] ?? mapped['postId'] ?? source['_id'] ?? source['id'] ?? source['promote_reel_id'])
+    final promoteId = (mapped['id'] ??
+            mapped['postId'] ??
+            source['_id'] ??
+            source['id'] ??
+            source['promote_reel_id'])
         ?.toString()
         .trim();
     if (promoteId == null || promoteId.isEmpty) return null;
 
     final videoUrl = (mapped['videoUrl'] ?? '').toString().trim();
     final thumbnailUrl = (mapped['thumbnailUrl'] ?? '').toString().trim();
-    final savedAt = _savedSortTime(item, FeedPost.fromJson({
-      '_id': 'promote-$promoteId',
-      'id': 'promote-$promoteId',
-      'user_id': mapped['userId'] ?? '',
-      'username': mapped['username'] ?? 'User',
-      'mediaType': 'reel',
-      'mediaUrls': videoUrl.isNotEmpty ? [videoUrl] : const <String>[],
-      'thumbnailUrl': thumbnailUrl,
-      'createdAt': DateTime.now().toIso8601String(),
-    }));
+    final savedAt = _savedSortTime(
+        item,
+        FeedPost.fromJson({
+          '_id': 'promote-$promoteId',
+          'id': 'promote-$promoteId',
+          'user_id': mapped['userId'] ?? '',
+          'username': mapped['username'] ?? 'User',
+          'mediaType': 'reel',
+          'mediaUrls': videoUrl.isNotEmpty ? [videoUrl] : const <String>[],
+          'thumbnailUrl': thumbnailUrl,
+          'createdAt': DateTime.now().toIso8601String(),
+        }));
 
     return {
       '_id': 'promote-$promoteId',
@@ -429,7 +436,8 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
       ...adModel.imageUrls,
       adModel.videoUrl ?? '',
     ].map((e) => UrlHelper.normalizeUrl(e)).where((e) => e.isNotEmpty).toList();
-    final previewUrl = previewCandidates.isNotEmpty ? previewCandidates.first : '';
+    final previewUrl =
+        previewCandidates.isNotEmpty ? previewCandidates.first : '';
     final mediaType = adModel.videoUrl != null &&
             adModel.videoUrl!.trim().isNotEmpty &&
             _looksLikeVideoUrl(adModel.videoUrl!.trim())
@@ -440,7 +448,8 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
       '_id': 'ad-$adId',
       'id': 'ad-$adId',
       'user_id': adModel.userId ?? '',
-      'username': adModel.companyName.isNotEmpty ? adModel.companyName : 'Ad',
+      'username':
+          adModel.companyName.isNotEmpty ? adModel.companyName : 'Spotlight',
       'mediaType': mediaType,
       'mediaUrls': previewUrl.isNotEmpty ? [previewUrl] : const <String>[],
       'thumbnailUrl': previewUrl,
@@ -487,7 +496,8 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
 
         final post = switch (type) {
           'ad' => _toAdFeedPost(resolved),
-          'promote_reel' => _toFeedPost(_toPromoteFeedPost(resolved) ?? resolved),
+          'promote_reel' =>
+            _toFeedPost(_toPromoteFeedPost(resolved) ?? resolved),
           _ => _toFeedPost(resolved),
         };
         if (post == null) continue;

@@ -85,7 +85,8 @@ class _BoostPostScreenState extends State<BoostPostScreen> {
       }
 
       // Process payment
-      final paymentSuccess = await _boostService.processPaymentAndActivate(boost.id);
+      final paymentSuccess =
+          await _boostService.processPaymentAndActivate(boost.id);
 
       if (mounted) {
         setState(() {
@@ -135,7 +136,7 @@ class _BoostPostScreenState extends State<BoostPostScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Boost Post'),
+        title: const Text('Boost Moment'),
       ),
       body: _isCheckingEligibility
           ? const Center(child: CircularProgressIndicator())
@@ -287,7 +288,8 @@ class _BoostPostScreenState extends State<BoostPostScreen> {
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (context) => BoostAnalyticsScreen(boostId: boost.id),
+                    builder: (context) =>
+                        BoostAnalyticsScreen(boostId: boost.id),
                   ),
                 );
               },
@@ -309,7 +311,7 @@ class _BoostPostScreenState extends State<BoostPostScreen> {
 
   Widget _buildBoostOptions() {
     const durations = BoostDuration.values;
-    
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -328,11 +330,10 @@ class _BoostPostScreenState extends State<BoostPostScreen> {
             style: TextStyle(color: Colors.grey),
           ),
           const SizedBox(height: 24),
-          
           ...durations.map((duration) {
             final cost = _boostService.calculateBoostCost(duration);
             final isSelected = _selectedDuration == duration;
-            
+
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
               color: isSelected ? Colors.blue[50] : null,
@@ -385,9 +386,7 @@ class _BoostPostScreenState extends State<BoostPostScreen> {
               ),
             );
           }),
-
           const SizedBox(height: 24),
-          
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -424,9 +423,7 @@ class _BoostPostScreenState extends State<BoostPostScreen> {
               ],
             ),
           ),
-
           const SizedBox(height: 24),
-
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(

@@ -141,7 +141,7 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
     if (content.isEmpty && _media.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Add text or an image to post your tweet.')),
+            content: Text('Add text or an image to post your Buzz.')),
       );
       return;
     }
@@ -264,7 +264,7 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
                             textStyle: theme.textTheme.titleSmall
                                 ?.copyWith(fontWeight: FontWeight.w800),
                           ),
-                          child: const Text('Post'),
+                          child: const Text('Buzz'),
                         );
                       },
                     ),

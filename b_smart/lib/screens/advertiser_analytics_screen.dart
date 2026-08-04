@@ -12,7 +12,8 @@ class AdvertiserAnalyticsScreen extends StatefulWidget {
   });
 
   @override
-  State<AdvertiserAnalyticsScreen> createState() => _AdvertiserAnalyticsScreenState();
+  State<AdvertiserAnalyticsScreen> createState() =>
+      _AdvertiserAnalyticsScreenState();
 }
 
 class _AdvertiserAnalyticsScreenState extends State<AdvertiserAnalyticsScreen> {
@@ -28,8 +29,9 @@ class _AdvertiserAnalyticsScreenState extends State<AdvertiserAnalyticsScreen> {
   @override
   Widget build(BuildContext context) {
     final analytics = _advertiserService.getAdAnalytics(widget.adId);
-    _advertiserService.getAdvertiserAds('advertiser-1')
-        .firstWhere((a) => a.id == widget.adId, orElse: () => throw Exception('Ad not found'));
+    _advertiserService.getAdvertiserAds('advertiser-1').firstWhere(
+        (a) => a.id == widget.adId,
+        orElse: () => throw Exception('Spotlight not found'));
 
     if (analytics == null) {
       return Scaffold(
@@ -71,21 +73,28 @@ class _AdvertiserAnalyticsScreenState extends State<AdvertiserAnalyticsScreen> {
             _buildSection(
               'Reach & Exposure',
               [
-                _buildMetricRow('Total Impressions', _formatNumber(analytics.totalImpressions)),
-                _buildMetricRow('Unique Viewers', _formatNumber(analytics.uniqueViewers)),
-                _buildMetricRow('Repeat Viewers', _formatNumber(analytics.repeatViewers)),
+                _buildMetricRow('Total Impressions',
+                    _formatNumber(analytics.totalImpressions)),
+                _buildMetricRow(
+                    'Unique Viewers', _formatNumber(analytics.uniqueViewers)),
+                _buildMetricRow(
+                    'Repeat Viewers', _formatNumber(analytics.repeatViewers)),
                 if (analytics.reachByGeography.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  const Text('By Geography:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ...analytics.reachByGeography.entries.map((e) =>
-                    _buildMetricRow('  ${e.key}', _formatNumber(e.value)),
+                  const Text('By Geography:',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  ...analytics.reachByGeography.entries.map(
+                    (e) =>
+                        _buildMetricRow('  ${e.key}', _formatNumber(e.value)),
                   ),
                 ],
                 if (analytics.reachByLanguage.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  const Text('By Language:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ...analytics.reachByLanguage.entries.map((e) =>
-                    _buildMetricRow('  ${e.key}', _formatNumber(e.value)),
+                  const Text('By Language:',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  ...analytics.reachByLanguage.entries.map(
+                    (e) =>
+                        _buildMetricRow('  ${e.key}', _formatNumber(e.value)),
                   ),
                 ],
               ],
@@ -95,16 +104,23 @@ class _AdvertiserAnalyticsScreenState extends State<AdvertiserAnalyticsScreen> {
             _buildSection(
               'Engagement Metrics',
               [
-                _buildMetricRow('Total Views', _formatNumber(analytics.totalViews)),
-                _buildMetricRow('Valid Views (Rewarded)', _formatNumber(analytics.validViews)),
-                _buildMetricRow('View-Through Rate (VTR)', '${(analytics.viewThroughRate * 100).toStringAsFixed(1)}%'),
-                _buildMetricRow('Avg Watch Duration', '${analytics.averageWatchDuration.toStringAsFixed(1)}s'),
-                _buildMetricRow('Completion Rate', '${(analytics.completionRate * 100).toStringAsFixed(1)}%'),
+                _buildMetricRow(
+                    'Total Views', _formatNumber(analytics.totalViews)),
+                _buildMetricRow('Valid Views (Rewarded)',
+                    _formatNumber(analytics.validViews)),
+                _buildMetricRow('View-Through Rate (VTR)',
+                    '${(analytics.viewThroughRate * 100).toStringAsFixed(1)}%'),
+                _buildMetricRow('Avg Watch Duration',
+                    '${analytics.averageWatchDuration.toStringAsFixed(1)}s'),
+                _buildMetricRow('Completion Rate',
+                    '${(analytics.completionRate * 100).toStringAsFixed(1)}%'),
                 if (analytics.dropOffPoints.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  const Text('Drop-off Points:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ...analytics.dropOffPoints.entries.map((e) =>
-                    _buildMetricRow('  ${e.key}', _formatNumber(e.value)),
+                  const Text('Drop-off Points:',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  ...analytics.dropOffPoints.entries.map(
+                    (e) =>
+                        _buildMetricRow('  ${e.key}', _formatNumber(e.value)),
                   ),
                 ],
               ],
@@ -114,8 +130,10 @@ class _AdvertiserAnalyticsScreenState extends State<AdvertiserAnalyticsScreen> {
             _buildSection(
               'Watch Time Analytics',
               [
-                _buildMetricRow('Total Watch Hours', analytics.totalWatchHours.toStringAsFixed(2)),
-                _buildMetricRow('Avg Watch Time/View', '${analytics.averageWatchTimePerView.toStringAsFixed(1)}s'),
+                _buildMetricRow('Total Watch Hours',
+                    analytics.totalWatchHours.toStringAsFixed(2)),
+                _buildMetricRow('Avg Watch Time/View',
+                    '${analytics.averageWatchTimePerView.toStringAsFixed(1)}s'),
               ],
             ),
 
@@ -124,16 +142,20 @@ class _AdvertiserAnalyticsScreenState extends State<AdvertiserAnalyticsScreen> {
               'Audience Demographics',
               [
                 if (analytics.genderSplit.isNotEmpty) ...[
-                  const Text('Gender Split:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ...analytics.genderSplit.entries.map((e) =>
-                    _buildMetricRow('  ${e.key}', _formatNumber(e.value)),
+                  const Text('Gender Split:',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  ...analytics.genderSplit.entries.map(
+                    (e) =>
+                        _buildMetricRow('  ${e.key}', _formatNumber(e.value)),
                   ),
                   const SizedBox(height: 8),
                 ],
                 if (analytics.ageGroups.isNotEmpty) ...[
-                  const Text('Age Groups:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ...analytics.ageGroups.entries.map((e) =>
-                    _buildMetricRow('  ${e.key}', _formatNumber(e.value)),
+                  const Text('Age Groups:',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  ...analytics.ageGroups.entries.map(
+                    (e) =>
+                        _buildMetricRow('  ${e.key}', _formatNumber(e.value)),
                   ),
                 ],
               ],
@@ -143,13 +165,20 @@ class _AdvertiserAnalyticsScreenState extends State<AdvertiserAnalyticsScreen> {
             _buildSection(
               'Reward & Cost Metrics',
               [
-                _buildMetricRow('bCoins Allocated', _formatNumber(analytics.totalCoinsAllocated)),
-                _buildMetricRow('bCoins Consumed', _formatNumber(analytics.coinsConsumed)),
-                _buildMetricRow('bCoins Remaining', _formatNumber(analytics.coinsRemaining)),
-                _buildMetricRow('bCoins Issued', _formatNumber(analytics.rewardsIssued)),
-                _buildMetricRow('Avg bCoins/User', analytics.averageCoinsPerUser.toStringAsFixed(1)),
-                _buildMetricRow('Cost per Valid Reward', '₹${analytics.costPerValidReward.toStringAsFixed(2)}'),
-                _buildMetricRow('Cost per Watch Minute', '₹${analytics.costPerWatchMinute.toStringAsFixed(2)}'),
+                _buildMetricRow('bCoins Allocated',
+                    _formatNumber(analytics.totalCoinsAllocated)),
+                _buildMetricRow(
+                    'bCoins Consumed', _formatNumber(analytics.coinsConsumed)),
+                _buildMetricRow('bCoins Remaining',
+                    _formatNumber(analytics.coinsRemaining)),
+                _buildMetricRow(
+                    'bCoins Issued', _formatNumber(analytics.rewardsIssued)),
+                _buildMetricRow('Avg bCoins/User',
+                    analytics.averageCoinsPerUser.toStringAsFixed(1)),
+                _buildMetricRow('Cost per Valid Reward',
+                    '₹${analytics.costPerValidReward.toStringAsFixed(2)}'),
+                _buildMetricRow('Cost per Watch Minute',
+                    '₹${analytics.costPerWatchMinute.toStringAsFixed(2)}'),
               ],
             ),
 
@@ -157,11 +186,16 @@ class _AdvertiserAnalyticsScreenState extends State<AdvertiserAnalyticsScreen> {
             _buildSection(
               'Conversion & Interaction',
               [
-                _buildMetricRow('Click-Through Rate', '${analytics.clickThroughRate}'),
-                _buildMetricRow('Profile Visits', _formatNumber(analytics.profileVisits)),
-                _buildMetricRow('Company Page Opens', _formatNumber(analytics.companyPageOpens)),
-                _buildMetricRow('External Link Clicks', _formatNumber(analytics.externalLinkClicks)),
-                _buildMetricRow('Follow Actions', _formatNumber(analytics.followActions)),
+                _buildMetricRow(
+                    'Click-Through Rate', '${analytics.clickThroughRate}'),
+                _buildMetricRow(
+                    'Profile Visits', _formatNumber(analytics.profileVisits)),
+                _buildMetricRow('Company Page Opens',
+                    _formatNumber(analytics.companyPageOpens)),
+                _buildMetricRow('External Link Clicks',
+                    _formatNumber(analytics.externalLinkClicks)),
+                _buildMetricRow(
+                    'Follow Actions', _formatNumber(analytics.followActions)),
               ],
             ),
 
@@ -169,7 +203,8 @@ class _AdvertiserAnalyticsScreenState extends State<AdvertiserAnalyticsScreen> {
             ElevatedButton.icon(
               onPressed: () {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Report download feature coming soon')),
+                  const SnackBar(
+                      content: Text('Report download feature coming soon')),
                 );
               },
               icon: const Icon(Icons.download),

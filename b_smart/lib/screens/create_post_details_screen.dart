@@ -281,7 +281,7 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Post shared successfully!'),
+            content: Text('Moment shared successfully!'),
             backgroundColor: Colors.green,
           ),
         );
@@ -346,12 +346,12 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         title:
-            const Text('Post Details', style: TextStyle(color: Colors.black)),
+            const Text('Moment Details', style: TextStyle(color: Colors.black)),
         actions: [
           TextButton(
             onPressed: _handlePost,
             child: const Text(
-              'Post',
+              'Moment',
               style: TextStyle(
                   color: Colors.blue,
                   fontSize: 16,

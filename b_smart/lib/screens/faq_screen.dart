@@ -26,7 +26,7 @@ class _FaqScreenState extends State<FaqScreen> {
     _FilterOption(label: 'General', value: 'general'),
     _FilterOption(label: 'Payment', value: 'payment'),
     _FilterOption(label: 'Vendor', value: 'vendor'),
-    _FilterOption(label: 'Ads', value: 'ads'),
+    _FilterOption(label: 'Spotlights', value: 'ads'),
     _FilterOption(label: 'Other', value: 'other'),
   ];
 
@@ -72,7 +72,7 @@ class _FaqScreenState extends State<FaqScreen> {
       case 'vendor':
         return 'Vendor';
       case 'ads':
-        return 'Ads';
+        return 'Spotlights';
       case 'other':
         return 'Other';
       default:

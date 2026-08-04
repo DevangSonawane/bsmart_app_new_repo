@@ -652,7 +652,7 @@ class _WalletScreenState extends State<WalletScreen>
 
     if (rawType == 'AD_LIKE_REWARD') {
       return m(
-          label: 'Ad Like Reward',
+          label: 'Spotlight Like Reward',
           icon: LucideIcons.heart,
           iconColor: const Color(0xFF34D399),
           bgColor: const Color(0x1A34D399));
@@ -666,14 +666,14 @@ class _WalletScreenState extends State<WalletScreen>
     }
     if (rawType == 'AD_VIEW_REWARD') {
       return m(
-          label: 'Ad View Reward',
+          label: 'Spotlight View Reward',
           icon: LucideIcons.eye,
           iconColor: const Color(0xFF34D399),
           bgColor: const Color(0x1A34D399));
     }
     if (rawType == 'AD_VIEW_DEDUCTION') {
       return m(
-          label: 'Ad View Spent',
+          label: 'Spotlight View Spent',
           icon: LucideIcons.eye,
           iconColor: const Color(0xFFFB7185),
           bgColor: const Color(0x1AFB7185));
@@ -708,7 +708,7 @@ class _WalletScreenState extends State<WalletScreen>
     }
     if (rawType == 'AD_BUDGET_DEDUCTION') {
       return m(
-          label: 'Ad Budget Deducted',
+          label: 'Spotlight Budget Deducted',
           icon: LucideIcons.trendingDown,
           iconColor: const Color(0xFFFB7185),
           bgColor: const Color(0x1AFB7185));
@@ -744,14 +744,14 @@ class _WalletScreenState extends State<WalletScreen>
     if (rawType == 'REEL_VIEW_REWARD' ||
         rawType == 'VENDOR_PROFILE_VIEW_REWARD') {
       return m(
-          label: 'View Reward',
+          label: 'Spotlight View Reward',
           icon: LucideIcons.eye,
           iconColor: const Color(0xFF34D399),
           bgColor: const Color(0x1A34D399));
     }
     if (rawType == 'LIKE') {
       return m(
-          label: 'Like Reward',
+          label: 'Spotlight Like Reward',
           icon: LucideIcons.heart,
           iconColor: const Color(0xFF34D399),
           bgColor: const Color(0x1A34D399));
@@ -1644,7 +1644,11 @@ class _TransactionTile extends StatelessWidget {
     final descColor = isDark
         ? Colors.white.withValues(alpha: 0.25)
         : Colors.black.withValues(alpha: 0.45);
-    final label = (tx.metadata?['label'] ?? meta.label).toString();
+    final rawType = (tx.metadata?['type'] ?? '').toString().toUpperCase();
+    final label = _normalizedLabel(
+      rawType,
+      (tx.metadata?['label'] ?? meta.label).toString(),
+    );
     final description = (tx.metadata?['description'] ?? '').toString();
     final adTitle = tx.metadata?['ad'] is Map
         ? (tx.metadata?['ad']['title'] ?? '').toString()
@@ -1761,6 +1765,40 @@ class _TransactionTile extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _normalizedLabel(String rawType, String fallback) {
+    switch (rawType) {
+      case 'AD_LIKE_REWARD':
+        return 'Spotlight Like Reward';
+      case 'AD_LIKE_REWARD_REVERSAL':
+        return 'Like Reversed';
+      case 'AD_VIEW_REWARD':
+        return 'Spotlight View Reward';
+      case 'AD_VIEW_DEDUCTION':
+        return 'Spotlight View Spent';
+      case 'AD_COMMENT_REWARD':
+      case 'COMMENT':
+        return 'Comment Reward';
+      case 'AD_REPLY_REWARD':
+        return 'Reply Reward';
+      case 'AD_SAVE_REWARD':
+      case 'SAVE':
+        return 'Save Reward';
+      case 'AD_LIKE_DEDUCTION':
+        return 'Like Budget Spent';
+      case 'AD_BUDGET_DEDUCTION':
+        return 'Spotlight Budget Deducted';
+      case 'AD_LIKE_BUDGET_REFUND':
+        return 'Like Budget Refund';
+      case 'REEL_VIEW_REWARD':
+      case 'VENDOR_PROFILE_VIEW_REWARD':
+        return 'Spotlight View Reward';
+      case 'LIKE':
+        return 'Spotlight Like Reward';
+      default:
+        return fallback;
+    }
   }
 }
 

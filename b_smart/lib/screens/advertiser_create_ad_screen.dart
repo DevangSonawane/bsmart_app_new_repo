@@ -183,7 +183,8 @@ List<double> _filterMatrixFor(String name) {
       );
     case 'Original':
     default:
-      return _buildFilterMatrixBase(brightness: 1.0, contrast: 1.0, saturation: 1.0);
+      return _buildFilterMatrixBase(
+          brightness: 1.0, contrast: 1.0, saturation: 1.0);
   }
 }
 
@@ -197,15 +198,14 @@ class _AdComposerMedia {
   _AdComposerMedia({
     required this.path,
     required this.isVideo,
-  }) : adjustments =
-            {
-              'brightness': 0,
-              'contrast': 0,
-              'saturate': 0,
-              'sepia': 0,
-              'opacity': 0,
-              'vignette': 0,
-            };
+  }) : adjustments = {
+          'brightness': 0,
+          'contrast': 0,
+          'saturate': 0,
+          'sepia': 0,
+          'opacity': 0,
+          'vignette': 0,
+        };
 }
 
 class AdvertiserCreateAdScreen extends StatefulWidget {
@@ -221,7 +221,8 @@ class AdvertiserCreateAdScreen extends StatefulWidget {
   });
 
   @override
-  State<AdvertiserCreateAdScreen> createState() => _AdvertiserCreateAdScreenState();
+  State<AdvertiserCreateAdScreen> createState() =>
+      _AdvertiserCreateAdScreenState();
 }
 
 class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
@@ -494,7 +495,7 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
       if (picked.isEmpty) {
         _showSnack(
           _contentType == 'reel'
-              ? 'Reel supports video files only.'
+              ? 'bSpark supports video files only.'
               : 'No supported media selected.',
         );
         return;
@@ -514,7 +515,7 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
 
   Future<void> _takePhoto() async {
     if (_contentType == 'reel') {
-      _showSnack('Reel supports video only.');
+      _showSnack('bSpark supports video only.');
       return;
     }
     try {
@@ -552,7 +553,8 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
 
   void _showSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _back() {
@@ -611,7 +613,8 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
     return 'custom';
   }
 
-  Future<Map<String, dynamic>> _uploadMedia(_AdComposerMedia item, int index, int total) async {
+  Future<Map<String, dynamic>> _uploadMedia(
+      _AdComposerMedia item, int index, int total) async {
     final file = File(item.path);
     if (!await file.exists()) {
       throw Exception('Missing media file at ${item.path}');
@@ -627,7 +630,8 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
     final userId = (_me?['id'] ?? _me?['_id'] ?? 'user').toString();
     final filename =
         '$userId/${DateTime.now().millisecondsSinceEpoch}_${item.hashCode.abs()}.${ext.isEmpty ? (item.isVideo ? 'mp4' : 'jpg') : ext}';
-    final uploaded = await _uploadApi.uploadFileBytes(bytes: bytes, filename: filename);
+    final uploaded =
+        await _uploadApi.uploadFileBytes(bytes: bytes, filename: filename);
     final serverFileName =
         (uploaded['fileName'] ?? uploaded['filename'] ?? filename).toString();
     final fileUrl = _normalizeFileUrl(uploaded['fileUrl']?.toString());
@@ -684,7 +688,8 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
     if (fileUrl.isEmpty) return '';
 
     fileUrl = fileUrl.replaceAll('\\', '/');
-    final isAbs = fileUrl.startsWith('http://') || fileUrl.startsWith('https://');
+    final isAbs =
+        fileUrl.startsWith('http://') || fileUrl.startsWith('https://');
     if (!isAbs) {
       final base = ApiConfig.baseUrl;
       final baseUri = Uri.parse(base);
@@ -781,8 +786,8 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
         return s.isEmpty ? null : s;
       }
 
-      final createdId =
-          pickId(created['id'] ?? created['_id'] ?? created['ad'] ?? created['data']);
+      final createdId = pickId(
+          created['id'] ?? created['_id'] ?? created['ad'] ?? created['data']);
       // Server is responsible for creating notifications.
 
       if (!mounted) return;
@@ -790,7 +795,7 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
         _uploadProgress = 100;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ad created successfully.')),
+        const SnackBar(content: Text('Spotlight created successfully.')),
       );
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -893,8 +898,10 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: DesignTokens.instaPink,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                   child: const Text('Select From Gallery'),
                 ),
@@ -987,18 +994,20 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
-          color: selected ? DesignTokens.instaPink.withValues(alpha: 0.16) : Colors.transparent,
+          color: selected
+              ? DesignTokens.instaPink.withValues(alpha: 0.16)
+              : Colors.transparent,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-            icon,
-            size: 16,
-            color: selected ? DesignTokens.instaPink : Colors.black87,
-          ),
-          const SizedBox(width: 6),
-          Text(
+              icon,
+              size: 16,
+              color: selected ? DesignTokens.instaPink : Colors.black87,
+            ),
+            const SizedBox(width: 6),
+            Text(
               label,
               style: TextStyle(
                 fontSize: 12,
@@ -1106,8 +1115,10 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
                 Positioned(
                   left: 8,
                   child: IconButton(
-                    icon: const Icon(LucideIcons.chevronLeft, color: Colors.black87),
-                    style: IconButton.styleFrom(backgroundColor: Colors.white70),
+                    icon: const Icon(LucideIcons.chevronLeft,
+                        color: Colors.black87),
+                    style:
+                        IconButton.styleFrom(backgroundColor: Colors.white70),
                     onPressed: () => setState(() => _currentIndex--),
                   ),
                 ),
@@ -1115,8 +1126,10 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
                 Positioned(
                   right: 8,
                   child: IconButton(
-                    icon: const Icon(LucideIcons.chevronRight, color: Colors.black87),
-                    style: IconButton.styleFrom(backgroundColor: Colors.white70),
+                    icon: const Icon(LucideIcons.chevronRight,
+                        color: Colors.black87),
+                    style:
+                        IconButton.styleFrom(backgroundColor: Colors.white70),
                     onPressed: () => setState(() => _currentIndex++),
                   ),
                 ),
@@ -1125,7 +1138,9 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
         );
         final toolsSection = Container(
           width: useColumn ? null : _editPanelMinWidth,
-          constraints: useColumn ? null : const BoxConstraints(minWidth: _editPanelMinWidth),
+          constraints: useColumn
+              ? null
+              : const BoxConstraints(minWidth: _editPanelMinWidth),
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
             border: Border(
@@ -1149,7 +1164,9 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
                         decoration: BoxDecoration(
                           border: Border(
                             bottom: BorderSide(
-                              color: _editTab == 'filters' ? Colors.black : Colors.transparent,
+                              color: _editTab == 'filters'
+                                  ? Colors.black
+                                  : Colors.transparent,
                               width: 2,
                             ),
                           ),
@@ -1160,7 +1177,9 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 14,
-                            color: _editTab == 'filters' ? Colors.black : Colors.grey,
+                            color: _editTab == 'filters'
+                                ? Colors.black
+                                : Colors.grey,
                           ),
                         ),
                       ),
@@ -1174,7 +1193,9 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
                         decoration: BoxDecoration(
                           border: Border(
                             bottom: BorderSide(
-                              color: _editTab == 'adjustments' ? Colors.black : Colors.transparent,
+                              color: _editTab == 'adjustments'
+                                  ? Colors.black
+                                  : Colors.transparent,
                               width: 2,
                             ),
                           ),
@@ -1185,7 +1206,9 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 14,
-                            color: _editTab == 'adjustments' ? Colors.black : Colors.grey,
+                            color: _editTab == 'adjustments'
+                                ? Colors.black
+                                : Colors.grey,
                           ),
                         ),
                       ),
@@ -1217,7 +1240,8 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
                                               width: 72,
                                               height: 72,
                                               decoration: BoxDecoration(
-                                                borderRadius: BorderRadius.circular(8),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
                                                 border: Border.all(
                                                   color: selected
                                                       ? const Color(0xFF0095F6)
@@ -1227,8 +1251,11 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
                                               ),
                                               clipBehavior: Clip.antiAlias,
                                               child: item.isVideo
-                                                  ? const Icon(LucideIcons.video, size: 32)
-                                                  : _filterThumbnail(file, name),
+                                                  ? const Icon(
+                                                      LucideIcons.video,
+                                                      size: 32)
+                                                  : _filterThumbnail(
+                                                      file, name),
                                             ),
                                             const SizedBox(height: 4),
                                             Text(
@@ -1256,7 +1283,8 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
                       : Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _slider('Brightness', 'brightness', item, -100, 100),
+                            _slider(
+                                'Brightness', 'brightness', item, -100, 100),
                             _slider('Contrast', 'contrast', item, -100, 100),
                             _slider('Saturation', 'saturate', item, -100, 100),
                             _slider('Temperature', 'sepia', item, -100, 100),
@@ -1295,7 +1323,8 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
     setState(() => item.filter = name);
   }
 
-  Widget _slider(String label, String key, _AdComposerMedia item, int min, int max) {
+  Widget _slider(
+      String label, String key, _AdComposerMedia item, int min, int max) {
     final value = item.adjustments[key] ?? 0;
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -1305,8 +1334,11 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-              Text('$value', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+              Text(label,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w500)),
+              Text('$value',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600])),
             ],
           ),
           Slider(
@@ -1422,23 +1454,25 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
                         : null,
                   ),
                   const SizedBox(width: 10),
-                  Text(username, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Text(username,
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
                 ],
               ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _captionCtl,
-                  maxLines: 5,
-                  maxLength: 2200,
-                  decoration: InputDecoration(
-                    hintText: 'Write a caption...',
-                    border: const OutlineInputBorder(),
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(color: DesignTokens.instaPink, width: 1.5),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _captionCtl,
+                maxLines: 5,
+                maxLength: 2200,
+                decoration: InputDecoration(
+                  hintText: 'Write a caption...',
+                  border: const OutlineInputBorder(),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(
+                        color: DesignTokens.instaPink, width: 1.5),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                 ),
+              ),
               const SizedBox(height: 12),
               TextField(
                 controller: _locationCtl,
@@ -1470,7 +1504,8 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
                   hintText: 'e.g. 1000',
                   border: const OutlineInputBorder(),
                   focusedBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: DesignTokens.instaPink, width: 1.5),
+                    borderSide: const BorderSide(
+                        color: DesignTokens.instaPink, width: 1.5),
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
@@ -1485,7 +1520,9 @@ class _AdvertiserCreateAdScreenState extends State<AdvertiserCreateAdScreen> {
                     const Text('Advanced Settings',
                         style: TextStyle(fontWeight: FontWeight.w600)),
                     Icon(
-                      _advancedOpen ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+                      _advancedOpen
+                          ? LucideIcons.chevronUp
+                          : LucideIcons.chevronDown,
                     ),
                   ],
                 ),

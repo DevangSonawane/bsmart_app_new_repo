@@ -1147,7 +1147,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         }
         if (created.isNotEmpty) {
           UploadProgressOverlay.update(
-            message: 'Post shared successfully!',
+            message: 'Moment shared successfully!',
             progress: 1.0,
           );
           await Future.delayed(const Duration(milliseconds: 900));
@@ -1201,7 +1201,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           onPressed: _back,
         ),
         title: Text(
-          isSelect ? 'Create new post' : 'New post',
+          isSelect ? 'Create new Moment' : 'New Moment',
           style: TextStyle(
             fontWeight: FontWeight.w600,
             fontSize: 16,

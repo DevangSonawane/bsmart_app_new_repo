@@ -110,7 +110,7 @@ class _AdDetailScreenState extends State<AdDetailScreen> {
         backgroundColor: const Color(0xFF0B0B0B),
         foregroundColor: Colors.white,
         elevation: 0,
-        title: const Text('Ad Details'),
+        title: const Text('Spotlight Details'),
       ),
       body: _loading
           ? const Center(
@@ -119,7 +119,7 @@ class _AdDetailScreenState extends State<AdDetailScreen> {
           : (_ad == null
               ? const Center(
                   child: Text(
-                    'Ad not found',
+                    'Spotlight not found',
                     style: TextStyle(color: Colors.white),
                   ),
                 )
@@ -540,7 +540,7 @@ class _AdPreviewCardState extends State<_AdPreviewCard> {
                         ),
                       ),
                       child: const Text(
-                        'Ad',
+                        'Spotlight',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 12,

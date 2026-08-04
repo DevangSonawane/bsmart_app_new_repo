@@ -562,7 +562,7 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    _error ?? 'Ad not found.',
+                    _error ?? 'Spotlight not found.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color:
@@ -705,7 +705,7 @@ class _AdPublicDetailScreenState extends State<AdPublicDetailScreen> {
                       ),
                     ),
                     child: const Text(
-                      'Ad',
+                      'Spotlight',
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w800,

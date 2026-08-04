@@ -1113,7 +1113,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
             leading: IconButton(
                 icon: const Icon(LucideIcons.x),
                 onPressed: () => Navigator.of(context).pop())),
-        body: const Center(child: Text('Post not found')),
+        body: const Center(child: Text('Moment not found')),
       );
     }
 
@@ -1507,7 +1507,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
                             ListTile(
                               leading: const Icon(Icons.delete_outline,
                                   color: Colors.red),
-                              title: const Text('Delete Post',
+                              title: const Text('Delete Moment',
                                   style: TextStyle(color: Colors.red)),
                               onTap: () async {
                                 Navigator.pop(ctx);
@@ -1580,7 +1580,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
                                                         const SizedBox(
                                                             height: 4),
                                                         const Text(
-                                                          'Delete Post?',
+                                                          'Delete Moment?',
                                                           textAlign:
                                                               TextAlign.center,
                                                           style: TextStyle(
@@ -1649,7 +1649,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
                                                                             context);
                                                                         messenger.showSnackBar(const SnackBar(
                                                                             content:
-                                                                                Text('Post deleted')));
+                                                                                Text('Moment deleted')));
                                                                         try {
                                                                           StoreProvider.of<AppState>(context)
                                                                               .dispatch(RemovePost(widget.postId));
@@ -1948,7 +1948,7 @@ class _PostDetailModalState extends State<PostDetailModal> {
                   return TextButton(
                     onPressed:
                         _postingComment || !hasText ? null : _postComment,
-                    child: Text('Post',
+                    child: Text('Moment',
                         style: TextStyle(
                             color:
                                 !hasText ? Colors.grey : DesignTokens.instaPink,
