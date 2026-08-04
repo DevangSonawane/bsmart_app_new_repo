@@ -4545,7 +4545,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
         if (boundary == null) {
           debugPrint('❌ RepaintBoundary is null');
           debugPrint('Context: ${_storyRepaintKey.currentContext}');
-          _storyShowError('Unable to capture story. Please try again.');
+          _storyShowError('Unable to capture glimpse. Please try again.');
           return;
         }
 
@@ -4564,7 +4564,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
         final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
         if (byteData == null) {
           debugPrint('❌ ByteData is null');
-          _storyShowError('Failed to capture image');
+          _storyShowError('Failed to capture glimpse image');
           return;
         }
 
@@ -4815,7 +4815,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
       debugPrint(stackTrace.toString());
       debugPrint('════════════════════════════════════════\n');
 
-      String errorMessage = 'Failed to post story';
+      String errorMessage = 'Failed to post glimpse';
 
       if (e.toString().contains('ApiException') ||
           e.toString().contains('Exception')) {
@@ -4851,7 +4851,7 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
         final boundary = _storyRepaintKey.currentContext?.findRenderObject()
             as RenderRepaintBoundary?;
         if (boundary == null) {
-          _showStorySnack('Unable to capture story image.');
+          _showStorySnack('Unable to capture glimpse image.');
           return;
         }
 

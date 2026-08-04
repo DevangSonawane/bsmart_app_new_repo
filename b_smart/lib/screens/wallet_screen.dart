@@ -1649,7 +1649,10 @@ class _TransactionTile extends StatelessWidget {
       rawType,
       (tx.metadata?['label'] ?? meta.label).toString(),
     );
-    final description = (tx.metadata?['description'] ?? '').toString();
+    final description = _normalizedDescription(
+      rawType,
+      (tx.metadata?['description'] ?? '').toString(),
+    );
     final adTitle = tx.metadata?['ad'] is Map
         ? (tx.metadata?['ad']['title'] ?? '').toString()
         : '';
@@ -1798,6 +1801,27 @@ class _TransactionTile extends StatelessWidget {
         return 'Spotlight Like Reward';
       default:
         return fallback;
+    }
+  }
+
+  String _normalizedDescription(String rawType, String fallback) {
+    final text = fallback.trim();
+    if (text.isEmpty) return text;
+
+    switch (rawType) {
+      case 'AD_LIKE_REWARD':
+      case 'LIKE':
+        return text
+            .replaceAll(RegExp(r'\b[Aa]d\b'), 'Spotlight')
+            .replaceAll(RegExp(r'\b[Aa]ds\b'), 'Spotlights');
+      case 'AD_VIEW_REWARD':
+      case 'REEL_VIEW_REWARD':
+      case 'VENDOR_PROFILE_VIEW_REWARD':
+        return text
+            .replaceAll(RegExp(r'\b[Aa]d\b'), 'Spotlight')
+            .replaceAll(RegExp(r'\b[Aa]ds\b'), 'Spotlights');
+      default:
+        return text;
     }
   }
 }

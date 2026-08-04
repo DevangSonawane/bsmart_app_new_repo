@@ -95,6 +95,23 @@ class _CoinsHistoryScreenState extends State<CoinsHistoryScreen> {
     }
   }
 
+  String _normalizeDescription(LedgerTransaction transaction) {
+    final raw = transaction.description?.trim() ?? '';
+    if (raw.isEmpty) return raw;
+
+    switch (transaction.type) {
+      case LedgerTransactionType.adReward:
+        return raw
+            .replaceAll(RegExp(r'\b[Aa]d\b'), 'Spotlight')
+            .replaceAll(RegExp(r'\b[Aa]ds\b'), 'Spotlights');
+      case LedgerTransactionType.giftReceived:
+      case LedgerTransactionType.giftSent:
+      case LedgerTransactionType.payout:
+      case LedgerTransactionType.refund:
+        return raw;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -214,7 +231,7 @@ class _CoinsHistoryScreenState extends State<CoinsHistoryScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 if (transaction.description != null)
-                                  Text(transaction.description!),
+                                  Text(_normalizeDescription(transaction)),
                                 const SizedBox(height: 4),
                                 Row(
                                   children: [

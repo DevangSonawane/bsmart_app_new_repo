@@ -932,7 +932,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                       ),
                       const Divider(height: 1, color: Colors.white12),
                       _buildMoreAction(
-                        label: 'Delete story',
+                        label: 'Delete glimpse',
                         color: const Color(0xFFFF5D5D),
                         onTap: () {
                           Navigator.of(ctx).pop();
@@ -1726,7 +1726,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Who viewed this story',
+                      'Who viewed this glimpse',
                       style: TextStyle(
                           color: Colors.white,
                           fontSize: 14,
@@ -2052,10 +2052,10 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
       };
       await StoriesApi().createFlexible([payload]);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Posted to your story')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Posted to your glimpse')));
     } catch (e) {
-      final msg = e is ApiException ? e.message : 'Failed to add story';
+      final msg = e is ApiException ? e.message : 'Failed to add glimpse';
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
@@ -2072,8 +2072,8 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete story?'),
-        content: const Text('This will remove the story for everyone.'),
+        title: const Text('Delete glimpse?'),
+        content: const Text('This will remove the glimpse for everyone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -2138,7 +2138,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
         _start();
       }
     } catch (e) {
-      final msg = e is ApiException ? e.message : 'Failed to delete story';
+      final msg = e is ApiException ? e.message : 'Failed to delete glimpse';
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       _start();
@@ -2378,7 +2378,7 @@ class _OwnStoryViewerScreenState extends State<OwnStoryViewerScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Your story',
+                              'Your glimpse',
                               style: TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w600),
