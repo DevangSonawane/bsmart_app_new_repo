@@ -5,10 +5,12 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
 import '../api/api_client.dart';
+import '../services/network_status_scope.dart';
 import '../services/media_aspect_cache.dart';
 import '../services/media_playback_registry.dart';
 import '../services/video_pool.dart';
 import '../preferences/content_preferences_scope.dart';
+import '../preferences/storage_preferences_scope.dart';
 import '../theme/theme_scope.dart';
 import '../utils/url_helper.dart';
 import 'safe_network_image.dart';
@@ -73,6 +75,8 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   bool _muteListenerAttached = false;
   bool _disableAutoPlay = false;
   bool _contentAutoPlayEnabled = true;
+  bool _networkDownloadsBlocked = false;
+  bool _thumbnailPrecached = false;
 
   bool get _hasVideoFilter {
     if (!widget.isVideo) return false;
@@ -309,8 +313,12 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   }
 
   void _precacheThumbnail() {
+    if (_thumbnailPrecached || _networkDownloadsBlocked) return;
     final thumb = widget.thumbnailUrl?.trim();
     if (thumb == null || thumb.isEmpty) return;
+    if (UrlHelper.shouldAttachAuthHeader(thumb) && _cachedAuthHeaders.isEmpty) {
+      return;
+    }
     final lower = thumb.toLowerCase();
     // Avoid triggering platform decoder errors during precache for formats we
     // can't safely handle here.
@@ -329,6 +337,7 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
       headers: headers,
       cacheKey: thumb,
     );
+    _thumbnailPrecached = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       precacheImage(provider, context);
@@ -361,13 +370,32 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final storagePrefs = StoragePreferencesScope.of(context);
+    final network = NetworkStatusScope.of(context);
     final newDisableAutoPlay = ThemeScope.of(context).disableAutoPlay;
     final newContentAutoPlayEnabled =
         ContentPreferencesScope.of(context).autoPlayVideos;
-    final effectiveAutoPlay = newContentAutoPlayEnabled && !newDisableAutoPlay;
-    final wasAutoplayEnabled = _contentAutoPlayEnabled && !_disableAutoPlay;
+    final newNetworkDownloadsBlocked = network.isOffline ||
+        (storagePrefs.wifiOnlyDownloads
+            ? !network.isOnWifi
+            : storagePrefs.mobileDataSaver && network.isOnMobileData);
+    final effectiveAutoPlay = widget.autoPlay &&
+        newContentAutoPlayEnabled &&
+        !newDisableAutoPlay &&
+        !newNetworkDownloadsBlocked;
+    final wasAutoplayEnabled = widget.autoPlay &&
+        _contentAutoPlayEnabled &&
+        !_disableAutoPlay &&
+        !_networkDownloadsBlocked;
     _disableAutoPlay = newDisableAutoPlay;
     _contentAutoPlayEnabled = newContentAutoPlayEnabled;
+    _networkDownloadsBlocked = newNetworkDownloadsBlocked;
+    if (!_thumbnailPrecached &&
+        !_networkDownloadsBlocked &&
+        widget.thumbnailUrl != null &&
+        widget.thumbnailUrl!.trim().isNotEmpty) {
+      _precacheThumbnail();
+    }
     if (wasAutoplayEnabled == effectiveAutoPlay) return;
     if (!widget.isVideo) return;
     if (!effectiveAutoPlay) {
@@ -400,6 +428,7 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
       _videoCtl = null;
       _loadingVideo = false;
       _videoFailed = false;
+      _thumbnailPrecached = false;
       VideoPool.instance.pauseIf(oldWidget.id);
       _primeRatio();
       _precacheThumbnail();
@@ -468,8 +497,10 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     _loadingVideo = true;
     if (mounted) setState(() {});
     try {
-      final shouldAutoplay =
-          widget.autoPlay && _contentAutoPlayEnabled && !_disableAutoPlay;
+      final shouldAutoplay = widget.autoPlay &&
+          _contentAutoPlayEnabled &&
+          !_disableAutoPlay &&
+          !_networkDownloadsBlocked;
       final ctl = await VideoPool.instance.attachWithPlayback(
         widget.id,
         url,
@@ -534,8 +565,10 @@ class _DynamicMediaWidgetState extends State<DynamicMediaWidget> {
     final url = widget.url.trim();
     if (url.isEmpty) return;
     try {
-      final shouldAutoplay =
-          widget.autoPlay && _contentAutoPlayEnabled && !_disableAutoPlay;
+      final shouldAutoplay = widget.autoPlay &&
+          _contentAutoPlayEnabled &&
+          !_disableAutoPlay &&
+          !_networkDownloadsBlocked;
       final ctl = await VideoPool.instance.attachWithPlayback(
         widget.id,
         url,

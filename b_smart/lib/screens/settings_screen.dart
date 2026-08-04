@@ -8,6 +8,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../api/api.dart';
 import '../services/auth/auth_service.dart';
+import '../preferences/storage_preferences_scope.dart';
+import '../services/storage_stats_service.dart';
 import '../theme/design_tokens.dart';
 import '../theme/theme_scope.dart';
 import 'account_details_screen.dart';
@@ -791,18 +793,53 @@ class _StorageDataScreen extends StatefulWidget {
 }
 
 class _StorageDataScreenState extends State<_StorageDataScreen> {
-  bool _mobileDataSaver = false;
-  bool _wifiOnlyDownloads = true;
-  final int _cachedImagesMb = 184;
-  final int _cachedVideosMb = 512;
-  final int _cachedDocumentsMb = 48;
+  StorageStats _stats = const StorageStats.empty();
+  bool _loadingStats = true;
+  String? _statsError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStats();
+  }
+
+  Future<void> _loadStats({bool forceRefresh = false}) async {
+    if (!mounted) return;
+    setState(() {
+      _loadingStats = true;
+      _statsError = null;
+    });
+    try {
+      final stats = await StorageStatsService.instance
+          .loadStats(forceRefresh: forceRefresh);
+      if (!mounted) return;
+      setState(() {
+        _stats = stats;
+        _loadingStats = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _stats = const StorageStats.empty();
+        _loadingStats = false;
+        _statsError = e.toString();
+      });
+    }
+  }
+
+  String _formatMb(double value) {
+    if (value < 0.05) return '0 MB';
+    final rounded = value.toStringAsFixed(value >= 10 ? 0 : 1);
+    return '$rounded MB';
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final bottomInset = MediaQuery.of(context).padding.bottom;
-    final totalStorage = _cachedImagesMb + _cachedVideosMb + _cachedDocumentsMb;
+    final storagePrefs = StoragePreferencesScope.of(context);
+    final totalStorage = _stats.totalMb;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -849,7 +886,7 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   title: Text('settings_mobile_data_saver'.tr()),
                   subtitle: Text('settings_mobile_data_saver_subtitle'.tr()),
-                  value: _mobileDataSaver,
+                  value: storagePrefs.mobileDataSaver,
                   activeThumbColor: DesignTokens.instaPink,
                   activeTrackColor:
                       DesignTokens.instaPink.withValues(alpha: 0.35),
@@ -860,9 +897,7 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
                       ? const Color(0xFF4B5563)
                       : const Color(0xFFD1D5DB),
                   onChanged: (value) {
-                    setState(() => _mobileDataSaver = value);
-                    _showUnavailable(
-                        'settings_mobile_data_saver_local_only'.tr());
+                    unawaited(storagePrefs.setMobileDataSaver(value));
                   },
                 ),
                 const Divider(height: 1),
@@ -871,7 +906,7 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   title: Text('settings_wifi_only_downloads'.tr()),
                   subtitle: Text('settings_wifi_only_downloads_subtitle'.tr()),
-                  value: _wifiOnlyDownloads,
+                  value: storagePrefs.wifiOnlyDownloads,
                   activeThumbColor: DesignTokens.instaPink,
                   activeTrackColor:
                       DesignTokens.instaPink.withValues(alpha: 0.35),
@@ -882,9 +917,7 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
                       ? const Color(0xFF4B5563)
                       : const Color(0xFFD1D5DB),
                   onChanged: (value) {
-                    setState(() => _wifiOnlyDownloads = value);
-                    _showUnavailable(
-                        'settings_wifi_only_downloads_local_only'.tr());
+                    unawaited(storagePrefs.setWifiOnlyDownloads(value));
                   },
                 ),
               ],
@@ -895,23 +928,37 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
               children: [
                 _breakdownRow(
                   label: 'settings_images'.tr(),
-                  valueMb: _cachedImagesMb,
+                  valueMb: _stats.imageMb,
                   color: DesignTokens.instaPink,
                 ),
                 const Divider(height: 1),
                 _breakdownRow(
                   label: 'settings_videos'.tr(),
-                  valueMb: _cachedVideosMb,
+                  valueMb: _stats.videoMb,
                   color: DesignTokens.instaOrange,
                 ),
                 const Divider(height: 1),
                 _breakdownRow(
                   label: 'settings_documents'.tr(),
-                  valueMb: _cachedDocumentsMb,
+                  valueMb: _stats.documentMb,
                   color: DesignTokens.instaPurple,
                 ),
               ],
             ),
+            if (_loadingStats) ...[
+              const SizedBox(height: 12),
+              const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            ],
+            if (_statsError != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _statsError!,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).textTheme.bodySmall?.color,
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
             _infoCard(isDark, totalStorage),
           ],
@@ -1017,7 +1064,7 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
 
   Widget _breakdownRow({
     required String label,
-    required int valueMb,
+    required double valueMb,
     required Color color,
   }) {
     final theme = Theme.of(context);
@@ -1026,9 +1073,8 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
         isDark ? const Color(0xFFE8E8E8) : const Color(0xFF1F2937);
     final hintColor =
         isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
-    final total = (_cachedImagesMb + _cachedVideosMb + _cachedDocumentsMb)
-        .clamp(1, 999999);
-    final percent = valueMb / total;
+    final total = _stats.totalMb <= 0 ? 1.0 : _stats.totalMb;
+    final percent = (valueMb / total).clamp(0.0, 1.0);
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -1070,7 +1116,7 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
           ),
           const SizedBox(width: 12),
           Text(
-            '$valueMb MB',
+            _formatMb(valueMb),
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
@@ -1082,7 +1128,8 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
     );
   }
 
-  Widget _infoCard(bool isDark, int totalStorage) {
+  Widget _infoCard(bool isDark, double totalStorage) {
+    final totalLabel = _formatMb(totalStorage);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1103,7 +1150,7 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'settings_storage_info_text'.tr(args: ['$totalStorage']),
+              'Estimated local cache on this device: about $totalLabel across images, videos, and documents. Totals update after cache scans and clear-cache actions.',
               style: TextStyle(
                 fontSize: 13,
                 height: 1.4,
@@ -1118,6 +1165,9 @@ class _StorageDataScreenState extends State<_StorageDataScreen> {
 
   Future<void> _clearCache() async {
     await widget.onClearCache();
+    if (!mounted) return;
+    await StorageStatsService.instance.invalidate();
+    await _loadStats(forceRefresh: true);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('settings_cache_cleared'.tr())),

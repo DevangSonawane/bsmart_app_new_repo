@@ -20,6 +20,8 @@ import '../services/ui_surface_memory_service.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../preferences/content_preferences_scope.dart';
+import '../preferences/storage_preferences_scope.dart';
+import '../services/network_status_scope.dart';
 import '../theme/theme_scope.dart';
 import '../widgets/comments_sheet.dart';
 import '../widgets/share_content_modal.dart';
@@ -81,6 +83,7 @@ class _ReelsScreenState extends State<ReelsScreen>
   int _poolGeneration = 0;
   bool _autoplayKickScheduled = false;
   bool _disableAutoPlay = false;
+  bool _avoidBackgroundMediaFetch = false;
   static const double _audioOnScreenThreshold = 0.10;
   bool _audioGateOpen = true;
   PageRoute<dynamic>? _subscribedRoute;
@@ -206,8 +209,16 @@ class _ReelsScreenState extends State<ReelsScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final storagePrefs = StoragePreferencesScope.of(context);
+    final network = NetworkStatusScope.of(context);
+    final mediaSaverBlocks = network.isOffline ||
+        (storagePrefs.wifiOnlyDownloads
+            ? !network.isOnWifi
+            : storagePrefs.mobileDataSaver && network.isOnMobileData);
+    _avoidBackgroundMediaFetch = mediaSaverBlocks;
     final newDisableAutoPlay = ThemeScope.of(context).disableAutoPlay ||
-        !ContentPreferencesScope.of(context).autoPlayPulse;
+        !ContentPreferencesScope.of(context).autoPlayPulse ||
+        mediaSaverBlocks;
     if (_disableAutoPlay != newDisableAutoPlay) {
       _disableAutoPlay = newDisableAutoPlay;
       if (_disableAutoPlay) {
@@ -396,7 +407,9 @@ class _ReelsScreenState extends State<ReelsScreen>
 
       if (_reels.isNotEmpty) {
         unawaited(_reelsService.incrementViews(_reels[_currentIndex].id));
-        unawaited(_reelsService.preWarmReels(3));
+        if (!_avoidBackgroundMediaFetch) {
+          unawaited(_reelsService.preWarmReels(3));
+        }
         if (!_playbackAllowed) return;
         unawaited(_initializePoolAt(_currentIndex));
         _poolOps = _poolOps.then<void>((_) async {
@@ -619,17 +632,20 @@ class _ReelsScreenState extends State<ReelsScreen>
       _disposeController(_videoControllers.remove(k), k);
     }
 
-    // Prioritize current reel startup first, then warm neighbors in background.
+    // Prioritize current reel startup first, then warm neighbors in background
+    // only when data saver is not restricting extra network work.
     await _createControllerForIndex(index, generation: generation);
-    final next1 = index + 1;
-    final next2 = index + 2;
-    if (next1 >= 0 && next1 < _reels.length) {
-      _prewarmRequested.add(next1);
-      unawaited(_createControllerForIndex(next1, generation: generation));
-    }
-    if (next2 >= 0 && next2 < _reels.length) {
-      _prewarmRequested.add(next2);
-      unawaited(_createControllerForIndex(next2, generation: generation));
+    if (!_avoidBackgroundMediaFetch) {
+      final next1 = index + 1;
+      final next2 = index + 2;
+      if (next1 >= 0 && next1 < _reels.length) {
+        _prewarmRequested.add(next1);
+        unawaited(_createControllerForIndex(next1, generation: generation));
+      }
+      if (next2 >= 0 && next2 < _reels.length) {
+        _prewarmRequested.add(next2);
+        unawaited(_createControllerForIndex(next2, generation: generation));
+      }
     }
     if (_controllerForIndex(index) == null) {
       _scheduleControllerRetry(index);
@@ -808,7 +824,9 @@ class _ReelsScreenState extends State<ReelsScreen>
         _reels.addAll(next);
         if (next.length < 20) _hasMore = false;
       });
-      unawaited(_reelsService.preWarmReels(3));
+      if (!_avoidBackgroundMediaFetch) {
+        unawaited(_reelsService.preWarmReels(3));
+      }
     } catch (_) {
       // ignore fetch errors for background pagination
     } finally {

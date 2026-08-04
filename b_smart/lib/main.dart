@@ -13,6 +13,10 @@ import 'screens/home_dashboard.dart';
 import 'theme/app_theme.dart';
 import 'preferences/content_preferences_notifier.dart';
 import 'preferences/content_preferences_scope.dart';
+import 'preferences/storage_preferences_notifier.dart';
+import 'preferences/storage_preferences_scope.dart';
+import 'services/network_status_notifier.dart';
+import 'services/network_status_scope.dart';
 import 'theme/theme_notifier.dart';
 import 'theme/theme_scope.dart';
 import 'state/store.dart';
@@ -180,6 +184,14 @@ void main() async {
       debugPrint('Error initializing ContentPreferencesNotifier: $e');
       contentPreferencesNotifier = ContentPreferencesNotifier();
     }
+    StoragePreferencesNotifier storagePreferencesNotifier;
+    try {
+      storagePreferencesNotifier = await StoragePreferencesNotifier.create();
+    } catch (e) {
+      debugPrint('Error initializing StoragePreferencesNotifier: $e');
+      storagePreferencesNotifier = StoragePreferencesNotifier();
+    }
+    await NetworkStatusNotifier.instance.initialize();
 
     runApp(StoreProvider<AppState>(
       store: store,
@@ -203,20 +215,26 @@ void main() async {
           notifier: themeNotifier,
           child: ContentPreferencesScope(
             notifier: contentPreferencesNotifier,
-            child: ShowCaseWidget(
-              builder: (context) => const BSmartApp(),
-              enableAutoScroll: false,
-              disableBarrierInteraction: true,
-              disableScaleAnimation: themeNotifier.reduceMotion,
-              disableMovingAnimation: themeNotifier.reduceMotion,
-              blurValue: 1.5,
-              scrollDuration: const Duration(milliseconds: 320),
-              onFinish: () {
-                HomeOnboardingService.instance.handleFinished();
-              },
-              onDismiss: (_) {
-                HomeOnboardingService.instance.handleDismissed();
-              },
+            child: StoragePreferencesScope(
+              notifier: storagePreferencesNotifier,
+              child: NetworkStatusScope(
+                notifier: NetworkStatusNotifier.instance,
+                child: ShowCaseWidget(
+                  builder: (context) => const BSmartApp(),
+                  enableAutoScroll: false,
+                  disableBarrierInteraction: true,
+                  disableScaleAnimation: themeNotifier.reduceMotion,
+                  disableMovingAnimation: themeNotifier.reduceMotion,
+                  blurValue: 1.5,
+                  scrollDuration: const Duration(milliseconds: 320),
+                  onFinish: () {
+                    HomeOnboardingService.instance.handleFinished();
+                  },
+                  onDismiss: (_) {
+                    HomeOnboardingService.instance.handleDismissed();
+                  },
+                ),
+              ),
             ),
           ),
         ),

@@ -20,6 +20,8 @@ import '../services/supabase_service.dart';
 import '../services/ui_surface_memory_service.dart';
 import '../services/wallet_service.dart';
 import '../services/video_pool.dart';
+import '../preferences/storage_preferences_scope.dart';
+import '../services/network_status_scope.dart';
 import '../state/app_state.dart';
 import '../state/profile_actions.dart';
 import '../state/feed_actions.dart';
@@ -1956,6 +1958,7 @@ class _HomeDashboardState extends State<HomeDashboard>
   }
 
   Future<void> _precacheFeedMedia(List<FeedPost> posts) async {
+    if (_shouldAvoidBackgroundMediaFetch()) return;
     final token = await ApiClient().getToken();
     final authHeaders = <String, String>{};
     if (token != null && token.isNotEmpty) {
@@ -2021,6 +2024,7 @@ class _HomeDashboardState extends State<HomeDashboard>
   }
 
   Future<void> _precacheFeedAvatar(FeedPost post) async {
+    if (_shouldAvoidBackgroundMediaFetch()) return;
     final rawUrl = post.userAvatar?.trim() ?? '';
     if (rawUrl.isEmpty) return;
     final url = UrlHelper.absoluteUrl(rawUrl);
@@ -2318,6 +2322,7 @@ class _HomeDashboardState extends State<HomeDashboard>
   }
 
   void _preWarmVisibleVideo(String postId) {
+    if (_shouldAvoidBackgroundMediaFetch()) return;
     if (_prewarmedFeedIds.contains(postId)) return;
     final store = StoreProvider.of<AppState>(context);
     final allPosts = store.state.feedState.posts;
@@ -2334,6 +2339,7 @@ class _HomeDashboardState extends State<HomeDashboard>
   }
 
   void _preWarmNextVideo(String activePostId) {
+    if (_shouldAvoidBackgroundMediaFetch()) return;
     final store = StoreProvider.of<AppState>(context);
     final allPosts = store.state.feedState.posts;
     final activeIdx = allPosts.indexWhere((p) => p.id == activePostId);
@@ -2351,6 +2357,15 @@ class _HomeDashboardState extends State<HomeDashboard>
         break;
       }
     }
+  }
+
+  bool _shouldAvoidBackgroundMediaFetch() {
+    if (!mounted) return true;
+    final storagePrefs = StoragePreferencesScope.of(context);
+    final network = NetworkStatusScope.of(context);
+    if (network.isOffline) return true;
+    if (storagePrefs.wifiOnlyDownloads) return !network.isOnWifi;
+    return storagePrefs.mobileDataSaver && network.isOnMobileData;
   }
 
   Future<void> _openLocationSearch() async {
@@ -3025,7 +3040,9 @@ class _HomeDashboardState extends State<HomeDashboard>
         unawaited(() async {
           try {
             await _reelsService.fetchReels(limit: 20, offset: 0);
-            await _reelsService.preWarmReels(3);
+            if (!_shouldAvoidBackgroundMediaFetch()) {
+              await _reelsService.preWarmReels(3);
+            }
           } catch (_) {}
         }());
       }
