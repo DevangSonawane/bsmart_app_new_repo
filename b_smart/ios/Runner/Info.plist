@@ -27,9 +27,8 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<!-- TODO: Replace this value: -->
-				<!-- Copied from GoogleService-Info.plist key REVERSED_CLIENT_ID -->
-				<string>com.googleusercontent.apps.832065490130-v6hq0qhgrro624dtcrkqck8ni82rfije</string>
+				<!-- Reversed from the iOS Google Sign-In client ID. -->
+				<string>com.googleusercontent.apps.832065490130-kvnh008mgsptm8fl0iciv0hga0ucrnkn</string>
 			</array>
 		</dict>
 		<dict>
@@ -66,6 +65,8 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>GIDClientID</key>
+	<string>832065490130-kvnh008mgsptm8fl0iciv0hga0ucrnkn.apps.googleusercontent.com</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>We need access to your photo library to select photos and videos for posting.</string>
 	<key>NSCameraUsageDescription</key>

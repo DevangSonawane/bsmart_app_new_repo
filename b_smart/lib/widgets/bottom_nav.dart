@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -40,65 +41,71 @@ class _BottomNavState extends State<BottomNav> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final borderColor = isDark ? const Color(0xFF2A2A2A) : Colors.grey.shade200;
+    final isIOS = defaultTargetPlatform == TargetPlatform.iOS;
+    final bottomOffset = isIOS ? 4.0 : 0.0;
 
-    return SafeArea(
-      top: false,
-      child: SizedBox(
-        height: 42,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _BottomNavShapePainter(
-                  backgroundColor: theme.scaffoldBackgroundColor,
-                  borderColor: borderColor,
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomOffset),
+      child: SafeArea(
+        top: false,
+        bottom: !isIOS,
+        child: SizedBox(
+          height: 42,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _BottomNavShapePainter(
+                    backgroundColor: theme.scaffoldBackgroundColor,
+                    borderColor: borderColor,
+                  ),
                 ),
               ),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildShowcaseNavItem(
-                  context,
-                  step: widget.homeStep,
-                  index: 0,
-                  icon: LucideIcons.house,
-                  isActive: widget.currentIndex == 0,
-                ),
-                _buildShowcaseNavItem(
-                  context,
-                  step: widget.adsStep,
-                  index: 1,
-                  icon: LucideIcons.badgeDollarSign,
-                  isActive: widget.currentIndex == 1,
-                  customIcon: _buildSpotlightIcon(
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildShowcaseNavItem(
                     context,
+                    step: widget.homeStep,
+                    index: 0,
+                    icon: LucideIcons.house,
+                    isActive: widget.currentIndex == 0,
+                  ),
+                  _buildShowcaseNavItem(
+                    context,
+                    step: widget.adsStep,
+                    index: 1,
+                    icon: LucideIcons.badgeDollarSign,
                     isActive: widget.currentIndex == 1,
+                    customIcon: _buildSpotlightIcon(
+                      context,
+                      isActive: widget.currentIndex == 1,
+                    ),
                   ),
-                ),
-                _buildShowcaseCreateButton(context),
-                _buildShowcaseNavItem(
-                  context,
-                  step: widget.rocketStep,
-                  index: 3,
-                  icon: LucideIcons.rocket,
-                  isActive: widget.currentIndex == 3,
-                ),
-                _buildShowcaseNavItem(
-                  context,
-                  step: widget.reelsStep,
-                  index: 4,
-                  icon: LucideIcons.clapperboard,
-                  isActive: widget.currentIndex == 4,
-                  customIcon: _buildBSparksIcon(
+                  _buildShowcaseCreateButton(context),
+                  _buildShowcaseNavItem(
                     context,
-                    isActive: widget.currentIndex == 4,
+                    step: widget.rocketStep,
+                    index: 3,
+                    icon: LucideIcons.rocket,
+                    isActive: widget.currentIndex == 3,
                   ),
-                ),
-              ],
-            ),
-          ],
+                  _buildShowcaseNavItem(
+                    context,
+                    step: widget.reelsStep,
+                    index: 4,
+                    icon: LucideIcons.clapperboard,
+                    isActive: widget.currentIndex == 4,
+                    customIcon: _buildBSparksIcon(
+                      context,
+                      isActive: widget.currentIndex == 4,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -290,7 +297,6 @@ class _BottomNavState extends State<BottomNav> {
       color: color,
     );
   }
-
 }
 
 class _BottomNavShapePainter extends CustomPainter {

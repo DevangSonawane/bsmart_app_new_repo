@@ -16,7 +16,7 @@ class PushService {
   factory PushService() => _instance;
   PushService._internal();
 
-  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  FirebaseMessaging? _messaging;
   final FlutterLocalNotificationsPlugin _localNotifs =
       FlutterLocalNotificationsPlugin();
   final ApiClient _api = ApiClient();
@@ -35,6 +35,7 @@ class PushService {
 
   bool _initialized = false;
   bool _localNotifsReady = false;
+  bool _firebaseAvailable = false;
 
   void _log(String message) {
     if (kReleaseMode) return;
@@ -51,12 +52,19 @@ class PushService {
     return '${value.substring(0, 6)}…${value.substring(value.length - 4)}';
   }
 
-  Future<void> initialize() async {
+  Future<void> initialize({required bool firebaseAvailable}) async {
     if (kIsWeb) return;
     if (_initialized) return;
     _initialized = true;
+    _firebaseAvailable = firebaseAvailable;
 
     _log('initialize() start');
+    if (!_firebaseAvailable) {
+      _log('firebase unavailable; skipping push setup');
+      return;
+    }
+
+    _messaging = FirebaseMessaging.instance;
     _storage = const FlutterSecureStorage(
       webOptions: WebOptions(
         dbName: 'b_smart_secure',
@@ -67,7 +75,7 @@ class PushService {
     // Ask FCM/APNs-level permission first (Android 13+ will also need runtime
     // POST_NOTIFICATIONS which we request below as a backup).
     try {
-      final fcmSettings = await _messaging.requestPermission(
+      final fcmSettings = await _messaging!.requestPermission(
         alert: true,
         badge: true,
         sound: true,
@@ -92,24 +100,27 @@ class PushService {
         FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
     _onMessageOpenedSub =
         FirebaseMessaging.onMessageOpenedApp.listen(_handleOpenFromMessage);
-    _tokenRefreshSub = _messaging.onTokenRefresh.listen((token) async {
+    _tokenRefreshSub = _messaging!.onTokenRefresh.listen((token) async {
       _log('onTokenRefresh token=${_redact(token)}');
       await _registerIfAuthenticated(token, force: false);
     });
 
-    await _messaging.setAutoInitEnabled(true);
+    await _messaging!.setAutoInitEnabled(true);
 
     // Register current token if user is already logged in.
-    final token = await _messaging.getToken();
+    final token = await _getFcmTokenSafely();
     if (token != null && token.isNotEmpty) {
       _log('getToken() token=${_redact(token)}');
       await _registerIfAuthenticated(token, force: false);
     } else {
       _log('getToken() returned empty/null');
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        unawaited(_retryTokenRegistrationAfterDelay());
+      }
     }
 
     // If the app was launched by tapping a notification.
-    final initial = await _messaging.getInitialMessage();
+    final initial = await _messaging!.getInitialMessage();
     if (initial != null) {
       _log(
           'getInitialMessage() present; dataKeys=${initial.data.keys.toList()}');
@@ -131,8 +142,11 @@ class PushService {
 
   Future<void> syncTokenWithBackend() async {
     if (kIsWeb) return;
+    if (!_firebaseAvailable) return;
     _log('syncTokenWithBackend()');
-    final token = await _messaging.getToken();
+    final messaging = _messaging;
+    if (messaging == null) return;
+    final token = await _getFcmTokenSafely();
     if (token == null || token.isEmpty) {
       _log('syncTokenWithBackend(): getToken() empty/null');
       return;
@@ -144,8 +158,11 @@ class PushService {
   /// Useful when backend-side token storage/SNS endpoints were reset.
   Future<void> forceRegisterWithBackend() async {
     if (kIsWeb) return;
+    if (!_firebaseAvailable) return;
     _log('forceRegisterWithBackend()');
-    final token = await _messaging.getToken();
+    final messaging = _messaging;
+    if (messaging == null) return;
+    final token = await _getFcmTokenSafely();
     if (token == null || token.isEmpty) {
       _log('forceRegisterWithBackend(): getToken() empty/null');
       return;
@@ -157,12 +174,14 @@ class PushService {
   /// will register again.
   Future<void> clearLastRegisteredToken() async {
     if (kIsWeb) return;
+    if (!_firebaseAvailable) return;
     _log('clearLastRegisteredToken()');
     await _write(_storedTokenKey, '');
   }
 
   Future<void> unregisterFromBackend() async {
     if (kIsWeb) return;
+    if (!_firebaseAvailable) return;
     _log('unregisterFromBackend()');
     try {
       // Must be called before token is cleared (needs Authorization header).
@@ -177,10 +196,41 @@ class PushService {
     }
   }
 
+  Future<String?> _getFcmTokenSafely() async {
+    final messaging = _messaging;
+    if (messaging == null) return null;
+    try {
+      return await messaging.getToken();
+    } catch (e) {
+      _log('getToken() failed (ignored for startup): $e');
+      return null;
+    }
+  }
+
+  Future<void> _retryTokenRegistrationAfterDelay() async {
+    await Future<void>.delayed(const Duration(seconds: 3));
+    if (!_firebaseAvailable) return;
+    final token = await _getFcmTokenSafely();
+    if (token == null || token.isEmpty) {
+      _log('retry getToken() still empty/null');
+      return;
+    }
+    _log('retry getToken() token=${_redact(token)}');
+    await _registerIfAuthenticated(token, force: false);
+  }
+
   Future<void> _initLocalNotifications() async {
     const androidInit =
         AndroidInitializationSettings('@drawable/ic_stat_notification');
-    const initSettings = InitializationSettings(android: androidInit);
+    const iosInit = DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
+    );
+    const initSettings = InitializationSettings(
+      android: androidInit,
+      iOS: iosInit,
+    );
 
     await _localNotifs.initialize(
       initSettings,
@@ -235,12 +285,16 @@ class PushService {
       importance: Importance.high,
       priority: Priority.high,
     );
+    const iosDetails = DarwinNotificationDetails();
 
     await _localNotifs.show(
       DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
       title.toString(),
       body.toString(),
-      const NotificationDetails(android: androidDetails),
+      const NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
       payload: payload,
     );
 
@@ -250,7 +304,9 @@ class PushService {
   Future<void> _recordNotificationForBadge(RemoteMessage message) async {
     final data = message.data;
     final now = DateTime.now();
-    final id = (data['id'] ?? data['_id'] ?? message.messageId ??
+    final id = (data['id'] ??
+            data['_id'] ??
+            message.messageId ??
             'push-${now.millisecondsSinceEpoch}')
         .toString();
     if (_notificationService.getNotificationById(id) != null) return;
@@ -262,7 +318,8 @@ class PushService {
         (message.notification?.title ?? data['title'] ?? 'Bsmart').toString();
     final body = (message.notification?.body ?? data['body'] ?? '').toString();
     final link = (data['link'] ?? '').toString().trim();
-    final relatedId = (data['related_id'] ?? data['relatedId']).toString().trim();
+    final relatedId =
+        (data['related_id'] ?? data['relatedId']).toString().trim();
     final currentUserId = await CurrentUser.id;
 
     await _notificationService.addNotification(

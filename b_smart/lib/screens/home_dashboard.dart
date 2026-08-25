@@ -3322,21 +3322,20 @@ class _HomeDashboardState extends State<HomeDashboard>
       final isFullScreen = idx == 1 || idx == 3 || idx == 4;
       if (isFullScreen) return null;
       return AppBar(
-        title: ShaderMask(
-          blendMode: BlendMode.srcIn,
-          shaderCallback: (bounds) => const LinearGradient(
-            colors: [
-              DesignTokens.instaPurple,
-              DesignTokens.instaPink,
-              DesignTokens.instaOrange
-            ],
-          ).createShader(bounds),
-          child: const Text('b_smart',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 22,
-                  fontFamily: 'cursive')),
+        centerTitle: false,
+        title: Align(
+          alignment: Alignment.centerLeft,
+          child: ShaderMask(
+            blendMode: BlendMode.srcIn,
+            shaderCallback: (bounds) => const LinearGradient(
+              colors: [
+                DesignTokens.instaPurple,
+                DesignTokens.instaPink,
+                DesignTokens.instaOrange
+              ],
+            ).createShader(bounds),
+            child: Text('b_smart', style: _brandTitleStyle()),
+          ),
         ),
         elevation: 0,
         backgroundColor: appBarBg,
@@ -4024,6 +4023,28 @@ class _HomeDashboardState extends State<HomeDashboard>
       },
       child: body,
     );
+  }
+
+  TextStyle _brandTitleStyle() {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.iOS:
+        return GoogleFonts.pacifico(
+          color: Colors.white,
+          fontSize: 22,
+          fontWeight: FontWeight.w400,
+        );
+      case TargetPlatform.android:
+      case TargetPlatform.fuchsia:
+      case TargetPlatform.linux:
+      case TargetPlatform.macOS:
+      case TargetPlatform.windows:
+        return const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 22,
+          fontFamily: 'cursive',
+        );
+    }
   }
 
   List<Widget> _buildFeedSkeletonSlivers(BuildContext context) {

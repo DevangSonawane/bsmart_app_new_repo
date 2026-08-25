@@ -43,17 +43,39 @@ import 'utils/timezone_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e, st) {
+    debugPrint('Background Firebase init failed: $e');
+    debugPrint(st.toString());
+    return;
+  }
+}
+
+Future<bool> _initializeFirebaseIfPossible() async {
+  try {
+    await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform);
+    return true;
+  } catch (e, st) {
+    debugPrint('Firebase initialization failed: $e');
+    debugPrint(st.toString());
+    return false;
+  }
 }
 
 void main() async {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     await EasyLocalization.ensureInitialized();
-    await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform);
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-    await PushService().initialize();
+    final firebaseReady = await _initializeFirebaseIfPossible();
+    if (firebaseReady) {
+      FirebaseMessaging.onBackgroundMessage(
+        _firebaseMessagingBackgroundHandler,
+      );
+    }
     // Forward Flutter framework errors to the current zone handler so they
     // don't bring down the app during debug/testing of plugin failures.
     FlutterError.onError = (FlutterErrorDetails details) {
@@ -192,6 +214,7 @@ void main() async {
       storagePreferencesNotifier = StoragePreferencesNotifier();
     }
     await NetworkStatusNotifier.instance.initialize();
+    await PushService().initialize(firebaseAvailable: firebaseReady);
 
     runApp(StoreProvider<AppState>(
       store: store,
