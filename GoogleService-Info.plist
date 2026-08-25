@@ -2,33 +2,29 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CLIENT_ID</key>
-	<string>mock-client-id.apps.googleusercontent.com</string>
-	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.mock-client-id</string>
 	<key>API_KEY</key>
-	<string>mock-api-key</string>
+	<string>AIzaSyCbX6V-la0HW4S_xBbf0IuOVusEeGBGMrE</string>
 	<key>GCM_SENDER_ID</key>
-	<string>000000000000</string>
+	<string>652664354990</string>
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
 	<string>com.ruvees.bsmart</string>
 	<key>PROJECT_ID</key>
-	<string>mock-project-id</string>
+	<string>bsmart-ios</string>
 	<key>STORAGE_BUCKET</key>
-	<string>mock-project-id.appspot.com</string>
+	<string>bsmart-ios.firebasestorage.app</string>
 	<key>IS_ADS_ENABLED</key>
-	<false/>
+	<false></false>
 	<key>IS_ANALYTICS_ENABLED</key>
-	<false/>
+	<false></false>
 	<key>IS_APPINVITE_ENABLED</key>
-	<true/>
+	<true></true>
 	<key>IS_GCM_ENABLED</key>
-	<true/>
+	<true></true>
 	<key>IS_SIGNIN_ENABLED</key>
-	<true/>
+	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:000000000000:ios:0000000000000000</string>
+	<string>1:652664354990:ios:bbfcb87006f83b9779553f</string>
 </dict>
 </plist>
