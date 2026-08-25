@@ -26,10 +26,10 @@ class DefaultFirebaseOptions {
 
   // Values derived from `android/app/google-services.json`.
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyBDYEf5vEoLExg50J5nRnQMts-SXc9fo1E',
-    appId: '1:775304408229:android:eac238430ec3c41f64714c',
-    messagingSenderId: '775304408229',
-    projectId: 'bsmart-224b2',
-    storageBucket: 'bsmart-224b2.firebasestorage.app',
+    apiKey: 'AIzaSyADxbsYwEiagCqMaLYTtc-z3MGZqSC0w3w',
+    appId: '1:492094390523:android:1d310373ae69b437fcb05e',
+    messagingSenderId: '492094390523',
+    projectId: 'bsmart-5116a',
+    storageBucket: 'bsmart-5116a.firebasestorage.app',
   );
 }

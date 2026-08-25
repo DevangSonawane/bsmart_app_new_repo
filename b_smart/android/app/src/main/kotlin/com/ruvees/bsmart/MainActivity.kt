@@ -1,4 +1,4 @@
-package com.bsmart.app
+package com.ruvees.bsmart
 
 import android.content.Intent
 import android.os.Bundle
