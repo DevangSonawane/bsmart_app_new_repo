@@ -38,10 +38,10 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyCbX6V-la0HW4S_xBbf0IuOVusEeGBGMrE',
-    appId: '1:652664354990:ios:bbfcb87006f83b9779553f',
+    appId: '1:652664354990:ios:563d6fa6b969cc9379553f',
     messagingSenderId: '652664354990',
     projectId: 'bsmart-ios',
     storageBucket: 'bsmart-ios.firebasestorage.app',
-    iosBundleId: 'com.ruvees.bsmart',
+    iosBundleId: 'com.ruvees.bsmart.ios',
   );
 }
