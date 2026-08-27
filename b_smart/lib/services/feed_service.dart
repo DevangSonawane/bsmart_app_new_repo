@@ -220,28 +220,8 @@ class FeedService {
   }
 
   List<FeedPost> _getAds() {
-    final now = DateTime.now();
-    return [
-      FeedPost(
-        id: 'ad-post-1',
-        userId: 'advertiser-1',
-        userName: 'Sponsored',
-        mediaType: PostMediaType.image,
-        mediaUrls: ['ad_image_1'],
-        caption: 'Special Offer - 50% Off!',
-        createdAt: now.subtract(const Duration(hours: 1)),
-        likes: 0,
-        comments: 0,
-        isAd: true,
-        adTitle: 'Special Offer',
-        adCompanyId: 'company-1',
-        adCompanyName: 'TechCorp',
-        adCategory: 'Electronics',
-        totalBudgetCoins: 5000,
-        targetLocations: const ['All'],
-        targetLanguages: const ['All'],
-      ),
-    ];
+    // Keep the hook for legacy callers, but do not inject any hardcoded ads.
+    return const <FeedPost>[];
   }
 
   /// Fetch feed from the REST API backend.
@@ -1126,10 +1106,6 @@ class FeedService {
         sponsored = _mapAdsToFeedPosts(rawAds);
       } catch (_) {
         sponsored = const <FeedPost>[];
-      }
-      if (sponsored.isEmpty) {
-        // Fallback so ads still appear if ads API returns nothing.
-        sponsored = _getAds();
       }
 
       final hasPromoteInFeed = deduped.any((p) => p.isPromote);
