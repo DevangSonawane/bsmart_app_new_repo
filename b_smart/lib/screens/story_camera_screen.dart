@@ -713,8 +713,11 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
     }
 
     if (state == AppLifecycleState.inactive) {
-      cameraController.dispose();
       _controller = null;
+      if (mounted) {
+        setState(() {});
+      }
+      unawaited(cameraController.dispose());
     } else if (state == AppLifecycleState.resumed) {
       _initializeCameraController(_currentCameraIndex);
     }
@@ -772,9 +775,13 @@ class _StoryCameraScreenState extends State<StoryCameraScreen>
   }
 
   Future<void> _initializeCameraController(int cameraIndex) async {
-    if (_controller != null) {
-      await _controller!.dispose();
+    final oldController = _controller;
+    if (oldController != null) {
       _controller = null;
+      if (mounted) {
+        setState(() {});
+      }
+      await oldController.dispose();
     }
 
     if (cameraIndex >= _cameras.length) {
