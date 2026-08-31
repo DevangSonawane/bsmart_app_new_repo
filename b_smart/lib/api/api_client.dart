@@ -3,7 +3,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/api_config.dart';
 import '../services/connectivity_service.dart';
@@ -189,6 +189,12 @@ class ApiClient {
             body: body != null ? jsonEncode(body) : null,
           )
           .timeout(ApiConfig.timeout);
+      if (path.contains('/auth/apple/token')) {
+        debugPrint('[apple-sign-in] backend status code: ${response.statusCode}');
+        debugPrint(
+          '[apple-sign-in] backend response: ${_sanitizeAppleDebugBody(response.body)}',
+        );
+      }
       return _handleResponse(response);
     });
   }
@@ -460,6 +466,48 @@ class ApiClient {
         .firstMatch(source);
     final t = match?.group(1)?.replaceAll(RegExp(r'\s+'), ' ').trim();
     return t;
+  }
+
+  String _sanitizeAppleDebugBody(String body) {
+    final trimmed = body.trim();
+    if (trimmed.isEmpty) return '<empty>';
+
+    final decoded = _tryDecodeJson(trimmed);
+    if (decoded is Map<String, dynamic>) {
+      return jsonEncode(_redactSensitiveValues(decoded));
+    }
+    if (decoded is List) {
+      return jsonEncode(_redactSensitiveValues(decoded));
+    }
+
+    if (trimmed.length <= 500) return trimmed;
+    return '${trimmed.substring(0, 500)}...';
+  }
+
+  dynamic _redactSensitiveValues(dynamic value) {
+    const sensitiveKeys = {
+      'token',
+      'jwt',
+      'access_token',
+      'accessToken',
+      'identity_token',
+      'authorization_code',
+      'id_token',
+    };
+
+    if (value is Map) {
+      return value.map((key, dynamic val) {
+        final keyText = key.toString();
+        if (sensitiveKeys.contains(keyText)) {
+          return MapEntry(key, '<redacted>');
+        }
+        return MapEntry(key, _redactSensitiveValues(val));
+      });
+    }
+    if (value is List) {
+      return value.map(_redactSensitiveValues).toList();
+    }
+    return value;
   }
 
   MediaType? _contentTypeForFilename(String name) {

@@ -18,15 +18,19 @@ class ContentPreferencesNotifier extends ChangeNotifier {
   bool get autoPlayPulse => _autoPlayPulse;
 
   static Future<ContentPreferencesNotifier> create() async {
+    final notifier = ContentPreferencesNotifier();
+    await notifier.hydrateFromPreferences();
+    return notifier;
+  }
+
+  Future<void> hydrateFromPreferences() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return ContentPreferencesNotifier(
-        initialAutoPlayVideos: prefs.getBool(_kAutoPlayVideosKey) ?? true,
-        initialAutoPlayPulse: prefs.getBool(_kAutoPlayPulseKey) ?? true,
-      );
+      _autoPlayVideos = prefs.getBool(_kAutoPlayVideosKey) ?? true;
+      _autoPlayPulse = prefs.getBool(_kAutoPlayPulseKey) ?? true;
+      notifyListeners();
     } catch (e) {
       debugPrint('Error initializing ContentPreferencesNotifier: $e');
-      return ContentPreferencesNotifier();
     }
   }
 

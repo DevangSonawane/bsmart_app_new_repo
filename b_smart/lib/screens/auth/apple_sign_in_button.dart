@@ -106,6 +106,9 @@ class _AppleAuthButtonState extends State<AppleAuthButton> {
         );
       }
     } catch (e, st) {
+      debugPrint('[apple-sign-in] button catch exception type: ${e.runtimeType}');
+      debugPrint('[apple-sign-in] button catch exception message: $e');
+      debugPrint('[apple-sign-in] button catch stack trace:\n$st');
       AppErrorHandler.logError('apple-sign-in', e, st);
       if (!mounted) return;
       setState(() {

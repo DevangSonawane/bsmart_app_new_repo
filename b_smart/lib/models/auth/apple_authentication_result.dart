@@ -41,8 +41,8 @@ class AppleAuthenticationResult {
   Map<String, dynamic> toBackendPayload() {
     return {
       'identity_token': identityToken,
-      'full_name': backendFullName,
       'email': email ?? '',
+      'full_name': backendFullName,
     };
   }
 

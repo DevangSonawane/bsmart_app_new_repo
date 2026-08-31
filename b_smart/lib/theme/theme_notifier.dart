@@ -35,24 +35,29 @@ class ThemeNotifier extends ChangeNotifier {
   bool get disableAutoPlay => _disableAutoPlay;
 
   static Future<ThemeNotifier> create() async {
+    final notifier = ThemeNotifier(initialThemeMode: ThemeMode.system);
+    await notifier.hydrateFromPreferences();
+    return notifier;
+  }
+
+  Future<void> hydrateFromPreferences() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final storedThemeMode = prefs.getString(_kThemeModeKey);
       final storedFontScale = prefs.getDouble(_kFontScaleKey) ?? 1.0;
       final storedHighContrast = prefs.getBool(_kHighContrastKey) ?? false;
       final storedReduceMotion = prefs.getBool(_kReduceMotionKey) ?? false;
-      final storedDisableAutoPlay = prefs.getBool(_kDisableAutoPlayKey) ?? false;
+      final storedDisableAutoPlay =
+          prefs.getBool(_kDisableAutoPlayKey) ?? false;
       final initialThemeMode = _parseThemeMode(storedThemeMode);
-      return ThemeNotifier(
-        initialThemeMode: initialThemeMode,
-        initialFontScale: storedFontScale.clamp(0.85, 1.3),
-        initialHighContrast: storedHighContrast,
-        initialReduceMotion: storedReduceMotion,
-        initialDisableAutoPlay: storedDisableAutoPlay,
-      );
+      _themeMode = initialThemeMode;
+      _fontScale = storedFontScale.clamp(0.85, 1.3);
+      _highContrastMode = storedHighContrast;
+      _reduceMotion = storedReduceMotion;
+      _disableAutoPlay = storedDisableAutoPlay;
+      notifyListeners();
     } catch (e) {
       debugPrint('Error initializing ThemeNotifier: $e');
-      return ThemeNotifier(initialThemeMode: ThemeMode.system);
     }
   }
 
@@ -79,7 +84,8 @@ class ThemeNotifier extends ChangeNotifier {
     }
   }
 
-  Future<void> setDark(bool value) => setThemeMode(value ? ThemeMode.dark : ThemeMode.light);
+  Future<void> setDark(bool value) =>
+      setThemeMode(value ? ThemeMode.dark : ThemeMode.light);
 
   Future<void> setFontScale(double value) async {
     final clamped = value.clamp(0.85, 1.3);

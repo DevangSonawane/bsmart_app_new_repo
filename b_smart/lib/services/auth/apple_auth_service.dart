@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../../models/auth/apple_authentication_result.dart';
@@ -12,6 +13,8 @@ class AppleAuthService {
   AppleAuthService._internal();
 
   Future<AppleAuthenticationResult?> authenticate() async {
+    debugPrint('[apple-sign-in] native Apple login started');
+
     final available = await SignInWithApple.isAvailable();
     if (!available) {
       throw Exception('Sign in with Apple is not available on this device.');
@@ -30,8 +33,22 @@ class AppleAuthService {
         nonce: hashedNonce,
         state: state,
       );
+      debugPrint('[apple-sign-in] credential received');
 
       final identityToken = credential.identityToken;
+      debugPrint(
+        '[apple-sign-in] identity token present: ${identityToken != null && identityToken.trim().isNotEmpty}',
+      );
+      debugPrint(
+        '[apple-sign-in] identity token length: ${identityToken?.length ?? 0}',
+      );
+      debugPrint(
+        '[apple-sign-in] email present: ${credential.email != null && credential.email!.trim().isNotEmpty}',
+      );
+      debugPrint(
+        '[apple-sign-in] full name present: ${(credential.givenName != null && credential.givenName!.trim().isNotEmpty) || (credential.familyName != null && credential.familyName!.trim().isNotEmpty)}',
+      );
+
       if (identityToken == null || identityToken.trim().isEmpty) {
         throw Exception(
           'Apple sign-in did not return an identity token.',
@@ -63,13 +80,28 @@ class AppleAuthService {
         hashedNonce: hashedNonce,
         authenticatedAt: DateTime.now(),
       );
-    } on SignInWithAppleAuthorizationException catch (e) {
+    } on SignInWithAppleAuthorizationException catch (e, st) {
+      debugPrint(
+        '[apple-sign-in] native Apple auth exception type: ${e.runtimeType}',
+      );
+      debugPrint('[apple-sign-in] native Apple auth exception message: $e');
+      debugPrint('[apple-sign-in] native Apple auth stack trace:\n$st');
       if (e.code == AuthorizationErrorCode.canceled) {
         return null;
       }
       throw Exception('Apple sign-in failed: ${e.message}');
-    } on SignInWithAppleException catch (e) {
+    } on SignInWithAppleException catch (e, st) {
+      debugPrint(
+        '[apple-sign-in] native Apple auth exception type: ${e.runtimeType}',
+      );
+      debugPrint('[apple-sign-in] native Apple auth exception message: $e');
+      debugPrint('[apple-sign-in] native Apple auth stack trace:\n$st');
       throw Exception('Apple sign-in failed: $e');
+    } catch (e, st) {
+      debugPrint('[apple-sign-in] native Apple auth exception type: ${e.runtimeType}');
+      debugPrint('[apple-sign-in] native Apple auth exception message: $e');
+      debugPrint('[apple-sign-in] native Apple auth stack trace:\n$st');
+      rethrow;
     }
   }
 }

@@ -18,16 +18,19 @@ class StoragePreferencesNotifier extends ChangeNotifier {
   bool get wifiOnlyDownloads => _wifiOnlyDownloads;
 
   static Future<StoragePreferencesNotifier> create() async {
+    final notifier = StoragePreferencesNotifier();
+    await notifier.hydrateFromPreferences();
+    return notifier;
+  }
+
+  Future<void> hydrateFromPreferences() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return StoragePreferencesNotifier(
-        initialMobileDataSaver: prefs.getBool(_kMobileDataSaverKey) ?? false,
-        initialWifiOnlyDownloads:
-            prefs.getBool(_kWifiOnlyDownloadsKey) ?? false,
-      );
+      _mobileDataSaver = prefs.getBool(_kMobileDataSaverKey) ?? false;
+      _wifiOnlyDownloads = prefs.getBool(_kWifiOnlyDownloadsKey) ?? false;
+      notifyListeners();
     } catch (e) {
       debugPrint('Error initializing StoragePreferencesNotifier: $e');
-      return StoragePreferencesNotifier();
     }
   }
 

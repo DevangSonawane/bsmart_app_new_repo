@@ -21,6 +21,7 @@ class AppErrorHandler {
   }
 
   static void logError(String context, Object error, [StackTrace? stackTrace]) {
+    debugPrint('[$context] exception type: ${error.runtimeType}');
     debugPrint('[$context] $error');
     if (stackTrace != null) {
       debugPrint(stackTrace.toString());

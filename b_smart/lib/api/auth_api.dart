@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+
 import 'api_client.dart';
 import '../models/auth/apple_authentication_result.dart';
 
@@ -172,9 +176,33 @@ class AuthApi {
   Future<Map<String, dynamic>> completeAppleSignIn(
     AppleAuthenticationResult result,
   ) async {
+    debugPrint('[apple-sign-in] backend request started');
+    debugPrint('[apple-sign-in] backend URL: /api/auth/apple/token');
+    debugPrint(
+      '[apple-sign-in] backend request fields: identity_token=${result.identityToken.trim().isNotEmpty}, email=${result.email?.trim().isNotEmpty == true}, full_name=${result.backendFullName.trim().isNotEmpty}',
+    );
+
     final payload = result.toBackendPayload();
+    final debugPayload = <String, dynamic>{
+      'identity_token': '<redacted>',
+      'email': payload['email'],
+      'full_name': payload['full_name'],
+    };
+    debugPrint(
+      '[apple-sign-in] backend payload keys: ${payload.keys.join(', ')}',
+    );
+    debugPrint(
+      '[apple-sign-in] backend payload: ${jsonEncode(debugPayload)}',
+    );
+
     final res = await _client.post('/auth/apple/token', body: payload);
     final data = res as Map<String, dynamic>;
+    debugPrint(
+      '[apple-sign-in] backend response keys: ${data.keys.join(', ')}',
+    );
+    debugPrint(
+      '[apple-sign-in] JWT received: ${_extractToken(data) != null && _extractToken(data)!.isNotEmpty}',
+    );
     await _persistTokenIfPresent(data);
     return data;
   }

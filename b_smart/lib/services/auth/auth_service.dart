@@ -183,8 +183,14 @@ class AuthService {
     AppleAuthenticationResult result,
   ) async {
     try {
+      debugPrint(
+        '[apple-sign-in] auth service exchange started',
+      );
       final data = await _authApi.completeAppleSignIn(result);
       final token = _extractAuthToken(data);
+      debugPrint(
+        '[apple-sign-in] JWT received: ${token != null && token.isNotEmpty}',
+      );
       if (token == null || token.isEmpty) {
         throw Exception(
           'Backend did not return an app token after Apple login. Response keys: ${data.keys.join(', ')}',
@@ -210,23 +216,24 @@ class AuthService {
       }
 
       unawaited(PushService().syncTokenWithBackend());
+      debugPrint('[apple-sign-in] auth completed');
       return user;
     } on RestrictedLoginException {
       rethrow;
     } on ApiException catch (e) {
-      if (e.statusCode == 401) {
-        throw Exception('Apple authentication failed. Please try again.');
+      debugPrint('[apple-sign-in] backend exception type: ${e.runtimeType}');
+      debugPrint('[apple-sign-in] backend exception message: ${e.message}');
+      debugPrint('[apple-sign-in] backend status code: ${e.statusCode}');
+      if (e.body != null) {
+        debugPrint('[apple-sign-in] backend exception body: ${e.body}');
       }
-      if (e.statusCode == 400) {
-        throw Exception('Apple sign-in request was invalid. Please try again.');
-      }
-      if (e.statusCode >= 500) {
-        throw Exception(
-          'Apple authentication service is unavailable right now. Please try again later.',
-        );
-      }
-      throw Exception('Apple login failed at backend exchange: ${e.message}');
-    } catch (e) {
+      throw Exception(
+        'Apple login failed at backend exchange (HTTP ${e.statusCode}): ${e.message}',
+      );
+    } catch (e, st) {
+      debugPrint('[apple-sign-in] backend exception type: ${e.runtimeType}');
+      debugPrint('[apple-sign-in] backend exception message: $e');
+      debugPrint('[apple-sign-in] backend stack trace:\n$st');
       throw Exception('Apple login failed: ${e.toString()}');
     }
   }
