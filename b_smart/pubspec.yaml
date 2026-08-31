@@ -30,6 +30,7 @@ dependencies:
 
   # Google Sign In (Native)
   google_sign_in: ^6.1.6
+  sign_in_with_apple: ^7.0.1
 
   # Utilities
   intl: ^0.20.2
@@ -102,6 +103,7 @@ flutter:
     - assets/images/bsmart_logo.png
     - assets/images/logo.svg
     - assets/images/google_logo.svg
+    - assets/images/apple-logo-svgrepo-com.svg
     - assets/bsmart_icons/
     - assets/giftcards/
     - assets/banners/

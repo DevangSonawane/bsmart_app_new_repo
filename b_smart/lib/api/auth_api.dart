@@ -1,4 +1,5 @@
 import 'api_client.dart';
+import '../models/auth/apple_authentication_result.dart';
 
 /// REST API wrapper for `/auth` endpoints.
 ///
@@ -147,5 +148,19 @@ class AuthApi {
   /// Save a token obtained externally (e.g. Google OAuth redirect).
   Future<void> saveExternalToken(String token) async {
     await _client.saveToken(token);
+  }
+
+  /// Backend handoff point for Apple Sign-In.
+  ///
+  /// The frontend collects a structured Apple credential here, but the real
+  /// backend contract is intentionally left unimplemented until the API
+  /// documentation is available.
+  Future<Map<String, dynamic>> completeAppleSignIn(
+    AppleAuthenticationResult result,
+  ) async {
+    throw UnimplementedError(
+      'Apple Sign-In backend integration is pending. '
+      'Use result.toBackendPayload() once the endpoint contract is provided.',
+    );
   }
 }

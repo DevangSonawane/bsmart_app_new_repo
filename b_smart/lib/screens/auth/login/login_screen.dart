@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_redux/flutter_redux.dart';
@@ -9,6 +10,7 @@ import '../../../utils/app_error_handler.dart';
 import '../../../state/app_state.dart';
 import '../../../state/auth_actions.dart';
 import '../../home_dashboard.dart';
+import '../apple_sign_in_button.dart';
 import '../google_sign_in_button.dart';
 // Using native GoogleSignIn / secure browser flows; no embedded WebView
 
@@ -498,8 +500,19 @@ class _LoginScreenState extends State<LoginScreen>
                       ),
                       const SizedBox(height: 32),
 
-                      // Google Sign In Button
-                      const GoogleSignInButton(),
+                      // Social sign-in row
+                      if (!kIsWeb &&
+                          (defaultTargetPlatform == TargetPlatform.iOS ||
+                              defaultTargetPlatform == TargetPlatform.macOS))
+                        Row(
+                          children: const [
+                            Expanded(child: GoogleSignInButton()),
+                            SizedBox(width: 12),
+                            Expanded(child: AppleAuthButton()),
+                          ],
+                        )
+                      else
+                        const GoogleSignInButton(),
                       const SizedBox(height: 32),
 
                       // Sign Up Link

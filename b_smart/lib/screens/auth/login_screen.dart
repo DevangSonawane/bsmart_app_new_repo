@@ -91,10 +91,13 @@ class _LoginScreenState extends State<LoginScreen> {
               obscureText: true,
             ),
             const SizedBox(height: 20),
-            if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
+            if (_error != null)
+              Text(_error!, style: const TextStyle(color: Colors.red)),
             ElevatedButton(
               onPressed: _loading ? null : _login,
-              child: _loading ? const CircularProgressIndicator() : const Text('Login'),
+              child: _loading
+                  ? const CircularProgressIndicator()
+                  : const Text('Login'),
             ),
           ],
         ),

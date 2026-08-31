@@ -53,7 +53,8 @@ class _GoogleSignInButtonState extends State<GoogleSignInButton> {
         await PushService().syncTokenWithBackend();
         await SessionResetService.instance.clearUserSessionState();
         if (mounted && user.id.isNotEmpty) {
-          StoreProvider.of<AppState>(context).dispatch(SetAuthenticated(user.id));
+          StoreProvider.of<AppState>(context)
+              .dispatch(SetAuthenticated(user.id));
         }
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const HomeDashboard()),
@@ -82,24 +83,37 @@ class _GoogleSignInButtonState extends State<GoogleSignInButton> {
       children: [
         SizedBox(
           width: double.infinity,
-          height: 52,
-          child: OutlinedButton.icon(
-            onPressed: _loading ? null : _handleGoogleSignIn,
-            icon: _loading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : SvgPicture.asset(
-                    'assets/images/google_logo.svg', // add this asset or use an icon
-                    height: 22,
-                    // SvgPicture does not have errorBuilder, so removing it
+          height: 56,
+          child: Semantics(
+            label: widget.label,
+            button: true,
+            enabled: !_loading,
+            child: OutlinedButton(
+              onPressed: _loading ? null : _handleGoogleSignIn,
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Opacity(
+                    opacity: _loading ? 0 : 1,
+                    child: SvgPicture.asset(
+                      'assets/images/google_logo.svg',
+                      height: 22,
+                      width: 22,
+                    ),
                   ),
-            label: Text(widget.label),
-            style: OutlinedButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                  if (_loading)
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                ],
               ),
             ),
           ),
