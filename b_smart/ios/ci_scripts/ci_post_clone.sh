@@ -92,6 +92,9 @@ flutter precache --ios
 log "Running flutter pub get"
 flutter pub get
 
+log "Generating Flutter iOS build configuration"
+flutter build ios --release --config-only --no-codesign
+
 [[ -f "$IOS_ROOT/Flutter/Generated.xcconfig" ]] || die "flutter pub get did not generate $IOS_ROOT/Flutter/Generated.xcconfig"
 
 if ! command -v pod >/dev/null 2>&1; then
