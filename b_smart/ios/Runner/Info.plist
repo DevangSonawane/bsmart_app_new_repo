@@ -74,6 +74,6 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>We need access to your microphone to record videos with sound.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>We need your location to tag posts with your current place.</string>
+	<string>bSmart uses your location while you are using the app when you tap Use current location to tag a post or reel and restore your selected home location.</string>
 </dict>
 </plist>

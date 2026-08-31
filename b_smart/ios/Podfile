@@ -41,15 +41,21 @@ post_install do |installer|
     flutter_additional_ios_build_settings(target)
 
     target.build_configurations.each do |config|
-      # Enable the permissions this app actually requests on iOS.
-      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
-        '$(inherited)',
-        'PERMISSION_CAMERA=1',
-        'PERMISSION_MICROPHONE=1',
-        'PERMISSION_PHOTOS=1',
-        'PERMISSION_LOCATION=1',
-        'PERMISSION_NOTIFICATIONS=1',
-      ]
+      # Enable only the permissions this app actually requests on iOS.
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+
+      defs = config.build_settings['GCC_PREPROCESSOR_DEFINITIONS']
+
+      if target.name == 'permission_handler_apple'
+        defs << 'PERMISSION_CAMERA=1'
+        defs << 'PERMISSION_MICROPHONE=1'
+        defs << 'PERMISSION_PHOTOS=1'
+        defs << 'PERMISSION_NOTIFICATIONS=1'
+      end
+
+      if target.name == 'geolocator_apple'
+        defs << 'BYPASS_PERMISSION_LOCATION_ALWAYS=1'
+      end
     end
   end
 end
