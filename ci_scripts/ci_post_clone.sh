@@ -11,8 +11,15 @@ die() {
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PROJECT_ROOT="$REPO_ROOT/b_smart"
+REPO_ROOT="${CI_PRIMARY_REPOSITORY_PATH:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+cd "$REPO_ROOT"
+
+if [[ -f "$REPO_ROOT/pubspec.yaml" ]]; then
+  PROJECT_ROOT="$REPO_ROOT"
+else
+  PROJECT_ROOT="$REPO_ROOT/b_smart"
+fi
+
 IOS_ROOT="$PROJECT_ROOT/ios"
 METADATA_FILE="$PROJECT_ROOT/.metadata"
 
@@ -79,6 +86,9 @@ ensure_flutter
 
 cd "$PROJECT_ROOT"
 
+log "Running flutter precache --ios"
+flutter precache --ios
+
 log "Running flutter pub get"
 flutter pub get
 
@@ -90,7 +100,7 @@ fi
 
 log "Running pod install"
 cd "$IOS_ROOT"
-pod install --repo-update
+pod install
 
 required_files=(
   "$IOS_ROOT/Pods/Target Support Files/Pods-Runner/Pods-Runner-frameworks-Release-input-files.xcfilelist"
