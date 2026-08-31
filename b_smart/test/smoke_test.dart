@@ -3,6 +3,8 @@ import 'package:b_smart/theme/design_tokens.dart';
 import 'package:b_smart/theme/app_theme.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('design tokens and theme load', () {
     // Ensure design tokens exist
     expect(DesignTokens.instaPink, isNotNull);
@@ -14,4 +16,3 @@ void main() {
     expect(theme.primaryColor, DesignTokens.instaPurple);
   });
 }
-

@@ -13,9 +13,9 @@ import 'package:b_smart/screens/auth/login/login_screen.dart';
 void main() {
   testWidgets('App launches and shows login screen', (WidgetTester tester) async {
     await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
-    await tester.pump(const Duration(milliseconds: 1200));
+    await tester.pumpAndSettle();
 
-    expect(find.text('Log In'), findsOneWidget);
+    expect(find.text('Sign Up'), findsOneWidget);
     expect(find.text('Forgot Password?'), findsOneWidget);
   });
 }

@@ -36,9 +36,18 @@ class AppleAuthenticationResult {
     return parts.join(' ');
   }
 
+  String get backendFullName => displayName ?? '';
+
   Map<String, dynamic> toBackendPayload() {
     return {
-      'provider': 'apple',
+      'identity_token': identityToken,
+      'full_name': backendFullName,
+      'email': email ?? '',
+    };
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
       'user_identifier': userIdentifier,
       'email': email,
       'given_name': givenName,
@@ -50,10 +59,6 @@ class AppleAuthenticationResult {
       'hashed_nonce': hashedNonce,
       'authenticated_at': authenticatedAt.toIso8601String(),
     };
-  }
-
-  Map<String, dynamic> toJson() {
-    return toBackendPayload();
   }
 
   AppleAuthenticationResult copyWith({

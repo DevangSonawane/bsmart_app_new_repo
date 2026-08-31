@@ -1,9 +1,16 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter_redux/flutter_redux.dart';
 
 import '../../models/auth/apple_authentication_result.dart';
 import '../../services/auth/apple_auth_service.dart';
+import '../../services/auth/auth_service.dart';
+import '../../services/push_service.dart';
+import '../../services/session_reset_service.dart';
+import '../../state/app_state.dart';
+import '../../state/auth_actions.dart';
+import '../home_dashboard.dart';
 import '../../theme/instagram_theme.dart';
 import '../../utils/app_error_handler.dart';
 
@@ -24,6 +31,7 @@ class AppleAuthButton extends StatefulWidget {
 
 class _AppleAuthButtonState extends State<AppleAuthButton> {
   final AppleAuthService _appleAuthService = AppleAuthService();
+  final AuthService _authService = AuthService();
   bool _loading = false;
   String? _error;
 
@@ -75,18 +83,26 @@ class _AppleAuthButtonState extends State<AppleAuthButton> {
 
       if (widget.onAuthenticated != null) {
         await widget.onAuthenticated!(result);
+        return;
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Apple credential captured. Backend integration is pending.',
-            ),
-            backgroundColor: InstagramTheme.primaryPink,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
+        final user = await _authService.loginWithApple(result);
+        if (!mounted) return;
+        if (user.id.isEmpty) {
+          throw Exception(
+            'Apple backend login succeeded but no user profile was returned.',
+          );
+        }
+
+        await PushService().syncTokenWithBackend();
+        await SessionResetService.instance.clearUserSessionState();
+        if (mounted) {
+          StoreProvider.of<AppState>(context)
+              .dispatch(SetAuthenticated(user.id));
+        }
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const HomeDashboard()),
+          (route) => false,
         );
       }
     } catch (e, st) {

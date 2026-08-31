@@ -15,6 +15,34 @@ class AuthApi {
 
   final ApiClient _client = ApiClient();
 
+  String? _extractToken(Map<String, dynamic> data) {
+    final candidates = [
+      data['token'],
+      data['jwt'],
+      data['access_token'],
+      data['accessToken'],
+      data['data'] is Map ? (data['data'] as Map)['token'] : null,
+      data['data'] is Map ? (data['data'] as Map)['jwt'] : null,
+      data['data'] is Map ? (data['data'] as Map)['access_token'] : null,
+      data['data'] is Map ? (data['data'] as Map)['accessToken'] : null,
+    ];
+
+    for (final candidate in candidates) {
+      final value = candidate?.toString().trim();
+      if (value != null && value.isNotEmpty) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _persistTokenIfPresent(Map<String, dynamic> data) async {
+    final token = _extractToken(data);
+    if (token != null) {
+      await _client.saveToken(token);
+    }
+  }
+
   /// Register a new user.
   ///
   /// Returns `{ token: String, user: Map }`.
@@ -47,11 +75,7 @@ class AuthApi {
     final res = await _client.post('/auth/register', body: body);
     final data = res as Map<String, dynamic>;
 
-    // Persist the token automatically.
-    final token = data['token'] as String?;
-    if (token != null) {
-      await _client.saveToken(token);
-    }
+    await _persistTokenIfPresent(data);
     return data;
   }
 
@@ -83,10 +107,7 @@ class AuthApi {
     final res = await _client.post('/auth/login', body: body);
     final data = res as Map<String, dynamic>;
 
-    final token = data['token'] as String?;
-    if (token != null) {
-      await _client.saveToken(token);
-    }
+    await _persistTokenIfPresent(data);
     return data;
   }
 
@@ -116,10 +137,7 @@ class AuthApi {
     }
     final res = await _client.post('/auth/google/token', body: body);
     final data = res as Map<String, dynamic>;
-    final token = data['token'] as String?;
-    if (token != null && token.isNotEmpty) {
-      await _client.saveToken(token);
-    }
+    await _persistTokenIfPresent(data);
     return data;
   }
 
@@ -150,17 +168,14 @@ class AuthApi {
     await _client.saveToken(token);
   }
 
-  /// Backend handoff point for Apple Sign-In.
-  ///
-  /// The frontend collects a structured Apple credential here, but the real
-  /// backend contract is intentionally left unimplemented until the API
-  /// documentation is available.
+  /// Exchange the native Apple identity token with the backend JWT session.
   Future<Map<String, dynamic>> completeAppleSignIn(
     AppleAuthenticationResult result,
   ) async {
-    throw UnimplementedError(
-      'Apple Sign-In backend integration is pending. '
-      'Use result.toBackendPayload() once the endpoint contract is provided.',
-    );
+    final payload = result.toBackendPayload();
+    final res = await _client.post('/auth/apple/token', body: payload);
+    final data = res as Map<String, dynamic>;
+    await _persistTokenIfPresent(data);
+    return data;
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../api/api.dart';
+import '../../models/auth/apple_authentication_result.dart';
 import '../../models/auth/auth_user_model.dart' as model;
 import '../../models/auth/signup_session_model.dart';
 import '../../utils/validators.dart';
@@ -144,7 +145,7 @@ class AuthService {
         clientTimezoneName: timezone.name,
         clientTimezoneOffsetMinutes: timezone.offsetMinutes,
       );
-      final token = data['token'] as String?;
+      final token = _extractAuthToken(data);
       if (token == null || token.isEmpty) {
         throw Exception(
           'Backend did not return app token after Google login. Response keys: ${data.keys.join(', ')}',
@@ -175,6 +176,58 @@ class AuthService {
       );
     } catch (e) {
       throw Exception('Google login failed: ${e.toString()}');
+    }
+  }
+
+  Future<model.AuthUser> loginWithApple(
+    AppleAuthenticationResult result,
+  ) async {
+    try {
+      final data = await _authApi.completeAppleSignIn(result);
+      final token = _extractAuthToken(data);
+      if (token == null || token.isEmpty) {
+        throw Exception(
+          'Backend did not return an app token after Apple login. Response keys: ${data.keys.join(', ')}',
+        );
+      }
+
+      final userMap = _normalizeUserMap(data);
+      final responseUser = _userFromApiMap(userMap);
+      var user = responseUser;
+      final fetchedUser = await fetchCurrentUser();
+      if (fetchedUser != null && fetchedUser.id.isNotEmpty) {
+        user = fetchedUser;
+      }
+      if (user.id.isEmpty) {
+        throw Exception(
+          'Apple backend login succeeded but no user profile was returned.',
+        );
+      }
+
+      if (_isRestrictedLoginRole(user.role)) {
+        await _clearRestrictedLoginState();
+        throw const RestrictedLoginException(_restrictedLoginMessage);
+      }
+
+      unawaited(PushService().syncTokenWithBackend());
+      return user;
+    } on RestrictedLoginException {
+      rethrow;
+    } on ApiException catch (e) {
+      if (e.statusCode == 401) {
+        throw Exception('Apple authentication failed. Please try again.');
+      }
+      if (e.statusCode == 400) {
+        throw Exception('Apple sign-in request was invalid. Please try again.');
+      }
+      if (e.statusCode >= 500) {
+        throw Exception(
+          'Apple authentication service is unavailable right now. Please try again later.',
+        );
+      }
+      throw Exception('Apple login failed at backend exchange: ${e.message}');
+    } catch (e) {
+      throw Exception('Apple login failed: ${e.toString()}');
     }
   }
 
@@ -521,6 +574,26 @@ class AuthService {
           ? DateTime.parse(user['updatedAt'] as String)
           : DateTime.now(),
     );
+  }
+
+  String? _extractAuthToken(Map<String, dynamic> data) {
+    final candidates = <dynamic>[
+      data['token'],
+      data['jwt'],
+      data['access_token'],
+      data['accessToken'],
+      data['data'] is Map ? (data['data'] as Map)['token'] : null,
+      data['data'] is Map ? (data['data'] as Map)['jwt'] : null,
+      data['data'] is Map ? (data['data'] as Map)['access_token'] : null,
+      data['data'] is Map ? (data['data'] as Map)['accessToken'] : null,
+    ];
+    for (final candidate in candidates) {
+      final value = candidate?.toString().trim();
+      if (value != null && value.isNotEmpty) {
+        return value;
+      }
+    }
+    return null;
   }
 
   Map<String, dynamic> _normalizeUserMap(Map<String, dynamic> raw) {
