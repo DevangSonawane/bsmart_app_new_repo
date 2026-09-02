@@ -215,7 +215,7 @@ void main() async {
                           ),
                           const SizedBox(height: 12),
                           const Text(
-                            'Something went wrong',
+                            'Something wrong',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
