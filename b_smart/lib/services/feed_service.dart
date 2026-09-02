@@ -220,7 +220,6 @@ class FeedService {
   }
 
   List<FeedPost> _getAds() {
-    // Keep the hook for legacy callers, but do not inject any hardcoded ads.
     return const <FeedPost>[];
   }
 

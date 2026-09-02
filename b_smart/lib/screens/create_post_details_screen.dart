@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../models/media_model.dart';
 import '../models/content_moderation_model.dart';
 import '../services/create_service.dart';
 import '../services/content_moderation_service.dart';
+import '../services/admob_service.dart';
 import 'content_moderation_dialog.dart';
 import '../api/posts_api.dart';
 import '../api/upload_api.dart';
@@ -278,6 +281,9 @@ class _CreatePostDetailsScreenState extends State<CreatePostDetailsScreen> {
       if (mounted) {
         Navigator.of(context).pop(); // Close loading
         Navigator.of(context).pop(true);
+        unawaited(
+          AdMobService.instance.showInterstitialAfterSuccessfulPublish(),
+        );
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

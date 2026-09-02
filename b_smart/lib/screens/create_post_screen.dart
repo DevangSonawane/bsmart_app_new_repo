@@ -17,6 +17,7 @@ import 'tag_people_screen.dart';
 import 'location_search_screen.dart';
 import '../utils/app_navigator.dart';
 import '../services/upload_progress_overlay.dart';
+import '../services/admob_service.dart';
 
 /// Single media item in the create-post flow (select → crop → edit → share).
 class _CreatePostMediaItem {
@@ -1152,6 +1153,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           );
           await Future.delayed(const Duration(milliseconds: 900));
           await UploadProgressOverlay.hide();
+          unawaited(
+            AdMobService.instance.showInterstitialAfterSuccessfulPublish(),
+          );
         } else {
           UploadProgressOverlay.update(
             message: 'Failed to create post.',

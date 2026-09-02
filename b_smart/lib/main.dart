@@ -23,6 +23,7 @@ import 'state/store.dart';
 import 'state/app_state.dart';
 import 'state/auth_actions.dart';
 import 'config/api_config.dart';
+import 'services/admob_service.dart';
 import 'api/api.dart';
 import 'package:flutter_redux/flutter_redux.dart';
 import 'theme/design_tokens.dart';
@@ -66,104 +67,16 @@ Future<bool> _initializeFirebaseIfPossible() async {
   }
 }
 
-Future<void> _bootstrapBackgroundServices({
-  required bool clearCache,
-  required ThemeNotifier themeNotifier,
-  required ContentPreferencesNotifier contentPreferencesNotifier,
-  required StoragePreferencesNotifier storagePreferencesNotifier,
-}) async {
-  bool firebaseReady = false;
-
-  try {
-    firebaseReady = await _initializeFirebaseIfPossible();
+void main() async {
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    await EasyLocalization.ensureInitialized();
+    final firebaseReady = await _initializeFirebaseIfPossible();
     if (firebaseReady) {
       FirebaseMessaging.onBackgroundMessage(
         _firebaseMessagingBackgroundHandler,
       );
     }
-  } catch (e, st) {
-    debugPrint('Firebase bootstrap failed: $e');
-    debugPrint(st.toString());
-  }
-
-  try {
-    ApiConfig.init();
-    unawaited(TimezoneService.instance.captureDeviceTimezone());
-  } catch (e, st) {
-    debugPrint('Api/timezone bootstrap failed: $e');
-    debugPrint(st.toString());
-  }
-
-  if (clearCache) {
-    try {
-      await DefaultCacheManager().emptyCache();
-    } catch (e, st) {
-      debugPrint('Cache clear failed: $e');
-      debugPrint(st.toString());
-    }
-  }
-
-  try {
-    await SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
-  } catch (e, st) {
-    debugPrint('Orientation bootstrap failed: $e');
-    debugPrint(st.toString());
-  }
-
-  try {
-    await applyAndroidEdgeToEdge();
-  } catch (e, st) {
-    debugPrint('System UI bootstrap failed: $e');
-    debugPrint(st.toString());
-  }
-
-  try {
-    await themeNotifier.hydrateFromPreferences();
-  } catch (e, st) {
-    debugPrint('Theme bootstrap failed: $e');
-    debugPrint(st.toString());
-  }
-
-  try {
-    await contentPreferencesNotifier.hydrateFromPreferences();
-  } catch (e, st) {
-    debugPrint('Content preferences bootstrap failed: $e');
-    debugPrint(st.toString());
-  }
-
-  try {
-    await storagePreferencesNotifier.hydrateFromPreferences();
-  } catch (e, st) {
-    debugPrint('Storage preferences bootstrap failed: $e');
-    debugPrint(st.toString());
-  }
-
-  try {
-    await NetworkStatusNotifier.instance
-        .initialize()
-        .timeout(const Duration(seconds: 2));
-  } catch (e, st) {
-    debugPrint('NetworkStatusNotifier initialization failed: $e');
-    debugPrint(st.toString());
-  }
-
-  try {
-    await PushService()
-        .initialize(firebaseAvailable: firebaseReady)
-        .timeout(const Duration(seconds: 8));
-  } catch (e, st) {
-    debugPrint('PushService initialization failed: $e');
-    debugPrint(st.toString());
-  }
-}
-
-void main() async {
-  runZonedGuarded(() async {
-    WidgetsFlutterBinding.ensureInitialized();
-    await EasyLocalization.ensureInitialized();
     // Forward Flutter framework errors to the current zone handler so they
     // don't bring down the app during debug/testing of plugin failures.
     FlutterError.onError = (FlutterErrorDetails details) {
@@ -215,7 +128,7 @@ void main() async {
                           ),
                           const SizedBox(height: 12),
                           const Text(
-                            'Something wrong',
+                            'Something went wrong',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
@@ -250,12 +163,60 @@ void main() async {
     PaintingBinding.instance.imageCache.maximumSizeBytes =
         150 * 1024 * 1024; // 150MB
 
+    // Non-sensitive API base URL is configured in `ApiConfig` defaults.
+    ApiConfig.init();
+    unawaited(TimezoneService.instance.captureDeviceTimezone());
+
+    // In development, proactively clear the image cache so hot-reload does not
+    // show stale media from disk cache while URLs stay the same on the server.
+    const clearCache = bool.fromEnvironment('CLEAR_CACHE', defaultValue: false);
+    if (clearCache) {
+      try {
+        await DefaultCacheManager().emptyCache();
+      } catch (e) {
+        debugPrint('Cache clear failed: $e');
+      }
+    }
+
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+
+    try {
+      // Keep Android system bars visible.
+      await applyAndroidEdgeToEdge();
+    } catch (e) {
+      debugPrint('System UI mode update failed: $e');
+    }
+
     final store = createStore();
     setGlobalStore(store);
 
-    final themeNotifier = ThemeNotifier(initialThemeMode: ThemeMode.system);
-    final contentPreferencesNotifier = ContentPreferencesNotifier();
-    final storagePreferencesNotifier = StoragePreferencesNotifier();
+    ThemeNotifier themeNotifier;
+    ContentPreferencesNotifier contentPreferencesNotifier;
+    try {
+      themeNotifier = await ThemeNotifier.create();
+    } catch (e) {
+      debugPrint('Error initializing ThemeNotifier: $e');
+      themeNotifier = ThemeNotifier(initialThemeMode: ThemeMode.system);
+    }
+    try {
+      contentPreferencesNotifier = await ContentPreferencesNotifier.create();
+    } catch (e) {
+      debugPrint('Error initializing ContentPreferencesNotifier: $e');
+      contentPreferencesNotifier = ContentPreferencesNotifier();
+    }
+    StoragePreferencesNotifier storagePreferencesNotifier;
+    try {
+      storagePreferencesNotifier = await StoragePreferencesNotifier.create();
+    } catch (e) {
+      debugPrint('Error initializing StoragePreferencesNotifier: $e');
+      storagePreferencesNotifier = StoragePreferencesNotifier();
+    }
+    await NetworkStatusNotifier.instance.initialize();
+    await PushService().initialize(firebaseAvailable: firebaseReady);
+    unawaited(AdMobService.instance.initialize());
 
     runApp(StoreProvider<AppState>(
       store: store,
@@ -304,16 +265,6 @@ void main() async {
         ),
       ),
     ));
-
-    const clearCache = bool.fromEnvironment('CLEAR_CACHE', defaultValue: false);
-    unawaited(
-      _bootstrapBackgroundServices(
-        clearCache: clearCache,
-        themeNotifier: themeNotifier,
-        contentPreferencesNotifier: contentPreferencesNotifier,
-        storagePreferencesNotifier: storagePreferencesNotifier,
-      ),
-    );
   }, (error, stack) {
     if (error.toString().contains('VideoError') ||
         error.toString().contains('ExoPlaybackException')) {
@@ -536,6 +487,21 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
           return MaterialPageRoute<void>(
             settings: settings,
             builder: (ctx) => ProfileScreen(userId: userId),
+          );
+        }
+
+        // /profile/:userId/posts
+        if (segments.length == 3 &&
+            segments[0] == 'profile' &&
+            segments[2] == 'posts') {
+          final userId = segments[1];
+          debugPrint('[Router] → ProfileScreen posts userId=$userId');
+          return MaterialPageRoute<void>(
+            settings: settings,
+            builder: (ctx) => ProfileScreen(
+              userId: userId,
+              initialSection: ProfileViewSection.posts,
+            ),
           );
         }
 

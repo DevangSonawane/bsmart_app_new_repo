@@ -190,14 +190,38 @@ class FeedPost {
         (json['mediaUrls'] as List).isNotEmpty) {
       final first = (json['mediaUrls'] as List).first;
       if (first is Map) {
-        final t = first['thumbnail'] ?? first['thumbnailUrl'] ?? first['thumb'];
+        final t = first['thumbnail'] ??
+            first['thumbnailUrl'] ??
+            first['thumb'] ??
+            first['coverUrl'] ??
+            first['uploadedCoverUrl'] ??
+            first['cover_url'];
         if (t is String) {
           thumbUrl = UrlHelper.normalizeUrl(t);
         } else if (t is List && t.isNotEmpty && t.first is Map) {
           // Handle structured thumbnail object from reel payload
           thumbUrl = UrlHelper.normalizeUrl(
-              (t.first as Map)['url'] ?? (t.first as Map)['fileUrl']);
+            (t.first as Map)['url'] ??
+                (t.first as Map)['fileUrl'] ??
+                (t.first as Map)['file_url'] ??
+                (t.first as Map)['coverUrl'],
+          );
         }
+      }
+    }
+
+    if (thumbUrl.isEmpty &&
+        json['media'] is List &&
+        (json['media'] as List).isNotEmpty) {
+      final first = (json['media'] as List).first;
+      if (first is Map) {
+        final t = first['thumbnail'] ??
+            first['thumbnailUrl'] ??
+            first['thumb'] ??
+            first['coverUrl'] ??
+            first['uploadedCoverUrl'] ??
+            first['cover_url'];
+        thumbUrl = UrlHelper.normalizeUrl(t);
       }
     }
 
@@ -228,6 +252,7 @@ class FeedPost {
       }
       return null;
     }
+
     final mediaListForFilters =
         json['media'] as List? ?? json['mediaUrls'] as List?;
     if (mediaListForFilters != null) {
@@ -345,7 +370,8 @@ class FeedPost {
 
     return FeedPost(
       id: json['_id'] ?? json['id'] ?? '',
-      userId: extractId(json['user_id'] ?? json['userId'] ?? json['user']) ?? '',
+      userId:
+          extractId(json['user_id'] ?? json['userId'] ?? json['user']) ?? '',
       userName: json['username'] ?? json['userName'] ?? 'User',
       fullName: json['fullName'],
       userAvatar:

@@ -40,6 +40,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   final _fullNameController = TextEditingController();
   final _usernameController = TextEditingController();
   final _bioController = TextEditingController();
+  final _professionController = TextEditingController();
   final _websiteController = TextEditingController();
   final _locationController = TextEditingController();
   final _phoneController = TextEditingController();
@@ -84,6 +85,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     _fullNameController.dispose();
     _usernameController.dispose();
     _bioController.dispose();
+    _professionController.dispose();
     _websiteController.dispose();
     _locationController.dispose();
     _phoneController.dispose();
@@ -113,7 +115,14 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
 
   String? _pickString(Map<String, dynamic> user, List<String> keys) {
     for (final key in keys) {
-      final value = user[key];
+      dynamic value = user;
+      for (final part in key.split('.')) {
+        if (value is! Map) {
+          value = null;
+          break;
+        }
+        value = value[part];
+      }
       if (value == null) continue;
       final text = value.toString().trim();
       if (text.isNotEmpty) return text;
@@ -371,6 +380,12 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
       }
 
       final interestsRes = await _usersApi.getAdInterests(userId);
+      Map<String, dynamic> settings = const <String, dynamic>{};
+      try {
+        settings = await _usersApi.getAccountSettings();
+      } catch (_) {
+        settings = const <String, dynamic>{};
+      }
       final interestsRaw = interestsRes['ad_interests'];
       final interests = <String>[];
       if (interestsRaw is List) {
@@ -411,6 +426,12 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
         _usernameError = null;
         _usernameChecking = false;
         _bioController.text = _pickString(user, ['bio', 'about']) ?? '';
+        _professionController.text =
+            _pickString(settings, const ['contact.profession']) ??
+                _pickString(settings, ['profession']) ??
+                _pickString(user, const ['contact.profession']) ??
+                _pickString(user, ['profession']) ??
+                '';
         _websiteController.text = _pickString(user, [
               'website',
               'website_url',
@@ -792,6 +813,7 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
         'full_name': _fullNameController.text.trim(),
         'username': username,
         'bio': _bioController.text.trim(),
+        'profession': _professionController.text.trim(),
         'website': _websiteController.text.trim(),
         'phone': _phoneController.text.trim(),
         'gender': _genderBackendValue(),
@@ -829,6 +851,10 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
         extra: updates,
       );
 
+      await _usersApi.updateAccountContact(
+        profession: _professionController.text.trim(),
+      );
+
       await _usersApi.updateAdInterests(
         _userId!,
         interests: _interests,
@@ -848,6 +874,10 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
           _usernameError = null;
           _bioController.text =
               _pickString(updated, ['bio', 'about']) ?? _bioController.text;
+          _professionController.text =
+              _pickString(updated, const ['contact.profession']) ??
+                  _pickString(updated, ['profession']) ??
+                  _professionController.text;
           _websiteController.text =
               _pickString(updated, ['website', 'website_url', 'websiteUrl']) ??
                   _websiteController.text;
@@ -1562,6 +1592,12 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
   Widget _contactCard() {
     return Column(
       children: [
+        _inlineFieldCard(
+          icon: Icons.work_outline,
+          label: 'Profession',
+          controller: _professionController,
+          hintText: 'Enter your profession',
+        ),
         _inlineFieldCard(
           icon: Icons.mail_outline,
           label: 'Email Address',

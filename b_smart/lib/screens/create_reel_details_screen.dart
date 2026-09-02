@@ -8,6 +8,7 @@ import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:photo_manager/photo_manager.dart';
 import '../models/media_model.dart';
 import '../services/supabase_service.dart';
+import '../services/admob_service.dart';
 import '../api/upload_api.dart';
 import '../api/reels_api.dart';
 import '../api/users_api.dart';
@@ -524,6 +525,11 @@ class _CreateReelDetailsScreenState extends State<CreateReelDetailsScreen> {
         }
         await Future.delayed(const Duration(milliseconds: 900));
         await UploadProgressOverlay.hide();
+        if (created.isNotEmpty) {
+          unawaited(
+            AdMobService.instance.showInterstitialAfterSuccessfulPublish(),
+          );
+        }
       } catch (e) {
         UploadProgressOverlay.update(
           message: 'Upload failed: $e',

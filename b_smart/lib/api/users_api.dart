@@ -131,6 +131,45 @@ class UsersApi {
     return res as Map<String, dynamic>;
   }
 
+  /// Fetch the current account settings payload.
+  ///
+  /// The backend may include nested `contact` information such as
+  /// `contact.profession`.
+  Future<Map<String, dynamic>> getAccountSettings() async {
+    final res = await _client.get('/settings/account');
+    if (res is Map<String, dynamic>) {
+      if (res['user'] is Map<String, dynamic>) {
+        return Map<String, dynamic>.from(res['user'] as Map);
+      }
+      if (res['data'] is Map<String, dynamic>) {
+        return Map<String, dynamic>.from(res['data'] as Map);
+      }
+      return res;
+    }
+    return <String, dynamic>{};
+  }
+
+  /// Update the contact section of the current account settings.
+  ///
+  /// Currently used for `profession`.
+  Future<Map<String, dynamic>> updateAccountContact({
+    String? profession,
+  }) async {
+    final body = <String, dynamic>{};
+    if (profession != null) body['profession'] = profession;
+    final res = await _client.patch('/settings/account/contact', body: body);
+    if (res is Map<String, dynamic>) {
+      if (res['user'] is Map<String, dynamic>) {
+        return Map<String, dynamic>.from(res['user'] as Map);
+      }
+      if (res['data'] is Map<String, dynamic>) {
+        return Map<String, dynamic>.from(res['data'] as Map);
+      }
+      return res;
+    }
+    return <String, dynamic>{};
+  }
+
   /// Delete a user and all their posts.
   ///
   /// Returns `{ message: "User deleted successfully" }`.
@@ -215,12 +254,16 @@ class UsersApi {
       if (looksLikeEmail) {
         if (!privacyAllowsSearchByEmail(u)) return false;
         final email = (u['email'] as String?)?.toLowerCase() ?? '';
-        return email.contains(q) || username.contains(q) || fullName.contains(q);
+        return email.contains(q) ||
+            username.contains(q) ||
+            fullName.contains(q);
       }
       if (looksLikePhone) {
         if (!privacyAllowsSearchByPhone(u)) return false;
         final phone = (u['phone'] as String?)?.toLowerCase() ?? '';
-        return phone.contains(q) || username.contains(q) || fullName.contains(q);
+        return phone.contains(q) ||
+            username.contains(q) ||
+            fullName.contains(q);
       }
       if (!privacyAllowsSearchByUsername(u)) return false;
       return username.contains(q) || fullName.contains(q);
@@ -245,9 +288,8 @@ class UsersApi {
       if (item is! Map) continue;
       final user = Map<String, dynamic>.from(item);
       final embedded = user['user'];
-      final candidate = embedded is Map
-          ? Map<String, dynamic>.from(embedded)
-          : user;
+      final candidate =
+          embedded is Map ? Map<String, dynamic>.from(embedded) : user;
       final userEmail = (candidate['email'] as String?)?.trim().toLowerCase();
       if (userEmail == normalized) {
         return candidate;

@@ -7,12 +7,30 @@ import android.view.ViewGroup
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugins.GeneratedPluginRegistrant
+import io.flutter.plugins.googlemobileads.GoogleMobileAdsPlugin
 
 class MainActivity : FlutterFragmentActivity() {
+    private var nativeAdFactory: AdMobNativeAdFactory? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         // Explicit registration avoids release-only auto-registration misses.
         GeneratedPluginRegistrant.registerWith(flutterEngine)
+        nativeAdFactory = AdMobNativeAdFactory(this)
+        GoogleMobileAdsPlugin.registerNativeAdFactory(
+            flutterEngine,
+            AdMobNativeAdFactory.factoryId,
+            nativeAdFactory!!
+        )
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        GoogleMobileAdsPlugin.unregisterNativeAdFactory(
+            flutterEngine,
+            AdMobNativeAdFactory.factoryId
+        )
+        nativeAdFactory = null
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

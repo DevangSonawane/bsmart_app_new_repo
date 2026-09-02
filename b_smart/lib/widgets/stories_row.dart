@@ -139,6 +139,7 @@ class _StoryItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final avatar = avatarUrl?.trim() ?? '';
     return Column(
       children: [
         GestureDetector(
@@ -153,11 +154,20 @@ class _StoryItem extends StatelessWidget {
                 child: CircleAvatar(
                   radius: 28,
                   backgroundColor: isDark ? Colors.black : Colors.white,
-                  backgroundImage:
-                      avatarUrl != null ? NetworkImage(avatarUrl!) : null,
-                  child: avatarUrl == null
-                      ? const Icon(LucideIcons.user, color: Colors.grey)
-                      : null,
+                  child: avatar.isNotEmpty
+                      ? ClipOval(
+                          child: SizedBox.expand(
+                            child: Image.network(
+                              avatar,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                LucideIcons.user,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ),
+                        )
+                      : const Icon(LucideIcons.user, color: Colors.grey),
                 ),
               ),
               if (uploadProgress != null &&

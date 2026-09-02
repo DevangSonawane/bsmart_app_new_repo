@@ -13,7 +13,6 @@ import '../models/reel_model.dart';
 import '../services/supabase_service.dart';
 import '../widgets/profile_header.dart';
 import '../widgets/safe_network_image.dart';
-import '../widgets/posts_grid.dart';
 import '../widgets/post_detail_modal.dart';
 import '../models/feed_post_model.dart';
 import '../models/ad_model.dart';
@@ -46,7 +45,6 @@ import 'create_upload_screen.dart';
 import 'chat_conversation_screen.dart';
 import 'messaging_screen.dart';
 import '../utils/url_helper.dart';
-import '../widgets/profile_highlights_row.dart';
 import '../services/ads_service.dart';
 import 'follow_list_screen.dart';
 import '../api/users_api.dart';
@@ -55,7 +53,8 @@ import '../api/promote_reels_api.dart';
 import '../widgets/ad_interests_sheet.dart';
 import '../widgets/suggestion_follow.dart';
 import '../widgets/post_card.dart';
-import 'promote_screen.dart';
+import 'profile_home_page.dart';
+import 'profile_posts_page.dart';
 
 /// Heroicons badge-check (same as React web app verified badge)
 const String _verifiedBadgeSvg = r'''
@@ -64,9 +63,20 @@ const String _verifiedBadgeSvg = r'''
 </svg>
 ''';
 
+enum ProfileViewSection {
+  home,
+  posts,
+}
+
 class ProfileScreen extends StatefulWidget {
   final String? userId;
-  const ProfileScreen({super.key, this.userId});
+  final ProfileViewSection initialSection;
+
+  const ProfileScreen({
+    super.key,
+    this.userId,
+    this.initialSection = ProfileViewSection.home,
+  });
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -1130,6 +1140,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
+  Future<void> _deletePromoteReel(FeedPost post) async {
+    final promoteId = _promoteReelIdForPost(post);
+    if (promoteId.isEmpty) return;
+
+    try {
+      await _promoteReelsApi.deletePromoteReel(promoteId);
+      if (!mounted) return;
+      setState(() {
+        _promotes.removeWhere((item) => item.id == post.id);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Campaign deleted')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete campaign: $e')),
+      );
+    }
+  }
+
   void _syncLocalListsWithFeedState() {
     if (!mounted) return;
     final store = StoreProvider.of<AppState>(context, listen: false);
@@ -1291,6 +1322,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
       profile = isMe
           ? await AuthApi().me()
           : await _usersApi.getUserProfile(targetId);
+      if (isMe) {
+        try {
+          final settings = await _usersApi.getAccountSettings();
+          final contact = settings['contact'];
+          if (contact is Map) {
+            final contactMap = Map<String, dynamic>.from(contact);
+            final profession =
+                (contactMap['profession'] ?? contactMap['job_title'])
+                    ?.toString()
+                    .trim();
+            if (profession != null && profession.isNotEmpty) {
+              final currentProfile = profile;
+              profile = {
+                ...currentProfile,
+                'profession': profession,
+                'contact': contactMap,
+              };
+            }
+          }
+        } catch (_) {}
+      }
     } on ForbiddenException catch (e) {
       if (_isPrivacyBlockedError(e)) {
         final preview = _privateProfileFallback(e.body, targetId);
@@ -1379,6 +1431,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _parsePrivacyRestricted(content?['privacy_restricted']);
     final postsRestricted = privacyRestricted['posts'] == true;
     final pulseRestricted = privacyRestricted['pulse'] == true;
+    final profileData = profile ?? <String, dynamic>{};
     if (mounted) {
       setState(() {
         _profileBlocked = false;
@@ -1389,7 +1442,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       });
     }
 
-    final isVendor = (profile['role'] as String?)?.toLowerCase() == 'vendor';
+    final isVendor =
+        (profileData['role'] as String?)?.toLowerCase() == 'vendor';
     List<Ad> vendorAds = [];
     if (isVendor && targetId.isNotEmpty) {
       try {
@@ -1821,10 +1875,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (meId != null && meId.isNotEmpty) {
       // Prioritize server-provided follow status if available
-      if ((profile.containsKey('is_followed_by_me') ||
-          profile.containsKey('is_following'))) {
+      if ((profileData.containsKey('is_followed_by_me') ||
+          profileData.containsKey('is_following'))) {
         isFollowedByMe =
-            (profile['is_followed_by_me'] ?? profile['is_following']) == true;
+            (profileData['is_followed_by_me'] ?? profileData['is_following']) ==
+                true;
         // Sync local cache with authoritative server state
         _svc.syncFollowStatus(targetId, isFollowedByMe);
       } else {
@@ -1866,7 +1921,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // Determine correct post count:
       // If we received fewer posts than the requested page limit, we know we have the complete list.
       // In that case, trust the actual list length over the potentially stale count from the server.
-      int finalPostsCount = (profile['posts_count'] as int?) ?? posts.length;
+      int finalPostsCount =
+          (profileData['posts_count'] as int?) ?? posts.length;
       if (posts.length < _initialPostsLimit) {
         finalPostsCount = posts.length;
       }
@@ -1874,7 +1930,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final merged = {
         ...?_profile, // 1. Start with existing local state as fallback
         ...derivedFromPosts, // 2. Update with info derived from posts (if any)
-        ...profile, // 3. Override with fresh API profile data (if success)
+        ...profileData, // 3. Override with fresh API profile data (if success)
         if (vendorInfo != null) 'vendor': vendorInfo,
         'is_followed_by_me': isFollowedByMe,
         'is_requested': isFollowRequested,
@@ -1882,7 +1938,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'posts_count': finalPostsCount,
         'followers_count': finalFollowers,
         'following_count': finalFollowing,
-        'wallet_balance': (profile['wallet_balance'] as int?) ?? walletBalance,
+        'wallet_balance':
+            (profileData['wallet_balance'] as int?) ?? walletBalance,
         'account_type': userAccount?.accountType.toString().split('.').last,
         'engagement_score': userAccount?.engagementScore,
       };
@@ -3110,6 +3167,64 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final contentLocked = !isMe &&
             (_profileBlocked || (isPrivateProfile && !isFollowingViewer));
 
+        bool hasRenderableGridMedia(FeedPost p) {
+          final thumb = UrlHelper.normalizeUrl((p.thumbnailUrl ?? '').trim());
+          if (thumb.isNotEmpty) return true;
+          for (final u in p.mediaUrls) {
+            final normalized = UrlHelper.normalizeUrl(u.trim());
+            if (normalized.isNotEmpty) return true;
+          }
+          return false;
+        }
+
+        final postsForGrid = _posts.where((p) {
+          final ok = !p.isTweet &&
+              p.mediaType != PostMediaType.reel &&
+              !p.isAd &&
+              hasRenderableGridMedia(p);
+          return ok;
+        }).toList();
+
+        final reelsForGrid = _userReels
+            .map((r) {
+              final mediaUrl = r.videoUrl.trim();
+              final thumb = (r.thumbnailUrl ?? '').trim();
+              return FeedPost(
+                id: r.id,
+                userId: r.userId,
+                userName: r.userName,
+                userAvatar: r.userAvatarUrl,
+                mediaType: PostMediaType.reel,
+                mediaUrls: mediaUrl.isNotEmpty ? [mediaUrl] : const [],
+                thumbnailUrl: thumb.isNotEmpty ? thumb : null,
+                caption: r.caption,
+                hashtags: r.hashtags,
+                createdAt: r.createdAt,
+                likes: r.likes,
+                comments: r.comments,
+                shares: r.shares,
+                views: r.views,
+                isLiked: r.isLiked,
+                isSaved: r.isSaved,
+                isFollowed: r.isFollowing,
+                isAd: r.isSponsored,
+              );
+            })
+            .where(hasRenderableGridMedia)
+            .toList();
+        final tweetsForHome = (_tweetsLoadedForUserId == profileUserId)
+            ? _tweets
+            : const <FeedPost>[];
+
+        final likesCount = tryReadInt(displayProfile, const [
+              'likes_count',
+              'likesCount',
+              'likes',
+              'total_likes',
+              'totalLikes',
+            ]) ??
+            _posts.fold<int>(0, (sum, post) => sum + post.likes);
+
         final theme = Theme.of(context);
         final fgColor = theme.colorScheme.onSurface;
 
@@ -3260,466 +3375,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
           );
         }
 
-        bool hasRenderableGridMedia(FeedPost p) {
-          final thumb = UrlHelper.normalizeUrl((p.thumbnailUrl ?? '').trim());
-          if (thumb.isNotEmpty) return true;
-          for (final u in p.mediaUrls) {
-            final normalized = UrlHelper.normalizeUrl(u.trim());
-            if (normalized.isNotEmpty) return true;
-          }
-          return false;
-        }
-
-        final mediaPosts = _posts.where((p) {
-          final ok = !p.isTweet &&
-              p.mediaType != PostMediaType.reel &&
-              !p.isAd &&
-              hasRenderableGridMedia(p);
-          assert(() {
-            if (!ok) {
-              final thumb = (p.thumbnailUrl ?? '').trim();
-              final first = p.mediaUrls.isNotEmpty ? p.mediaUrls.first : '';
-              debugPrint(
-                '[ProfileScreen] Filtered from Posts grid: id=${p.id} mediaType=${p.mediaType} isAd=${p.isAd} isTweet=${p.isTweet} thumb="$thumb" first="$first"',
-              );
-            }
-            return true;
-          }());
-          return ok;
-        }).toList();
-        final reelPosts = _posts.where((p) {
-          final ok = !p.isTweet &&
-              p.mediaType == PostMediaType.reel &&
-              !p.isAd &&
-              hasRenderableGridMedia(p);
-          return ok;
-        }).toList();
-
-        final reelFromService = _userReels
-            .map((r) {
-              final mediaUrl = r.videoUrl.trim();
-              final thumb = (r.thumbnailUrl ?? '').trim();
-              return FeedPost(
-                id: r.id,
-                userId: r.userId,
-                userName: r.userName,
-                userAvatar: r.userAvatarUrl,
-                mediaType: PostMediaType.reel,
-                mediaUrls: mediaUrl.isNotEmpty ? [mediaUrl] : const [],
-                thumbnailUrl: thumb.isNotEmpty ? thumb : null,
-                caption: r.caption,
-                hashtags: r.hashtags,
-                createdAt: r.createdAt,
-                likes: r.likes,
-                comments: r.comments,
-                shares: r.shares,
-                views: r.views,
-                isLiked: r.isLiked,
-                isSaved: r.isSaved,
-                isFollowed: r.isFollowing,
-                isAd: r.isSponsored,
-              );
-            })
-            .where(hasRenderableGridMedia)
-            .toList();
-        final tweetPosts = _tweets;
-        final promotePosts = _promotes;
-        final storyTap = _storiesBlocked ? null : _openStoriesFromProfile;
-
-        final allById = <String, FeedPost>{};
-        for (final p in [...mediaPosts, ...reelPosts, ...reelFromService]) {
-          if (p.id.trim().isEmpty) continue;
-          allById[p.id] = p;
-        }
-        final allFeedItems = allById.values.toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        final allCount = allFeedItems.length;
-
-        final tabs = <Tab>[
-          const Tab(icon: Icon(LucideIcons.layoutGrid)),
-          const Tab(icon: Icon(LucideIcons.image)),
-          const Tab(icon: Icon(LucideIcons.zap)),
-          const Tab(icon: Icon(LucideIcons.cloudLightning)),
-          const Tab(icon: Icon(LucideIcons.rocket)),
-        ];
-
-        Widget privacyPlaceholder({
-          required String title,
-          required String subtitle,
-          IconData icon = LucideIcons.lock,
-        }) {
-          final muted = theme.colorScheme.onSurface.withValues(alpha: 0.60);
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 42, horizontal: 24),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: theme.dividerColor.withValues(alpha: 0.5),
-                      ),
-                    ),
-                    child: Icon(icon, size: 30, color: muted),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: theme.colorScheme.onSurface,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    subtitle,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: muted,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+        if (widget.initialSection == ProfileViewSection.posts) {
+          return ProfilePostsPage(
+            profile: displayProfile,
+            username: username,
+            fullName: fullName,
+            avatarUrl: avatar,
+            avatarHeaders: _reelImageHeaders,
+            posts: postsForGrid,
+            reels: reelsForGrid,
+            isMe: isMe,
+            isValidated: isValidated,
+            onBack: () => Navigator.of(context)
+                .pushNamedAndRemoveUntil('/home', (route) => false),
+            onMenu: isMe
+                ? () => Navigator.of(context).pushNamed('/settings')
+                : () => _showProfileMoreActions(displayProfile),
           );
         }
 
-        final allTab = (allCount == 0)
-            ? Padding(
-                padding: const EdgeInsets.symmetric(vertical: 36),
-                child: _emptyGridPlaceholder(
-                  context,
-                  isReels: false,
-                  isOwnProfile: isMe,
-                ),
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  PostsGrid(posts: allFeedItems, onTap: (p) => _onPostTap(p)),
-                  const SizedBox(height: 12),
-                ],
-              );
-
-        final tabViews = <Widget>[
-          ListView(
-            padding: EdgeInsets.zero,
-            children: [allTab],
-          ),
-          _postsRestricted
-              ? privacyPlaceholder(
-                  title: 'Moments are private',
-                  subtitle: 'Only approved followers can see these moments.',
-                )
-              : (mediaPosts.isEmpty
-                  ? _emptyGridPlaceholder(
-                      context,
-                      isReels: false,
-                      isOwnProfile: isMe,
-                    )
-                  : PostsGrid(posts: mediaPosts, onTap: (p) => _onPostTap(p))),
-          _pulseRestricted
-              ? privacyPlaceholder(
-                  title: 'Pulse is private',
-                  subtitle: 'Only approved followers can see these reels.',
-                  icon: LucideIcons.clapperboard,
-                )
-              : _buildReelsGrid(isMe: isMe),
-          ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              _postsRestricted
-                  ? privacyPlaceholder(
-                      title: 'Moments are private',
-                      subtitle: 'Only approved followers can see this content.',
-                    )
-                  : _buildTweetsList(tweetPosts, isMe: isMe),
-            ],
-          ),
-          _pulseRestricted
-              ? privacyPlaceholder(
-                  title: 'Pulse is private',
-                  subtitle: 'Only approved followers can see this content.',
-                  icon: LucideIcons.rocket,
-                )
-              : (isVendor
-                  ? Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: _buildAdsGrid(),
-                    )
-                  : (promotePosts.isEmpty
-                      ? _emptyGridPlaceholder(
-                          context,
-                          isReels: false,
-                          isOwnProfile: isMe,
-                          emptyIcon: LucideIcons.rocket,
-                          emptyTitle: 'No Boosts Yet',
-                          showCreateButton: false,
-                        )
-                      : PostsGrid(
-                          posts: promotePosts,
-                          onTap: (post) {
-                            final reelId = _promoteReelIdForPost(post);
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => PromoteScreen(
-                                  initialReelId: reelId.isEmpty ? null : reelId,
-                                ),
-                              ),
-                            );
-                          },
-                        ))),
-        ];
-
-        return DefaultTabController(
-          key: ValueKey('profile-tabs-${tabs.length}'),
-          length: tabViews.length,
-          child: Builder(
-            builder: (tabCtx) {
-              final controller = DefaultTabController.of(tabCtx);
-              if (!_tabListenerAttached) {
-                _tabListenerAttached = true;
-                controller.addListener(() {
-                  if (!mounted) return;
-                  if (controller.indexIsChanging) return;
-                  if (controller.index == 3) {
-                    _ensureTweetsLoadedForUser(profileUserId);
-                  }
-                });
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  if (controller.index == 3) {
-                    _ensureTweetsLoadedForUser(profileUserId);
-                  }
-                });
-              }
-
-              return Scaffold(
-                backgroundColor: theme.scaffoldBackgroundColor,
-                appBar: AppBar(
-                  automaticallyImplyLeading: !isMe,
-                  backgroundColor: theme.appBarTheme.backgroundColor,
-                  foregroundColor: theme.appBarTheme.foregroundColor,
-                  title: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          username,
-                          style: TextStyle(color: fgColor),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          softWrap: false,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      SvgPicture.string(
-                        _verifiedBadgeSvg,
-                        width: 20,
-                        height: 20,
-                        colorFilter: const ColorFilter.mode(
-                            Color(0xFF3B82F6), BlendMode.srcIn),
-                      ),
-                    ],
-                  ),
-                  actions: [
-                    if (isMe) ...[
-                      IconButton(
-                        icon: Icon(LucideIcons.squarePlus, color: fgColor),
-                        onPressed: _openCreatePostFlow,
-                      ),
-                      IconButton(
-                        icon: Icon(LucideIcons.menu, color: fgColor),
-                        onPressed: () =>
-                            Navigator.of(context).pushNamed('/settings'),
-                      ),
-                    ],
-                  ],
-                ),
-                body: RefreshIndicator(
-                  onRefresh: _load,
-                  notificationPredicate: (notification) => true,
-                  child: NestedScrollView(
-                    headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                      SliverToBoxAdapter(
-                        child: (() {
-                          final canMessage = _canMessageProfile(displayProfile);
-                          final isRequested = _followRequested ||
-                              _isFollowRequested(displayProfile);
-
-                          return ProfileHeader(
-                            username: username,
-                            fullName: fullName,
-                            bio: bio,
-                            avatarUrl: avatar,
-                            avatarHeaders: _reelImageHeaders,
-                            posts: postsCount,
-                            followers: followers,
-                            following: following,
-                            ads: _vendorAds.length,
-                            isMe: isMe,
-                            isVendor: isVendor,
-                            isValidated: isValidated,
-                            isFollowing: _isFollowingViewer(displayProfile),
-                            isRequested: isRequested,
-                            canMessage: canMessage,
-                            isFavorite: _isFavoriteProfile,
-                            isSuggestionsOpen:
-                                isMe ? _showFollowSuggestions : false,
-                            hasStory: _hasStory && !_storiesBlocked,
-                            onEdit: isMe ? _onEdit : null,
-                            onFollow: isMe ? null : _onFollow,
-                            onShare: () => _shareProfile(displayProfile),
-                            onFavorite: profileUserId.isEmpty
-                                ? null
-                                : () {
-                                    final next = !_isFavoriteProfile;
-                                    setState(() => _isFavoriteProfile = next);
-                                    if (!next) return;
-                                    unawaited(() async {
-                                      await _loadAdInterests(
-                                        profileUserId,
-                                        force: true,
-                                      );
-                                      if (!mounted) return;
-                                      if (!_isFavoriteProfile) return;
-                                      if (_interestsLoadedForUserId !=
-                                          profileUserId.trim()) {
-                                        return;
-                                      }
-                                      _applyBannersForInterests(_adInterests);
-                                    }());
-                                  },
-                            onMore: () =>
-                                _showProfileMoreActions(displayProfile),
-                            onMessage: isMe
-                                ? _openMessaging
-                                : (canMessage ? _openMessaging : null),
-                            onUser: isMe ? _toggleFollowSuggestions : null,
-                            onAvatarTap: storyTap,
-                            onAvatarEdit: isMe && !_avatarUploading
-                                ? _showAvatarOptionsSheet
-                                : null,
-                            onFollowersTap: profileUserId.isNotEmpty
-                                ? () => FollowListScreen.open(
-                                      context,
-                                      userId: profileUserId,
-                                      username: username,
-                                      mode: FollowListMode.followers,
-                                      isOwnProfile: isMe,
-                                      initialFollowersCount: followers,
-                                      initialFollowingCount: following,
-                                    )
-                                : null,
-                            onFollowingTap: profileUserId.isNotEmpty
-                                ? () => FollowListScreen.open(
-                                      context,
-                                      userId: profileUserId,
-                                      username: username,
-                                      mode: FollowListMode.following,
-                                      isOwnProfile: isMe,
-                                      initialFollowersCount: followers,
-                                      initialFollowingCount: following,
-                                    )
-                                : null,
-                          );
-                        })(),
-                      ),
-                      SliverToBoxAdapter(
-                        child: _buildFavoriteCategoryStrip(
-                          context,
-                          profileUserId: profileUserId,
-                          isMe: isMe,
-                        ),
-                      ),
-                      SliverToBoxAdapter(
-                        child: _buildFollowSuggestionsBlock(context),
-                      ),
-                      SliverToBoxAdapter(
-                        child: profileUserId.isEmpty || isVendor
-                            ? const SizedBox.shrink()
-                            : ProfileHighlightsRow(
-                                userId: profileUserId,
-                                userName: username,
-                                userAvatar: avatar,
-                              ),
-                      ),
-                      SliverPersistentHeader(
-                        pinned: true,
-                        delegate: _SliverTabBarDelegate(
-                          tabBar: TabBar(
-                            tabs: tabs,
-                            isScrollable: false,
-                            indicator: const UnderlineTabIndicator(
-                                borderSide: BorderSide(
-                                    width: 1.5, color: DesignTokens.instaPink)),
-                            labelColor: DesignTokens.instaPink,
-                            unselectedLabelColor: theme.colorScheme.onSurface
-                                .withValues(alpha: 0.6),
-                          ),
-                          backgroundColor: theme.scaffoldBackgroundColor,
-                          borderColor:
-                              theme.dividerColor.withValues(alpha: 0.55),
-                        ),
-                      ),
-                    ],
-                    body: TabBarView(
-                      children: tabViews,
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
+        return ProfileHomePage(
+          profile: displayProfile,
+          username: username,
+          fullName: fullName,
+          bio: bio,
+          avatarUrl: avatar,
+          avatarHeaders: _reelImageHeaders,
+          postsCount: postsCount,
+          followers: followers,
+          following: following,
+          likesCount: likesCount,
+          isMe: isMe,
+          isValidated: isValidated,
+          posts: postsForGrid,
+          reels: reelsForGrid,
+          tweets: tweetsForHome,
+          promotes: _promotes,
+          onOpenStories: isMe ? _openStoriesFromProfile : null,
+          onDeletePromote: isMe ? _deletePromoteReel : null,
+          onBack: () => Navigator.of(context)
+              .pushNamedAndRemoveUntil('/home', (route) => false),
+          onMenu: isMe
+              ? () => Navigator.of(context).pushNamed('/settings')
+              : () => _showProfileMoreActions(displayProfile),
+          onFollow: isMe ? null : _onFollow,
+          onMessage: isMe
+              ? _openMessaging
+              : (_canMessageProfile(displayProfile) ? _openMessaging : null),
+          onShare: () => _shareProfile(displayProfile),
         );
       },
     );
-  }
-}
-
-class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
-  final TabBar tabBar;
-  final Color backgroundColor;
-  final Color borderColor;
-
-  _SliverTabBarDelegate({
-    required this.tabBar,
-    required this.backgroundColor,
-    required this.borderColor,
-  });
-
-  @override
-  double get minExtent => 48;
-
-  @override
-  double get maxExtent => 48;
-
-  @override
-  Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
-      height: 48,
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        border: Border(top: BorderSide(color: borderColor)),
-      ),
-      child: tabBar,
-    );
-  }
-
-  @override
-  bool shouldRebuild(covariant SliverPersistentHeaderDelegate oldDelegate) {
-    if (oldDelegate is! _SliverTabBarDelegate) return true;
-    return oldDelegate.tabBar.tabs.length != tabBar.tabs.length ||
-        oldDelegate.backgroundColor != backgroundColor ||
-        oldDelegate.borderColor != borderColor;
   }
 }
 

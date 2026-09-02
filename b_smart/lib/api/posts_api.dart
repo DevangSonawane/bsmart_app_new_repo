@@ -23,7 +23,8 @@ class PostsApi {
     'Expires': '0',
   };
   String get _basePath {
-    final base = ApiConfig.baseUrl.toLowerCase().trim().replaceAll(RegExp(r'\/+$'), '');
+    final base =
+        ApiConfig.baseUrl.toLowerCase().trim().replaceAll(RegExp(r'\/+$'), '');
     final endsWithApi = base.endsWith('/api');
     return endsWithApi ? '' : '/api';
   }
@@ -42,29 +43,48 @@ class PostsApi {
     bool? turnOffCommenting,
     bool? hideShareCount,
     List<Map<String, dynamic>>? peopleTags,
+    List<Map<String, dynamic>>? products,
     String type = 'post', // post | reel | promote | advertise
   }) async {
     final body = <String, dynamic>{
       'media': media,
       'type': type,
     };
-    if (caption != null && caption.isNotEmpty) body['caption'] = caption;
-    if (location != null && location.isNotEmpty) body['location'] = location;
+    if (caption != null && caption.isNotEmpty) {
+      body['caption'] = caption;
+    }
+    if (location != null && location.isNotEmpty) {
+      body['location'] = location;
+    }
     if (locationPlace != null && locationPlace.isNotEmpty) {
       body['location_place'] = locationPlace;
     }
-    if (tags != null && tags.isNotEmpty) body['tags'] = tags;
-    if (hideLikesCount != null) body['hide_likes_count'] = hideLikesCount;
-    if (turnOffCommenting != null) body['turn_off_commenting'] = turnOffCommenting;
-    if (hideShareCount != null) body['hide_share_count'] = hideShareCount;
-    if (peopleTags != null && peopleTags.isNotEmpty) body['people_tags'] = peopleTags;
+    if (tags != null && tags.isNotEmpty) {
+      body['tags'] = tags;
+    }
+    if (hideLikesCount != null) {
+      body['hide_likes_count'] = hideLikesCount;
+    }
+    if (turnOffCommenting != null) {
+      body['turn_off_commenting'] = turnOffCommenting;
+    }
+    if (hideShareCount != null) {
+      body['hide_share_count'] = hideShareCount;
+    }
+    if (peopleTags != null && peopleTags.isNotEmpty) {
+      body['people_tags'] = peopleTags;
+    }
+    if (products != null && products.isNotEmpty) {
+      body['products'] = products;
+    }
 
     final res = await _client.post('$_basePath/posts', body: body);
     return res as Map<String, dynamic>;
   }
 
   /// Get the paginated feed.
-  Future<dynamic> getFeed({int page = 1, int limit = 20, String? cacheBuster}) async {
+  Future<dynamic> getFeed(
+      {int page = 1, int limit = 20, String? cacheBuster}) async {
     final query = {
       'page': page.toString(),
       'limit': limit.toString(),
@@ -72,7 +92,8 @@ class PostsApi {
     if (cacheBuster != null) {
       query['_'] = cacheBuster;
     }
-    final res = await _client.get('$_basePath/posts/feed', queryParams: query, extraHeaders: _noCacheHeaders);
+    final res = await _client.get('$_basePath/posts/feed',
+        queryParams: query, extraHeaders: _noCacheHeaders);
     return res;
   }
 

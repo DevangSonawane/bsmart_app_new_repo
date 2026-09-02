@@ -13,7 +13,7 @@ class ShareLinks {
       if (base.isEmpty) return fallback;
       final uri = Uri.tryParse(base);
       if (uri == null || !uri.hasScheme || uri.host.isEmpty) return fallback;
-      // API is typically https://api.bebsmart.in/api → share origin should be app.
+      // API is typically https://api.bebsmart.online/api → share origin should be app.
       return fallback;
     } catch (_) {
       return fallback;

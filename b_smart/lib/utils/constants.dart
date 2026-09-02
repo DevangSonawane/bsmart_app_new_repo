@@ -37,16 +37,24 @@ class AuthConstants {
   static const String userIdKey = 'user_id';
   static const String signupSessionKey = 'signup_session';
 
+  // Google Sign-In
+  static const String googleWebClientId =
+      '832065490130-97j2a560l5e30p3tu90j9miqfdkdctlv.apps.googleusercontent.com';
+
   // Error messages
-  static const String networkError = 'Network error. Please check your connection.';
+  static const String networkError =
+      'Network error. Please check your connection.';
   static const String serverError = 'Server error. Please try again later.';
   static const String invalidCredentials = 'Invalid email or password.';
   static const String userNotFound = 'User not found.';
   static const String usernameTaken = 'This username is already taken.';
-  static const String emailExists = 'An account with this email already exists.';
-  static const String phoneExists = 'An account with this phone number already exists.';
+  static const String emailExists =
+      'An account with this email already exists.';
+  static const String phoneExists =
+      'An account with this phone number already exists.';
   static const String invalidOTP = 'Invalid OTP. Please try again.';
   static const String otpExpired = 'OTP has expired. Please request a new one.';
   static const String sessionExpired = 'Session expired. Please start again.';
-  static const String tokenExpired = 'Your session has expired. Please login again.';
+  static const String tokenExpired =
+      'Your session has expired. Please login again.';
 }

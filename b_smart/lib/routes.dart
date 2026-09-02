@@ -4,7 +4,9 @@ import 'screens/auth/signup_screen.dart';
 import 'screens/auth/forgot_password_screen.dart';
 import 'screens/auth/verify_otp_screen.dart';
 import 'screens/home_dashboard.dart';
+import 'screens/messaging_screen.dart';
 import 'screens/create_upload_screen.dart';
+import 'screens/promote_composer_screen.dart';
 import 'screens/reels_screen.dart';
 import 'screens/ads_page_screen.dart';
 import 'screens/promote_screen.dart';
@@ -29,6 +31,7 @@ import 'screens/follow_requests_screen.dart';
 import 'screens/advertiser_ads_list_screen.dart';
 import 'screens/advertiser_create_ad_screen.dart';
 import 'screens/role_redirect_gate.dart';
+import 'screens/suggested_user_details_page.dart';
 import '../models/media_model.dart';
 import 'screens/edit_video_screen.dart';
 
@@ -54,6 +57,7 @@ final Map<String, WidgetBuilder> appRoutes = {
     return VerifyOtpScreen(email: email);
   },
   '/home': (ctx) => const HomeDashboard(),
+  '/messages': (ctx) => const MessagingScreen(),
   '/create_post': (ctx) => const CreateUploadScreen(
         initialMode: UploadMode.post,
       ),
@@ -94,6 +98,7 @@ final Map<String, WidgetBuilder> appRoutes = {
     final reelId = args is Map ? args['reelId']?.toString() : null;
     return PromoteScreen(initialReelId: reelId);
   },
+  '/promote/create': (ctx) => const PromoteComposerScreen(),
   '/settings': (ctx) => const SettingsScreen(),
   '/wallet': (ctx) => const WalletScreen(),
   '/wallet/redeem-gift-cards': (ctx) => const RedeemGiftCardsScreen(),
@@ -112,6 +117,7 @@ final Map<String, WidgetBuilder> appRoutes = {
   '/auth/google/success': (ctx) => const AuthCallbackScreen(),
   '/edit-profile': (ctx) => const AccountDetailsScreen(),
   '/story-camera': (ctx) => const StoryCameraScreen(),
+  '/suggested-user-details': (ctx) => const SuggestedUserDetailsPage(),
   '/own-story-viewer': (ctx) {
     return const OwnStoryViewerScreen(stories: [], userName: 'You');
   },

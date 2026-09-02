@@ -38,6 +38,7 @@ class SuggestionFollowSection {
   final String? helperText;
   final List<SuggestionUser> users;
   final VoidCallback? onSeeAll;
+  final String seeAllLabel;
   final VoidCallback? onOverflow;
 
   const SuggestionFollowSection({
@@ -45,6 +46,7 @@ class SuggestionFollowSection {
     this.helperText,
     required this.users,
     this.onSeeAll,
+    this.seeAllLabel = 'See all',
     this.onOverflow,
   });
 }
@@ -101,6 +103,7 @@ class SuggestionFollowBlock extends StatelessWidget {
                   titleColor: titleColor,
                   helperColor: subColor,
                   onSeeAll: section.onSeeAll,
+                  seeAllLabel: section.seeAllLabel,
                   onOverflow: section.onOverflow,
                 ),
               ),
@@ -152,6 +155,7 @@ class _SectionHeader extends StatelessWidget {
   final Color titleColor;
   final Color helperColor;
   final VoidCallback? onSeeAll;
+  final String seeAllLabel;
   final VoidCallback? onOverflow;
 
   const _SectionHeader({
@@ -160,6 +164,7 @@ class _SectionHeader extends StatelessWidget {
     required this.titleColor,
     required this.helperColor,
     required this.onSeeAll,
+    required this.seeAllLabel,
     required this.onOverflow,
   });
 
@@ -181,17 +186,22 @@ class _SectionHeader extends StatelessWidget {
               ),
             ),
             if (onSeeAll != null)
-              GestureDetector(
-                onTap: onSeeAll,
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-                  child: Text(
-                    'See all',
-                    style: TextStyle(
-                      color: Color(0xFF60A5FA),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
+              TextButton(
+                onPressed: onSeeAll,
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF60A5FA),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: Text(
+                  seeAllLabel,
+                  style: const TextStyle(
+                    color: Color(0xFF60A5FA),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
                   ),
                 ),
               ),

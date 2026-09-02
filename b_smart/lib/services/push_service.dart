@@ -196,29 +196,6 @@ class PushService {
     }
   }
 
-  Future<String?> _getFcmTokenSafely() async {
-    final messaging = _messaging;
-    if (messaging == null) return null;
-    try {
-      return await messaging.getToken();
-    } catch (e) {
-      _log('getToken() failed (ignored for startup): $e');
-      return null;
-    }
-  }
-
-  Future<void> _retryTokenRegistrationAfterDelay() async {
-    await Future<void>.delayed(const Duration(seconds: 3));
-    if (!_firebaseAvailable) return;
-    final token = await _getFcmTokenSafely();
-    if (token == null || token.isEmpty) {
-      _log('retry getToken() still empty/null');
-      return;
-    }
-    _log('retry getToken() token=${_redact(token)}');
-    await _registerIfAuthenticated(token, force: false);
-  }
-
   Future<void> _initLocalNotifications() async {
     const androidInit =
         AndroidInitializationSettings('@drawable/ic_stat_notification');
@@ -393,6 +370,29 @@ class PushService {
       _log('backend register failed (will retry later): $e');
       _log(st.toString());
     }
+  }
+
+  Future<String?> _getFcmTokenSafely() async {
+    final messaging = _messaging;
+    if (messaging == null) return null;
+    try {
+      return await messaging.getToken();
+    } catch (e) {
+      _log('getToken() failed (ignored for startup): $e');
+      return null;
+    }
+  }
+
+  Future<void> _retryTokenRegistrationAfterDelay() async {
+    await Future<void>.delayed(const Duration(seconds: 3));
+    if (!_firebaseAvailable) return;
+    final token = await _getFcmTokenSafely();
+    if (token == null || token.isEmpty) {
+      _log('retry getToken() still empty/null');
+      return;
+    }
+    _log('retry getToken() token=${_redact(token)}');
+    await _registerIfAuthenticated(token, force: false);
   }
 
   Future<String?> _read(String key) async {

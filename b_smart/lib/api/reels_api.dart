@@ -6,6 +6,7 @@ import '../config/api_config.dart';
 /// Endpoints:
 ///   POST /posts/reels          – Create a new reel (protected)
 ///   GET  /posts/reels          – List reels (protected, paginated)
+///   GET  /posts/reels/mixed    – List mixed reels/ad/promote feed
 ///   GET  /posts/reels/{id}     – Get a reel by ID (protected)
 class ReelsApi {
   static final ReelsApi _instance = ReelsApi._internal();
@@ -66,6 +67,25 @@ class ReelsApi {
       },
     );
     return res;
+  }
+
+  /// List mixed reels/ad/promote feed items.
+  ///
+  /// Falls back to the plain reels endpoint if the mixed endpoint is not yet
+  /// available so older deployments keep working.
+  Future<dynamic> listMixedReels({int page = 1, int limit = 20}) async {
+    try {
+      final res = await _client.get(
+        '$_basePath/posts/reels/mixed',
+        queryParams: {
+          'page': page.toString(),
+          'limit': limit.toString(),
+        },
+      );
+      return res;
+    } catch (_) {
+      return listReels(page: page, limit: limit);
+    }
   }
 
   /// Get a single reel by ID.

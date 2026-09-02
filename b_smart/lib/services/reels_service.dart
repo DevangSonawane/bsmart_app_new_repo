@@ -1,5 +1,6 @@
 import '../api/posts_api.dart';
 import '../api/reels_api.dart';
+import '../models/ad_model.dart';
 import '../models/feed_post_model.dart';
 import '../models/reel_model.dart';
 import 'content_sync_service.dart';
@@ -26,7 +27,8 @@ class ReelsService {
   void _handleSyncEvent(ContentSyncEvent event) {
     if (event.followed != null && event.userId.isNotEmpty) {
       var changed = false;
-      final followed = event.followState == 'requested' ? false : event.followed!;
+      final followed =
+          event.followState == 'requested' ? false : event.followed!;
       for (var i = 0; i < _cache.length; i++) {
         if (_cache[i].userId != event.userId) continue;
         if (_cache[i].isFollowing == followed) continue;
@@ -132,11 +134,11 @@ class ReelsService {
 
   Future<List<Reel>> fetchReels({int limit = 20, int offset = 0}) async {
     final page = (offset ~/ limit) + 1;
-    final res = await _reelsApi.listReels(page: page, limit: limit);
+    final res = await _fetchMixedPage(page: page, limit: limit);
     final rawItems = _extractList(res);
 
     final parsed = rawItems
-        .map((item) => _parseReel(item))
+        .map((item) => _parseMixedReel(item))
         .whereType<Reel>()
         .where((reel) => reel.videoUrl.isNotEmpty)
         .toList();
@@ -151,6 +153,20 @@ class ReelsService {
     }
 
     return offset == 0 ? getReels() : List.unmodifiable(synced);
+  }
+
+  Future<List<FeedPost>> fetchMixedReelsFeed({
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final page = (offset ~/ limit) + 1;
+    final res = await _fetchMixedPage(page: page, limit: limit);
+    final rawItems = _extractList(res);
+    final parsed = rawItems
+        .map((item) => _parseMixedFeedPost(item))
+        .whereType<FeedPost>()
+        .toList();
+    return parsed;
   }
 
   Future<void> preWarmReels(int count) async {
@@ -200,6 +216,260 @@ class ReelsService {
       }
     }
     return const [];
+  }
+
+  Future<dynamic> _fetchMixedPage({required int page, required int limit}) {
+    return _reelsApi.listMixedReels(page: page, limit: limit);
+  }
+
+  Reel? _parseMixedReel(dynamic raw) {
+    if (raw is! Map) return null;
+    final item = Map<String, dynamic>.from(raw);
+    final itemType = (item['item_type'] ?? item['itemType'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (itemType == 'ad') {
+      return _parseAdReel(item);
+    }
+    if (itemType == 'promote_reel' || itemType == 'promote-reel') {
+      return _parsePromoteReel(item);
+    }
+    return _parseReel(item);
+  }
+
+  FeedPost? _parseMixedFeedPost(dynamic raw) {
+    if (raw is! Map) return null;
+    final item = Map<String, dynamic>.from(raw);
+    final itemType = (item['item_type'] ?? item['itemType'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (itemType == 'ad') {
+      return _parseAdFeedPost(item);
+    }
+    if (itemType == 'promote_reel' || itemType == 'promote-reel') {
+      return _parsePromoteFeedPost(item);
+    }
+    final reel = _parseReel(item);
+    return reel?.toFeedPost();
+  }
+
+  Reel? _parseAdReel(Map<String, dynamic> item) {
+    final ad = Ad.fromApi(item);
+    final primaryUrl = UrlHelper.normalizeUrl(
+      ad.videoUrl != null && ad.videoUrl!.isNotEmpty
+          ? ad.videoUrl!
+          : (ad.imageUrl ?? ''),
+    );
+    if (primaryUrl.isEmpty) return null;
+    final isVideo = primaryUrl.toLowerCase().endsWith('.mp4') ||
+        primaryUrl.toLowerCase().endsWith('.mov') ||
+        (ad.videoUrl != null && ad.videoUrl!.isNotEmpty);
+    final ownerName = (ad.vendorBusinessName?.trim().isNotEmpty ?? false)
+        ? ad.vendorBusinessName!.trim()
+        : ((ad.companyName.trim().isNotEmpty)
+            ? ad.companyName.trim()
+            : 'Sponsored');
+
+    return Reel(
+      id: ad.id,
+      userId: ad.userId ?? ad.companyId,
+      userName: ownerName,
+      userAvatarUrl: UrlHelper.normalizeUrl(ad.userAvatarUrl ?? ad.companyLogo),
+      videoUrl: primaryUrl,
+      thumbnailUrl: isVideo ? UrlHelper.normalizeUrl(ad.imageUrl) : null,
+      caption: (ad.caption?.trim().isNotEmpty ?? false)
+          ? ad.caption!.trim()
+          : ((ad.description.trim().isNotEmpty)
+              ? ad.description.trim()
+              : ad.title),
+      hashtags: ad.hashtags,
+      likes: ad.likesCount,
+      comments: ad.commentsCount,
+      shares: ad.sharesCount,
+      views: ad.currentViews,
+      isLiked: ad.isLikedByMe,
+      isSaved: ad.isSavedByMe,
+      isFollowing: false,
+      createdAt: ad.createdAt,
+      isSponsored: true,
+      sponsorBrand: ad.companyName,
+      sponsorLogoUrl: UrlHelper.normalizeUrl(ad.companyLogo),
+      duration: Duration(
+          seconds: ad.watchDurationSeconds > 0 ? ad.watchDurationSeconds : 15),
+    );
+  }
+
+  Reel? _parsePromoteReel(Map<String, dynamic> item) {
+    final post = _parsePromoteFeedPost(item);
+    if (post == null) return null;
+    return Reel.fromFeedPost(post).copyWith(
+      id: post.id,
+      isSponsored: true,
+      sponsorBrand: post.userName,
+      sponsorLogoUrl: post.userAvatar,
+    );
+  }
+
+  FeedPost? _parseAdFeedPost(Map<String, dynamic> item) {
+    final ad = Ad.fromApi(item);
+    final primaryUrl = UrlHelper.normalizeUrl(
+      ad.videoUrl != null && ad.videoUrl!.isNotEmpty
+          ? ad.videoUrl!
+          : (ad.imageUrl ?? ''),
+    );
+    if (primaryUrl.isEmpty) return null;
+    final isVideo = primaryUrl.toLowerCase().endsWith('.mp4') ||
+        primaryUrl.toLowerCase().endsWith('.mov') ||
+        (ad.videoUrl != null && ad.videoUrl!.isNotEmpty);
+    final ownerName = (ad.vendorBusinessName?.trim().isNotEmpty ?? false)
+        ? ad.vendorBusinessName!.trim()
+        : ((ad.companyName.trim().isNotEmpty)
+            ? ad.companyName.trim()
+            : 'Sponsored');
+
+    return FeedPost(
+      id: ad.id,
+      userId: ad.userId ?? ad.companyId,
+      userName: ownerName,
+      fullName: null,
+      userAvatar: UrlHelper.normalizeUrl(ad.userAvatarUrl ?? ad.companyLogo),
+      mediaType: isVideo ? PostMediaType.video : PostMediaType.image,
+      mediaUrls: [primaryUrl],
+      thumbnailUrl: isVideo ? UrlHelper.normalizeUrl(ad.imageUrl) : null,
+      caption: (ad.caption?.trim().isNotEmpty ?? false)
+          ? ad.caption!.trim()
+          : ((ad.description.trim().isNotEmpty)
+              ? ad.description.trim()
+              : ad.title),
+      hashtags: ad.hashtags,
+      createdAt: ad.createdAt,
+      likes: ad.likesCount,
+      comments: ad.commentsCount,
+      shares: ad.sharesCount,
+      isLiked: ad.isLikedByMe,
+      isSaved: ad.isSavedByMe,
+      isFollowed: false,
+      isAd: true,
+      adTitle: ad.title,
+      adCompanyId: ad.companyId,
+      adCompanyName: ad.companyName,
+      adCategory: ad.category,
+      totalBudgetCoins: ad.totalBudgetCoins,
+      targetLocations: ad.targetLocations,
+      targetLanguages: ad.targetLanguages,
+    );
+  }
+
+  FeedPost? _parsePromoteFeedPost(Map<String, dynamic> item) {
+    String? str(dynamic v) {
+      if (v == null) return null;
+      final s = v.toString().trim();
+      return s.isEmpty ? null : s;
+    }
+
+    int toInt(dynamic value) {
+      if (value is int) return value;
+      if (value is double) return value.toInt();
+      if (value is String) return int.tryParse(value) ?? 0;
+      return 0;
+    }
+
+    bool toBool(dynamic value) {
+      if (value is bool) return value;
+      if (value is num) return value != 0;
+      if (value is String) {
+        final lower = value.toLowerCase().trim();
+        return lower == 'true' || lower == '1' || lower == 'yes';
+      }
+      return false;
+    }
+
+    final id = str(item['_id'] ?? item['id'] ?? item['promote_reel_id']);
+    if (id == null) return null;
+
+    final user = item['user_id'] is Map
+        ? Map<String, dynamic>.from(item['user_id'] as Map)
+        : item['user'] is Map
+            ? Map<String, dynamic>.from(item['user'] as Map)
+            : <String, dynamic>{};
+    final userId = str(user['_id'] ?? user['id'] ?? item['user_id']) ?? '';
+    final userName =
+        str(user['username'] ?? user['full_name'] ?? 'User') ?? 'User';
+    final avatar = UrlHelper.normalizeUrl(
+      user['avatar_url'] ??
+          user['profile_picture'] ??
+          user['profilePicture'] ??
+          user['profile_pic'] ??
+          user['avatarUrl'],
+    );
+
+    final media = item['media'];
+    if (media is! List || media.isEmpty) return null;
+    final first = media.first;
+    String? mediaUrl;
+    String? thumbnailUrl;
+    if (first is String) {
+      mediaUrl = first;
+    } else if (first is Map) {
+      final m = Map<String, dynamic>.from(first);
+      mediaUrl =
+          (m['fileUrl'] ?? m['file_url'] ?? m['url'] ?? m['link'])?.toString();
+      final rawThumb = m['thumbnails'] ??
+          m['thumbnail'] ??
+          m['thumbnailUrl'] ??
+          m['thumbnail_url'] ??
+          m['thumb'];
+      if (rawThumb is String) {
+        thumbnailUrl = rawThumb;
+      } else if (rawThumb is Map) {
+        final t = Map<String, dynamic>.from(rawThumb);
+        thumbnailUrl = (t['fileUrl'] ?? t['file_url'] ?? t['url'] ?? t['path'])
+            ?.toString();
+      }
+    }
+    mediaUrl = UrlHelper.normalizeUrl(mediaUrl ?? '');
+    if (mediaUrl.isEmpty) return null;
+    thumbnailUrl = UrlHelper.normalizeUrl(thumbnailUrl ?? '');
+
+    final productsRaw = item['products'];
+    final products = productsRaw is List
+        ? productsRaw
+            .whereType<Map>()
+            .map((p) => Map<String, dynamic>.from(p))
+            .toList()
+        : const <Map<String, dynamic>>[];
+
+    return FeedPost(
+      id: 'promote-$id',
+      userId: userId,
+      userName: userName,
+      userAvatar: avatar.isEmpty ? null : avatar,
+      mediaType: PostMediaType.reel,
+      mediaUrls: [mediaUrl],
+      thumbnailUrl: thumbnailUrl.isEmpty ? null : thumbnailUrl,
+      caption: (item['caption'] ?? item['content'] ?? '').toString(),
+      hashtags: ((item['tags'] as List?) ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      createdAt: DateTime.tryParse(
+            (item['created_at'] ?? item['createdAt'] ?? '').toString(),
+          ) ??
+          DateTime.now(),
+      likes: toInt(item['likes_count'] ?? item['likesCount'] ?? item['likes']),
+      comments: toInt(
+        item['comments_count'] ?? item['commentsCount'] ?? item['comments'],
+      ),
+      shares:
+          toInt(item['shares_count'] ?? item['sharesCount'] ?? item['shares']),
+      views: toInt(item['views_count'] ?? item['viewsCount'] ?? item['views']),
+      isLiked: toBool(item['is_liked_by_me'] ?? item['isLikedByMe']),
+      isSaved: toBool(item['is_saved_by_me'] ?? item['isSavedByMe']),
+      isFollowed: toBool(item['is_followed_by_me'] ?? item['isFollowedByMe']),
+      isAd: false,
+      promotedProducts: products,
+    );
   }
 
   Reel? _parseReel(dynamic raw) {

@@ -175,6 +175,29 @@ class UploadApi {
     );
   }
 
+  /// Upload a promoted product image.
+  Future<Map<String, dynamic>> uploadPromoteProductBytes({
+    required List<int> bytes,
+    required String filename,
+    UploadProgressCallback? onSendProgress,
+  }) async {
+    return _uploadBytes(
+      _pathFor('promote-product'),
+      bytes: bytes,
+      filename: filename,
+      timeout: _timeoutForFilename(filename),
+      onSendProgress: onSendProgress,
+    );
+  }
+
+  Future<Map<String, dynamic>> uploadPromoteProductFile(String filePath) async {
+    return _uploadFile(
+      _pathFor('promote-product'),
+      filePath: filePath,
+      timeout: _timeoutForFilename(filePath),
+    );
+  }
+
   /// Upload a tweet media file.
   Future<Map<String, dynamic>> uploadTweetBytes({
     required List<int> bytes,

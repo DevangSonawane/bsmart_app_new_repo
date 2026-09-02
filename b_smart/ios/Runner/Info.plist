@@ -65,6 +65,8 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-6848080783292385~9100696019</string>
 	<key>GIDClientID</key>
 	<string>832065490130-kvnh008mgsptm8fl0iciv0hga0ucrnkn.apps.googleusercontent.com</string>
 	<key>NSPhotoLibraryUsageDescription</key>
@@ -74,6 +76,6 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>We need access to your microphone to record videos with sound.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>bSmart uses your location while you are using the app when you tap Use current location to tag a post or reel and restore your selected home location.</string>
+	<string>We use your location only when you tap Use current location to tag a post or reel with the place you are at.</string>
 </dict>
 </plist>

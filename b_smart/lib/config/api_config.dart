@@ -2,10 +2,10 @@
 ///
 /// Call `ApiConfig.init(...)` early in `main()` (after loading any env files)
 /// to override defaults. The base URL should point to the deployed backend,
-/// e.g. `https://api.bebsmart.in/api`.
+/// e.g. `https://api.bebsmart.online/api`.
 class ApiConfig {
   // Use HTTPS to avoid 301 redirects from the server.
-  static String _baseUrl = 'https://api.bebsmart.in/api';
+  static String _baseUrl = 'https://api.bebsmart.online/api';
   static Duration _timeout = const Duration(seconds: 30);
 
   /// Initialize runtime values (call after loading dotenv in `main()`).
@@ -17,7 +17,8 @@ class ApiConfig {
     if (timeout != null) _timeout = timeout;
   }
 
-  /// The REST API base URL (e.g. `http://localhost:5000/api`).
+  /// The REST API base URL (e.g. `https://api.bebsmart.online/api` or
+  /// `http://localhost:5000/api`).
   static String get baseUrl => _baseUrl;
 
   /// HTTP request timeout.

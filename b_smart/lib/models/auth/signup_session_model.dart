@@ -4,6 +4,7 @@ enum IdentifierType {
   email,
   phone,
   google,
+  apple,
 }
 
 enum VerificationStatus {
@@ -43,14 +44,15 @@ class SignupSession {
     return SignupSession(
       id: json['id'] as String,
       sessionToken: json['session_token'] as String,
-      identifierType: _identifierTypeFromString(json['identifier_type'] as String),
+      identifierType:
+          _identifierTypeFromString(json['identifier_type'] as String),
       identifierValue: json['identifier_value'] as String,
       otpCode: json['otp_code'] as String?,
       otpExpiresAt: json['otp_expires_at'] != null
           ? DateTime.parse(json['otp_expires_at'] as String)
           : null,
-      verificationStatus: _verificationStatusFromString(
-          json['verification_status'] as String),
+      verificationStatus:
+          _verificationStatusFromString(json['verification_status'] as String),
       step: json['step'] as int,
       metadata: _parseMetadata(json['metadata']),
       createdAt: DateTime.parse(json['created_at'] as String),
@@ -86,6 +88,8 @@ class SignupSession {
         return IdentifierType.phone;
       case 'google':
         return IdentifierType.google;
+      case 'apple':
+        return IdentifierType.apple;
       default:
         return IdentifierType.email;
     }
@@ -99,6 +103,8 @@ class SignupSession {
         return 'phone';
       case IdentifierType.google:
         return 'google';
+      case IdentifierType.apple:
+        return 'apple';
     }
   }
 
@@ -122,7 +128,7 @@ class SignupSession {
       case VerificationStatus.verified:
         return 'verified';
       case VerificationStatus.expired:
-        return       'expired';
+        return 'expired';
     }
   }
 

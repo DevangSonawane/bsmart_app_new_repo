@@ -26,6 +26,8 @@ import '../state/app_state.dart';
 import '../state/profile_actions.dart';
 import '../state/feed_actions.dart';
 import '../widgets/post_card.dart';
+import '../widgets/admob_banner.dart';
+import '../widgets/admob_native_ad.dart';
 import '../widgets/stories_row.dart';
 import '../widgets/bottom_nav.dart';
 import '../widgets/sidebar.dart';
@@ -69,7 +71,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'profile_screen.dart';
 import '../routes.dart';
-import 'follow_list_screen.dart';
 import 'messaging_screen.dart';
 import '../services/home_onboarding_service.dart';
 
@@ -185,6 +186,7 @@ class _FeedHeader extends StatelessWidget {
 
 enum _FeedRenderRowType {
   post,
+  nativeAd,
   suggestedReels,
   suggestedAds,
   suggestedPeople,
@@ -231,6 +233,14 @@ class _FeedRenderRow {
       type: _FeedRenderRowType.suggestedReels,
       post: null,
       suggestionBlockIndex: -1,
+    );
+  }
+
+  factory _FeedRenderRow.nativeAd(int adIndex) {
+    return _FeedRenderRow._(
+      type: _FeedRenderRowType.nativeAd,
+      post: null,
+      suggestionBlockIndex: adIndex,
     );
   }
 
@@ -1524,21 +1534,7 @@ class _HomeDashboardState extends State<HomeDashboard>
 
   Future<void> _openSuggestionsSeeAll() async {
     if (!mounted) return;
-    final uid = _currentUserId ?? '';
-    if (uid.isEmpty) return;
-    final username = (_currentUserProfile?['username'] ??
-            _currentUserProfile?['userName'] ??
-            _currentUserProfile?['full_name'] ??
-            _currentUserProfile?['fullName'] ??
-            'You')
-        .toString();
-    await FollowListScreen.open(
-      context,
-      userId: uid,
-      username: username,
-      mode: FollowListMode.vendors,
-      isOwnProfile: true,
-    );
+    await Navigator.of(context).pushNamed('/suggested-user-details');
   }
 
   List<_FeedRenderRow> _buildFeedRows(List<FeedPost> posts) {
@@ -1547,6 +1543,16 @@ class _HomeDashboardState extends State<HomeDashboard>
     var peopleBlockIndex = 0;
     var vendorBlockIndex = 0;
     var insertCycleIndex = 0;
+
+    // Temporary test placement: surface suggested people at the very top.
+    final hasPeopleSuggestions = _followSuggestionsLoading ||
+        _followSuggestions.any(
+          (u) => !_dismissedSuggestionUserIds.contains(u.id),
+        );
+    if (hasPeopleSuggestions) {
+      rows.add(_FeedRenderRow.peopleSuggestions(peopleBlockIndex));
+      peopleBlockIndex++;
+    }
 
     FeedPost? nextAdForBlock(int idx) {
       final list = _adSuggestions;
@@ -1557,11 +1563,14 @@ class _HomeDashboardState extends State<HomeDashboard>
     for (final p in posts) {
       rows.add(_FeedRenderRow.post(p));
       postCount++;
+      if (postCount % 5 == 0) {
+        rows.add(_FeedRenderRow.nativeAd(postCount ~/ 5));
+      }
       if (postCount % 5 != 0) continue;
 
       // After every 5 posts, insert ONE block in a repeating cycle:
-      // Reels → Ads → People → Vendors → (repeat)
-      final cycle = insertCycleIndex % 4;
+      // Reels → Ads → Vendors → (repeat)
+      final cycle = insertCycleIndex % 3;
       insertCycleIndex++;
 
       switch (cycle) {
@@ -1577,15 +1586,6 @@ class _HomeDashboardState extends State<HomeDashboard>
           }
           break;
         case 2:
-          final hasPeople = _followSuggestions.any(
-            (u) => !_dismissedSuggestionUserIds.contains(u.id),
-          );
-          if (_followSuggestionsLoading || hasPeople) {
-            rows.add(_FeedRenderRow.peopleSuggestions(peopleBlockIndex));
-            peopleBlockIndex++;
-          }
-          break;
-        case 3:
         default:
           final hasVendors = _vendorSuggestions.any(
             (u) => !_dismissedVendorSuggestionIds.contains(u.id),
@@ -3635,7 +3635,8 @@ class _HomeDashboardState extends State<HomeDashboard>
                                         helperText:
                                             'Find and follow other people based on your interests.',
                                         users: users,
-                                        onSeeAll: null,
+                                        onSeeAll: _openSuggestionsSeeAll,
+                                        seeAllLabel: 'See more',
                                         onOverflow: null,
                                       ),
                                     ],
@@ -3767,6 +3768,13 @@ class _HomeDashboardState extends State<HomeDashboard>
                                     ],
                                   );
                                 }
+                                if (row.type == _FeedRenderRowType.nativeAd) {
+                                  return AdMobNativeAd(
+                                    key: ValueKey(
+                                      'feed-native-ad-${row.suggestionBlockIndex}',
+                                    ),
+                                  );
+                                }
 
                                 final p = row.post!;
                                 final isOwnPost = _currentUserId != null &&
@@ -3875,18 +3883,40 @@ class _HomeDashboardState extends State<HomeDashboard>
 
     Widget buildTabScaffold(int idx) {
       final isFullScreen = idx == 1 || idx == 3 || idx == 4;
+      final bottomBannerOffset = MediaQuery.of(context).padding.bottom + 60.0;
+      final body = idx == 0
+          ? Stack(
+              children: [
+                Positioned.fill(
+                  child: ColoredBox(
+                    color: isFullScreen
+                        ? (isDark ? const Color(0xFF121212) : Colors.black)
+                        : theme.scaffoldBackgroundColor,
+                    child: buildTabBody(idx),
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: bottomBannerOffset,
+                  child: const AdMobBanner(),
+                ),
+              ],
+            )
+          : ColoredBox(
+              color: isFullScreen
+                  ? (isDark ? const Color(0xFF121212) : Colors.black)
+                  : theme.scaffoldBackgroundColor,
+              child: buildTabBody(idx),
+            );
+
       return Scaffold(
         extendBody: idx != 4,
         backgroundColor: isFullScreen
             ? (isDark ? const Color(0xFF121212) : Colors.black)
             : theme.scaffoldBackgroundColor,
         appBar: buildAppBar(idx),
-        body: ColoredBox(
-          color: isFullScreen
-              ? (isDark ? const Color(0xFF121212) : Colors.black)
-              : theme.scaffoldBackgroundColor,
-          child: buildTabBody(idx),
-        ),
+        body: body,
         bottomNavigationBar: isDesktop || idx == 4
             ? null
             : (idx == 0
