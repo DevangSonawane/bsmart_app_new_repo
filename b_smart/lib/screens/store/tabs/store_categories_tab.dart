@@ -51,12 +51,6 @@ class _StoreCategoriesTabState extends State<StoreCategoriesTab> {
       Color(0xFFE1507A),
     ),
     _CategoryProduct(
-      'Flipkart Minutes',
-      Icons.delivery_dining_rounded,
-      Color(0xFFF1EEFF),
-      Color(0xFF743FDC),
-    ),
-    _CategoryProduct(
       'Sneakers',
       Icons.directions_run_rounded,
       Color(0xFFE9F3FF),
@@ -101,13 +95,6 @@ class _StoreCategoriesTabState extends State<StoreCategoriesTab> {
       Color(0xFF3D79BD),
       badge: 'NOTIFY ME',
       imageAsset: 'assets/bSmart_Store/mobilephone/images (2).jpeg',
-    ),
-    _CategoryProduct(
-      'Acer Swift Neo',
-      Icons.laptop_mac_rounded,
-      Color(0xFFFFF3D7),
-      Color(0xFFE1A02A),
-      badge: 'SHOP NOW',
     ),
     _CategoryProduct(
       'POCO M8x 5G',
