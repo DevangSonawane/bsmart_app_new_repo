@@ -9,8 +9,10 @@ class StoreHomeTab extends StatelessWidget {
   final List<StoreCategory> categories;
   final List<StoreProduct> products;
   final int selectedCategory;
+  final String deliveryAddress;
   final bool speechListening;
   final ValueChanged<int> onCategorySelected;
+  final VoidCallback onOpenAddressSheet;
   final VoidCallback onOpenSearch;
   final VoidCallback onOpenCamera;
   final VoidCallback onToggleSpeech;
@@ -23,8 +25,10 @@ class StoreHomeTab extends StatelessWidget {
     required this.categories,
     required this.products,
     required this.selectedCategory,
+    required this.deliveryAddress,
     required this.speechListening,
     required this.onCategorySelected,
+    required this.onOpenAddressSheet,
     required this.onOpenSearch,
     required this.onOpenCamera,
     required this.onToggleSpeech,
@@ -78,32 +82,40 @@ class StoreHomeTab extends StatelessWidget {
               children: [
                 _buildExperienceSwitcher(),
                 const SizedBox(height: 10),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFBFE3FF),
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: onOpenAddressSheet,
                     borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.home_rounded, color: Colors.black87, size: 16),
-                      SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          'HOME  A-404, Shri Krishna Kunj CH...',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.black87,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFBFE3FF),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      Icon(Icons.keyboard_arrow_down_rounded,
-                          color: Colors.black87, size: 18),
-                    ],
+                      child: Row(
+                        children: [
+                          const Icon(Icons.home_rounded,
+                              color: Colors.black87, size: 16),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              deliveryAddress,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.black87,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const Icon(Icons.keyboard_arrow_down_rounded,
+                              color: Colors.black87, size: 18),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -172,6 +184,7 @@ class StoreHomeTab extends StatelessWidget {
                 width: double.infinity,
                 height: double.infinity,
                 fit: fit,
+                cacheWidth: 420,
                 errorBuilder: (_, __, ___) => const Center(
                   child: Text(
                     'App',
@@ -349,6 +362,7 @@ class StoreHomeTab extends StatelessWidget {
           width: double.infinity,
           fit: BoxFit.cover,
           alignment: Alignment.center,
+          cacheWidth: 900,
         ),
       ),
     );
@@ -399,6 +413,7 @@ class StoreHomeTab extends StatelessWidget {
                               width: double.infinity,
                               height: double.infinity,
                               fit: BoxFit.cover,
+                              cacheWidth: 320,
                               errorBuilder: (_, __, ___) => const Icon(
                                 Icons.local_mall_rounded,
                                 size: 42,
@@ -462,6 +477,279 @@ class StoreHomeTab extends StatelessWidget {
             Icon(Icons.weekend_rounded, size: 58, color: Color(0xFF4F8B3A)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+Future<void> showStoreAddressSheet(
+  BuildContext context, {
+  required Future<bool> Function() onUseCurrentLocation,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.white,
+    barrierColor: Colors.black.withValues(alpha: 0.18),
+    sheetAnimationStyle: const AnimationStyle(
+      duration: Duration(milliseconds: 100),
+      reverseDuration: Duration(milliseconds: 80),
+    ),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+    ),
+    builder: (_) => RepaintBoundary(
+      child: _AddressSheet(
+        onUseCurrentLocation: onUseCurrentLocation,
+      ),
+    ),
+  );
+}
+
+class _AddressSheet extends StatefulWidget {
+  final Future<bool> Function() onUseCurrentLocation;
+
+  const _AddressSheet({
+    required this.onUseCurrentLocation,
+  });
+
+  @override
+  State<_AddressSheet> createState() => _AddressSheetState();
+}
+
+class _AddressSheetState extends State<_AddressSheet> {
+  bool _loading = false;
+
+  Future<void> _useCurrentLocation() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    final success = await widget.onUseCurrentLocation();
+    if (!mounted) return;
+    setState(() => _loading = false);
+    if (success) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          14,
+          7,
+          14,
+          MediaQuery.of(context).viewInsets.bottom + 14,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Select delivery address',
+                    style: TextStyle(
+                      color: Colors.black87,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded,
+                      color: Colors.black87, size: 24),
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints.tightFor(width: 32, height: 32),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const _AddressSearchField(),
+            const SizedBox(height: 14),
+            _AddressActionTile(
+              icon: Icons.my_location_rounded,
+              title:
+                  _loading ? 'Fetching location...' : 'Use my current location',
+              loading: _loading,
+              onTap: _loading ? null : _useCurrentLocation,
+            ),
+            const SizedBox(height: 9),
+            _AddressActionTile(
+              icon: Icons.add_rounded,
+              title: 'Add New',
+              onTap: () {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Add address is coming soon.'),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              'Saved addresses',
+              style: TextStyle(
+                color: Colors.black54,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const _NoSavedAddresses(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AddressSearchField extends StatelessWidget {
+  const _AddressSearchField();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.24)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.search_rounded, color: Colors.black54, size: 22),
+          SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              'Search by name, area, street, pincode',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.black45,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AddressActionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final bool loading;
+  final VoidCallback? onTap;
+
+  const _AddressActionTile({
+    required this.icon,
+    required this.title,
+    this.loading = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFEAF5FF),
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(13),
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              loading
+                  ? const SizedBox(
+                      width: 19,
+                      height: 19,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: StorePalette.blue,
+                      ),
+                    )
+                  : Icon(icon, color: StorePalette.blue, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: StorePalette.blue,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded,
+                  color: StorePalette.blue, size: 22),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NoSavedAddresses extends StatelessWidget {
+  const _NoSavedAddresses();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7FAFF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.location_off_outlined,
+              color: Colors.black45,
+              size: 21,
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'No saved addresses yet. Use your current location or add a new address.',
+              style: TextStyle(
+                color: Colors.black54,
+                fontSize: 12,
+                height: 1.25,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

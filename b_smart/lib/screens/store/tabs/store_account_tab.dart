@@ -114,7 +114,7 @@ class _StoreAccountTabState extends State<StoreAccountTab> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  _PublishButton(onTap: _showPublishComingSoon),
+                  _PublishButton(onTap: _openPublishProduct),
                 ],
               ),
             ),
@@ -212,10 +212,8 @@ class _StoreAccountTabState extends State<StoreAccountTab> {
     );
   }
 
-  void _showPublishComingSoon() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Product publishing is coming soon.')),
-    );
+  void _openPublishProduct() {
+    Navigator.of(context).pushNamed('/store/publish/add-product');
   }
 }
 

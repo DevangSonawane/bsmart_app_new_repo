@@ -340,6 +340,7 @@ class _CategoryProductTile extends StatelessWidget {
                         child: Image.asset(
                           product.imageAsset!,
                           fit: BoxFit.contain,
+                          cacheWidth: 180,
                           errorBuilder: (_, __, ___) => Icon(
                             product.icon,
                             color: product.iconColor,

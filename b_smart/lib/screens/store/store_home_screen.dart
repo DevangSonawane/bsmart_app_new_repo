@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
@@ -6,20 +8,73 @@ import 'package:speech_to_text/speech_to_text.dart';
 import 'store_models.dart';
 import 'store_theme.dart';
 import 'tabs/store_account_tab.dart';
+import 'tabs/store_cart_tab.dart';
 import 'tabs/store_categories_tab.dart';
 import 'tabs/store_home_tab.dart';
+import 'tabs/store_my_store_tab.dart';
 
 class StoreHomeScreen extends StatefulWidget {
-  const StoreHomeScreen({super.key});
+  final bool isSelfStore;
+  final String? ownerUserId;
+
+  const StoreHomeScreen({
+    super.key,
+    this.isSelfStore = true,
+    this.ownerUserId,
+  });
+
+  static StoreHomeScreen fromRouteArgs(Object? args) {
+    if (args is StoreHomeScreenArgs) {
+      return StoreHomeScreen(
+        isSelfStore: args.isSelfStore,
+        ownerUserId: args.ownerUserId,
+      );
+    }
+    if (args is Map) {
+      final rawIsSelf = args['isSelfStore'];
+      return StoreHomeScreen(
+        isSelfStore: rawIsSelf is bool ? rawIsSelf : true,
+        ownerUserId: args['ownerUserId']?.toString(),
+      );
+    }
+    return const StoreHomeScreen();
+  }
 
   @override
   State<StoreHomeScreen> createState() => _StoreHomeScreenState();
 }
 
+class StoreHomeScreenArgs {
+  final bool isSelfStore;
+  final String? ownerUserId;
+
+  const StoreHomeScreenArgs({
+    this.isSelfStore = true,
+    this.ownerUserId,
+  });
+}
+
+enum _StoreNavSection {
+  home,
+  categories,
+  myStore,
+  account,
+  cart,
+}
+
+class _StoreNavItem {
+  final IconData icon;
+  final String label;
+  final _StoreNavSection section;
+
+  const _StoreNavItem(this.icon, this.label, this.section);
+}
+
 class _StoreHomeScreenState extends State<StoreHomeScreen> {
-  int _selectedCategory = 0;
   int _selectedNav = 0;
+  int _selectedCategory = 0;
   int _refreshTick = 0;
+  String _deliveryAddress = 'HOME  Select delivery address';
   final _searchController = TextEditingController();
   final _imagePicker = ImagePicker();
   final _speech = SpeechToText();
@@ -122,6 +177,72 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     }
   }
 
+  void _showAddressSheet() {
+    showStoreAddressSheet(
+      context,
+      onUseCurrentLocation: _useCurrentLocation,
+    );
+  }
+
+  Future<bool> _useCurrentLocation() async {
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (!mounted) return false;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location permission is required.')),
+        );
+        return false;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.low,
+      );
+      final placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+      if (!mounted) return false;
+
+      final address = _formatPlacemark(placemarks);
+      setState(() {
+        _deliveryAddress = address == null
+            ? 'HOME  ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}'
+            : 'HOME  $address';
+      });
+      return true;
+    } catch (_) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to fetch current location.')),
+      );
+      return false;
+    }
+  }
+
+  String? _formatPlacemark(List<Placemark> placemarks) {
+    if (placemarks.isEmpty) return null;
+    final p = placemarks.first;
+    final parts = [
+      p.name,
+      p.subLocality,
+      p.locality,
+      p.administrativeArea,
+      p.postalCode,
+    ];
+    final text = parts
+        .whereType<String>()
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toSet()
+        .join(', ');
+    return text.isEmpty ? null : text;
+  }
+
   Future<void> _refreshStorePage() async {
     if (_speechAvailable && _speech.isListening) {
       await _speech.stop();
@@ -133,8 +254,10 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final slivers = switch (_selectedNav) {
-      2 => [
+    final navItems = _navItems;
+    final selectedSection = navItems[_selectedNav].section;
+    final slivers = switch (selectedSection) {
+      _StoreNavSection.categories => [
           SliverFillRemaining(
             child: StoreCategoriesTab(
               key: ValueKey('categories-$_refreshTick'),
@@ -143,20 +266,32 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
             ),
           ),
         ],
-      3 => [
+      _StoreNavSection.myStore => [
+          SliverToBoxAdapter(
+            child: StoreMyStoreTab(key: ValueKey('my-store-$_refreshTick')),
+          ),
+        ],
+      _StoreNavSection.account => [
           SliverToBoxAdapter(
             child: StoreAccountTab(key: ValueKey('account-$_refreshTick')),
           ),
         ],
-      _ => StoreHomeTab(
+      _StoreNavSection.cart => [
+          SliverToBoxAdapter(
+            child: StoreCartTab(key: ValueKey('cart-$_refreshTick')),
+          ),
+        ],
+      _StoreNavSection.home => StoreHomeTab(
           key: ValueKey('home-$_refreshTick-$_selectedNav'),
           searchController: _searchController,
           categories: _categories,
           products: _products,
           selectedCategory: _selectedCategory,
+          deliveryAddress: _deliveryAddress,
           speechListening: _speech.isListening,
           onCategorySelected: (index) =>
               setState(() => _selectedCategory = index),
+          onOpenAddressSheet: _showAddressSheet,
           onOpenSearch: _openSearchPage,
           onOpenCamera: _openCamera,
           onToggleSpeech: _toggleSpeech,
@@ -188,21 +323,37 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                 ),
               ),
             ),
-            _buildBottomNav(),
+            _buildBottomNav(navItems),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildBottomNav() {
-    const items = [
-      (Icons.home_rounded, 'Home'),
-      (Icons.play_circle_outline_rounded, 'Play'),
-      (Icons.grid_view_rounded, 'Categories'),
-      (Icons.person_outline_rounded, 'Account'),
-      (Icons.shopping_cart_outlined, 'Cart'),
+  List<_StoreNavItem> get _navItems {
+    if (widget.isSelfStore) {
+      return const [
+        _StoreNavItem(Icons.home_rounded, 'Home', _StoreNavSection.home),
+        _StoreNavItem(
+            Icons.grid_view_rounded, 'Categories', _StoreNavSection.categories),
+        _StoreNavItem(
+            Icons.storefront_outlined, 'My Store', _StoreNavSection.myStore),
+        _StoreNavItem(
+            Icons.person_outline_rounded, 'Account', _StoreNavSection.account),
+      ];
+    }
+    return const [
+      _StoreNavItem(Icons.home_rounded, 'Home', _StoreNavSection.home),
+      _StoreNavItem(
+          Icons.grid_view_rounded, 'Categories', _StoreNavSection.categories),
+      _StoreNavItem(
+          Icons.person_outline_rounded, 'Account', _StoreNavSection.account),
+      _StoreNavItem(
+          Icons.shopping_cart_outlined, 'Cart', _StoreNavSection.cart),
     ];
+  }
+
+  Widget _buildBottomNav(List<_StoreNavItem> items) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -210,35 +361,48 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
           top: BorderSide(color: Colors.black.withValues(alpha: 0.10)),
         ),
       ),
-      padding: const EdgeInsets.only(top: 6, bottom: 4),
+      padding: const EdgeInsets.only(top: 4, bottom: 4),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           for (var i = 0; i < items.length; i++)
-            GestureDetector(
-              onTap: () => setState(() => _selectedNav = i),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    items[i].$1,
-                    color:
-                        i == _selectedNav ? StorePalette.blue : Colors.black54,
-                    size: 23,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    items[i].$2,
-                    style: TextStyle(
-                      color: i == _selectedNav
-                          ? StorePalette.blue
-                          : Colors.black87,
-                      fontSize: 10,
-                      fontWeight:
-                          i == _selectedNav ? FontWeight.w700 : FontWeight.w500,
+            Expanded(
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: i == _selectedNav
+                      ? null
+                      : () => setState(() => _selectedNav = i),
+                  child: SizedBox(
+                    height: 52,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          items[i].icon,
+                          color: i == _selectedNav
+                              ? StorePalette.blue
+                              : Colors.black54,
+                          size: 23,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          items[i].label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: i == _selectedNav
+                                ? StorePalette.blue
+                                : Colors.black87,
+                            fontSize: 10,
+                            fontWeight: i == _selectedNav
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
             ),
         ],

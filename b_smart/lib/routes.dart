@@ -35,6 +35,9 @@ import 'screens/suggested_user_details_page.dart';
 import '../models/media_model.dart';
 import 'screens/edit_video_screen.dart';
 import 'screens/store/store_home_screen.dart';
+import 'screens/store/publish/store_add_product_screen.dart';
+import 'screens/store/publish/store_delivery_publish_screen.dart';
+import 'screens/store/publish/store_price_inventory_screen.dart';
 import 'screens/store/store_qr_scanner_screen.dart';
 import 'screens/store/store_search_screen.dart';
 
@@ -108,7 +111,11 @@ final Map<String, WidgetBuilder> appRoutes = {
   '/wallet/redemption-requests': (ctx) => const RedemptionRequestsScreen(),
   '/wallet/voucher-details': (ctx) => const VoucherDetailsScreen(),
   '/notifications': (ctx) => const NotificationsScreen(),
-  '/store': (ctx) => const StoreHomeScreen(),
+  '/store': (ctx) =>
+      StoreHomeScreen.fromRouteArgs(ModalRoute.of(ctx)?.settings.arguments),
+  '/store/publish/add-product': (ctx) => const StoreAddProductScreen(),
+  '/store/publish/price-inventory': (ctx) => const StorePriceInventoryScreen(),
+  '/store/publish/delivery': (ctx) => const StoreDeliveryPublishScreen(),
   '/store/scan': (ctx) => const StoreQrScannerScreen(),
   '/store/search': (ctx) => const StoreSearchScreen(),
   '/privacy': (ctx) => const PrivacyScreen(),
