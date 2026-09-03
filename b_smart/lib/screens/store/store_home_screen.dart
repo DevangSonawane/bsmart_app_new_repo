@@ -19,6 +19,7 @@ class StoreHomeScreen extends StatefulWidget {
 class _StoreHomeScreenState extends State<StoreHomeScreen> {
   int _selectedCategory = 0;
   int _selectedNav = 0;
+  int _refreshTick = 0;
   final _searchController = TextEditingController();
   final _imagePicker = ImagePicker();
   final _speech = SpeechToText();
@@ -121,19 +122,34 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     }
   }
 
+  Future<void> _refreshStorePage() async {
+    if (_speechAvailable && _speech.isListening) {
+      await _speech.stop();
+    }
+    if (!mounted) return;
+    setState(() => _refreshTick++);
+    await Future<void>.delayed(const Duration(milliseconds: 450));
+  }
+
   @override
   Widget build(BuildContext context) {
     final slivers = switch (_selectedNav) {
       2 => [
           SliverFillRemaining(
             child: StoreCategoriesTab(
+              key: ValueKey('categories-$_refreshTick'),
               onOpenSearch: _openSearchPage,
               onOpenCamera: _openCamera,
             ),
           ),
         ],
-      3 => const [SliverToBoxAdapter(child: StoreAccountTab())],
+      3 => [
+          SliverToBoxAdapter(
+            child: StoreAccountTab(key: ValueKey('account-$_refreshTick')),
+          ),
+        ],
       _ => StoreHomeTab(
+          key: ValueKey('home-$_refreshTick-$_selectedNav'),
           searchController: _searchController,
           categories: _categories,
           products: _products,
@@ -159,9 +175,17 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
         child: Column(
           children: [
             Expanded(
-              child: CustomScrollView(
-                physics: const BouncingScrollPhysics(),
-                slivers: slivers,
+              child: RefreshIndicator.adaptive(
+                color: StorePalette.blue,
+                onRefresh: _refreshStorePage,
+                notificationPredicate: (notification) =>
+                    notification.metrics.axis == Axis.vertical,
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
+                  ),
+                  slivers: slivers,
+                ),
               ),
             ),
             _buildBottomNav(),
