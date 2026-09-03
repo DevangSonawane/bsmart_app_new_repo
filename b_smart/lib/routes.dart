@@ -34,6 +34,9 @@ import 'screens/role_redirect_gate.dart';
 import 'screens/suggested_user_details_page.dart';
 import '../models/media_model.dart';
 import 'screens/edit_video_screen.dart';
+import 'screens/store/store_home_screen.dart';
+import 'screens/store/store_qr_scanner_screen.dart';
+import 'screens/store/store_search_screen.dart';
 
 final RouteObserver<PageRoute<dynamic>> appRouteObserver =
     RouteObserver<PageRoute<dynamic>>();
@@ -105,6 +108,9 @@ final Map<String, WidgetBuilder> appRoutes = {
   '/wallet/redemption-requests': (ctx) => const RedemptionRequestsScreen(),
   '/wallet/voucher-details': (ctx) => const VoucherDetailsScreen(),
   '/notifications': (ctx) => const NotificationsScreen(),
+  '/store': (ctx) => const StoreHomeScreen(),
+  '/store/scan': (ctx) => const StoreQrScannerScreen(),
+  '/store/search': (ctx) => const StoreSearchScreen(),
   '/privacy': (ctx) => const PrivacyScreen(),
   '/contact-support': (ctx) => const ContactSupportScreen(),
   '/faqs': (ctx) => const FaqScreen(),

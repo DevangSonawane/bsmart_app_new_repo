@@ -57,6 +57,8 @@ dependencies:
   flutter_svg: ^2.0.10
   showcaseview: ^5.1.0
   camera: ^0.10.5+5
+  mobile_scanner: ^7.4.0
+  speech_to_text: ^7.4.0
   permission_handler: ^11.3.1
   flutter_image_compress: ^2.2.0
   photo_manager: ^3.0.0
@@ -108,4 +110,7 @@ flutter:
     - assets/bsmart_icons/
     - assets/giftcards/
     - assets/banners/
+    - assets/bSmart_Store/
+    - assets/bSmart_Store/mockimages/
+    - assets/bSmart_Store/mobilephone/
     - assets/translations/

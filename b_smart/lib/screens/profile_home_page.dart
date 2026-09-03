@@ -331,7 +331,7 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
       barrierDismissible: true,
       barrierLabel: 'Quick actions',
       barrierColor: Colors.black.withValues(alpha: 0.20),
-      transitionDuration: const Duration(milliseconds: 180),
+      transitionDuration: const Duration(milliseconds: 160),
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
         return Material(
           type: MaterialType.transparency,
@@ -376,6 +376,23 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                             _showHobbiesSheet(buttonContext, hobbies);
                           },
                         ),
+                        const SizedBox(height: 8),
+                        _quickActionRow(
+                          context: dialogContext,
+                          icon: LucideIcons.store,
+                          iconColor: _gold,
+                          title: 'Visit Store',
+                          onTap: () {
+                            Navigator.of(dialogContext).pop();
+                            if (!buttonContext.mounted) return;
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (!buttonContext.mounted) return;
+                              Navigator.of(buttonContext).pushNamed(
+                                '/store',
+                              );
+                            });
+                          },
+                        ),
                       ],
                     ),
                   ),
@@ -394,7 +411,7 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
         return FadeTransition(
           opacity: curved,
           child: ScaleTransition(
-            scale: Tween<double>(begin: 0.965, end: 1.0).animate(curved),
+            scale: Tween<double>(begin: 0.98, end: 1.0).animate(curved),
             alignment: Alignment.topRight,
             child: child,
           ),
@@ -811,21 +828,24 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOutCubic,
-                left: activeIndex * tabWidth + 20,
+                left: activeIndex * tabWidth,
                 bottom: 0,
-                width: tabWidth - 40,
-                child: Container(
-                  height: 2,
-                  decoration: BoxDecoration(
-                    color: activeColor,
-                    borderRadius: BorderRadius.circular(999),
-                    boxShadow: [
-                      BoxShadow(
-                        color: activeColor.withValues(alpha: 0.35),
-                        blurRadius: 10,
-                        spreadRadius: 0.5,
-                      ),
-                    ],
+                width: tabWidth,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Container(
+                    height: 2,
+                    decoration: BoxDecoration(
+                      color: activeColor,
+                      borderRadius: BorderRadius.circular(999),
+                      boxShadow: [
+                        BoxShadow(
+                          color: activeColor.withValues(alpha: 0.35),
+                          blurRadius: 10,
+                          spreadRadius: 0.5,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -856,15 +876,14 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
               color:
                   active ? activeColor : inactiveColor.withValues(alpha: 0.8),
             ),
-            const SizedBox(width: 5),
+            const SizedBox(width: 2),
             Text(
               tab.label,
               maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color:
                     active ? activeColor : inactiveColor.withValues(alpha: 0.8),
-                fontSize: 11.5,
+                fontSize: 11,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.15,
               ),
@@ -1101,7 +1120,6 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                     data: _PostsActionCardData(
                       title: 'Promote',
                       subtitle: 'Boost your content and grow faster',
-                      buttonLabel: 'Create Promote',
                       icon: Icons.campaign_rounded,
                       iconColor: const Color(0xFFF0D7FF),
                       iconBackground: const LinearGradient(
@@ -2014,7 +2032,7 @@ class _StatTile extends StatelessWidget {
 class _PostsActionCardData {
   final String title;
   final String subtitle;
-  final String buttonLabel;
+  final String? buttonLabel;
   final IconData icon;
   final Color iconColor;
   final Gradient iconBackground;
@@ -2028,7 +2046,7 @@ class _PostsActionCardData {
   const _PostsActionCardData({
     required this.title,
     required this.subtitle,
-    required this.buttonLabel,
+    this.buttonLabel,
     required this.icon,
     required this.iconColor,
     required this.iconBackground,
@@ -2049,7 +2067,7 @@ class _PostsActionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 218,
+      height: 226,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
@@ -2139,35 +2157,38 @@ class _PostsActionCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
           ],
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(999),
-                onTap: data.onButtonTap,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                  decoration: BoxDecoration(
-                    color: data.buttonBackground,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.04),
+          if (data.buttonLabel != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(999),
+                  onTap: data.onButtonTap,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 9,
                     ),
-                  ),
-                  child: Text(
-                    data.buttonLabel,
-                    style: TextStyle(
-                      color: data.buttonForeground,
-                      fontSize: 12.2,
-                      fontWeight: FontWeight.w700,
+                    decoration: BoxDecoration(
+                      color: data.buttonBackground,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.04),
+                      ),
+                    ),
+                    child: Text(
+                      data.buttonLabel!,
+                      style: TextStyle(
+                        color: data.buttonForeground,
+                        fontSize: 12.2,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );
