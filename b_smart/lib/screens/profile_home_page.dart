@@ -79,7 +79,7 @@ class ProfileHomePage extends StatefulWidget {
 }
 
 class _ProfileHomePageState extends State<ProfileHomePage> {
-  ProfileHomeSection _section = ProfileHomeSection.overview;
+  final ProfileHomeSection _section = ProfileHomeSection.content;
   ProfileContentTab _contentTab = ProfileContentTab.posts;
 
   static const Color _gold = Color(0xFFD4AF37);
@@ -247,18 +247,6 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
     if (value == null) return false;
     final text = value.toString().trim().toLowerCase();
     return text == 'true' || text == '1' || text == 'yes' || text == 'followed';
-  }
-
-  void _openContentSection() {
-    if (!isMe) return;
-    setState(() {
-      _section = ProfileHomeSection.content;
-      _contentTab = ProfileContentTab.posts;
-    });
-  }
-
-  void _showOverviewSection() {
-    setState(() => _section = ProfileHomeSection.overview);
   }
 
   void _openMessagingPage(BuildContext context) {
@@ -717,21 +705,7 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
               child: Row(
                 children: [
                   for (var i = 0; i < statItems.length; i++) ...[
-                    Expanded(
-                      child: i == 0 && isMe
-                          ? Material(
-                              color: Colors.transparent,
-                              borderRadius: BorderRadius.circular(18),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(18),
-                                onTap: _openContentSection,
-                                child: _StatTile(
-                                  item: statItems[i],
-                                ),
-                              ),
-                            )
-                          : _StatTile(item: statItems[i]),
-                    ),
+                    Expanded(child: _StatTile(item: statItems[i])),
                     if (i != statItems.length - 1)
                       Container(
                         width: 1,
@@ -1520,7 +1494,7 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   SizedBox(
-                    height: 340,
+                    height: 352,
                     width: double.infinity,
                     child: Stack(
                       clipBehavior: Clip.none,
@@ -1572,11 +1546,11 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                               gradient: LinearGradient(
                                 colors: [
                                   Color(0x00000000),
-                                  Color(0x00000000),
-                                  Color(0x66000000),
-                                  Color(0xE6000000),
+                                  Color(0x4D000000),
+                                  Color(0xCC000000),
+                                  Color(0xFF000000),
                                 ],
-                                stops: [0.0, 0.72, 0.90, 1.0],
+                                stops: [0.0, 0.55, 0.82, 1.0],
                                 begin: Alignment.topCenter,
                                 end: Alignment.bottomCenter,
                               ),
@@ -1609,7 +1583,7 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                         Positioned(
                           left: 0,
                           right: 0,
-                          bottom: 0,
+                          bottom: -8,
                           child: Center(
                             child: Stack(
                               clipBehavior: Clip.none,
@@ -1656,16 +1630,6 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                                     ),
                                   ),
                                 ),
-                                if (showBadge)
-                                  const Positioned(
-                                    right: 4,
-                                    bottom: 4,
-                                    child: Icon(
-                                      Icons.verified_rounded,
-                                      color: _gold,
-                                      size: 22,
-                                    ),
-                                  ),
                               ],
                             ),
                           ),
@@ -1681,33 +1645,29 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         const SizedBox(height: 8),
-                        InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: _showOverviewSection,
-                          child: Wrap(
-                            alignment: WrapAlignment.center,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              Text(
-                                displayName,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 30,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.0,
-                                ),
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              displayName,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 30,
+                                fontWeight: FontWeight.w700,
+                                height: 1.0,
                               ),
-                              if (showBadge) ...[
-                                const SizedBox(width: 8),
-                                const Icon(
-                                  Icons.verified_rounded,
-                                  color: _gold,
-                                  size: 22,
-                                ),
-                              ],
+                            ),
+                            if (showBadge) ...[
+                              const SizedBox(width: 8),
+                              const Icon(
+                                Icons.verified_rounded,
+                                color: _gold,
+                                size: 22,
+                              ),
                             ],
-                          ),
+                          ],
                         ),
                         const SizedBox(height: 8),
                         Text(
@@ -1750,7 +1710,7 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                         ),
                         const SizedBox(height: 18),
                         _statsCard(context),
-                        if (isMe && _section == ProfileHomeSection.content) ...[
+                        if (_section == ProfileHomeSection.content) ...[
                           const SizedBox(height: 24),
                           _buildContentSection(context),
                         ] else ...[
