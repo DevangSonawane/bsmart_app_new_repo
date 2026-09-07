@@ -200,7 +200,7 @@ class _ManageServiceCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 18),
       child: Container(
-        height: 118,
+        height: 146,
         decoration: storeSoftCardDecoration(radius: 9),
         clipBehavior: Clip.antiAlias,
         child: Row(
@@ -208,13 +208,13 @@ class _ManageServiceCard extends StatelessWidget {
             Image.asset(
               imageAsset,
               width: 124,
-              height: 118,
+              height: 146,
               fit: BoxFit.cover,
               cacheWidth: 330,
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(13, 12, 8, 10),
+                padding: const EdgeInsets.fromLTRB(13, 12, 8, 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -225,6 +225,7 @@ class _ManageServiceCard extends StatelessWidget {
                       style: const TextStyle(
                         color: Color(0xFF060D35),
                         fontSize: 15,
+                        height: 1.15,
                         fontWeight: FontWeight.w900,
                         fontFamily: 'Georgia',
                       ),
@@ -235,6 +236,7 @@ class _ManageServiceCard extends StatelessWidget {
                       style: const TextStyle(
                         color: Color(0xFF078D92),
                         fontSize: 13,
+                        height: 1.15,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -252,12 +254,13 @@ class _ManageServiceCard extends StatelessWidget {
                           style: TextStyle(
                             color: Color(0xFF29304D),
                             fontSize: 11.5,
+                            height: 1.15,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
                     ),
-                    const Spacer(),
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         const _VisibleBadge(),
@@ -270,6 +273,8 @@ class _ManageServiceCard extends StatelessWidget {
                             foregroundColor: const Color(0xFF060D35),
                             padding: EdgeInsets.zero,
                             minimumSize: const Size(48, 28),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
                             textStyle: const TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w800,
@@ -282,6 +287,7 @@ class _ManageServiceCard extends StatelessWidget {
                               size: 17),
                           color: const Color(0xFF060D35),
                           padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
                           constraints: const BoxConstraints.tightFor(
                               width: 28, height: 28),
                         ),

@@ -6,6 +6,7 @@ import '../../services/supabase_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
+import 'visitor_service_detail_page.dart';
 
 class VisitorStoreHomePage extends StatefulWidget {
   final String? ownerUserId;
@@ -106,7 +107,10 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
-          child: _StoreItemsContent(filter: _selectedFilter),
+          child: _StoreItemsContent(
+            filter: _selectedFilter,
+            ownerUserId: widget.ownerUserId,
+          ),
         ),
       ],
     );
@@ -496,13 +500,18 @@ class _StoreFilterTab extends StatelessWidget {
 
 class _StoreItemsContent extends StatelessWidget {
   final _VisitorStoreFilter filter;
+  final String? ownerUserId;
 
-  const _StoreItemsContent({required this.filter});
+  const _StoreItemsContent({
+    required this.filter,
+    required this.ownerUserId,
+  });
 
   @override
   Widget build(BuildContext context) {
     return switch (filter) {
-      _VisitorStoreFilter.services => const _VisitorServiceList(),
+      _VisitorStoreFilter.services =>
+        _VisitorServiceList(ownerUserId: ownerUserId),
       _VisitorStoreFilter.products => const _VisitorProductList(),
       _VisitorStoreFilter.all => const _StoreItemsGrid(
           children: [
@@ -552,13 +561,16 @@ class _StoreItemsGrid extends StatelessWidget {
 }
 
 class _VisitorServiceList extends StatelessWidget {
-  const _VisitorServiceList();
+  final String? ownerUserId;
+
+  const _VisitorServiceList({required this.ownerUserId});
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       children: [
         _VisitorServiceCard(
+          ownerUserId: ownerUserId,
           imageAsset: 'assets/bSmart_Store/mockimages/clothes.jpg',
           icon: LucideIcons.house,
           title: 'Home Cleaning',
@@ -569,8 +581,9 @@ class _VisitorServiceList extends StatelessWidget {
           rating: '4.8',
           reviews: '64',
         ),
-        SizedBox(height: 10),
+        const SizedBox(height: 10),
         _VisitorServiceCard(
+          ownerUserId: ownerUserId,
           imageAsset: 'assets/bSmart_Store/mockimages/electronics.jpg',
           icon: LucideIcons.briefcaseBusiness,
           title: 'Business Consulting',
@@ -580,8 +593,9 @@ class _VisitorServiceList extends StatelessWidget {
           rating: '4.9',
           reviews: '52',
         ),
-        SizedBox(height: 10),
+        const SizedBox(height: 10),
         _VisitorServiceCard(
+          ownerUserId: ownerUserId,
           imageAsset: 'assets/bSmart_Store/mockimages/vegetables.jpg',
           icon: LucideIcons.flower2,
           title: 'Yoga Coaching',
@@ -597,6 +611,7 @@ class _VisitorServiceList extends StatelessWidget {
 }
 
 class _VisitorServiceCard extends StatelessWidget {
+  final String? ownerUserId;
   final String imageAsset;
   final IconData icon;
   final String title;
@@ -607,6 +622,7 @@ class _VisitorServiceCard extends StatelessWidget {
   final String reviews;
 
   const _VisitorServiceCard({
+    required this.ownerUserId,
     required this.imageAsset,
     required this.icon,
     required this.title,
@@ -794,7 +810,24 @@ class _VisitorServiceCard extends StatelessWidget {
                     height: 26,
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: () {},
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => VisitorServiceDetailPage(
+                            ownerUserId: ownerUserId,
+                            imageAsset: imageAsset,
+                            category: title == 'Home Cleaning'
+                                ? 'Home Services'
+                                : 'Services',
+                            title: title,
+                            description: description,
+                            duration: duration,
+                            price: price,
+                            rating: rating,
+                            reviews: reviews,
+                            methodIcon: icon,
+                          ),
+                        ),
+                      ),
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xFF078D92),
                         foregroundColor: Colors.white,
