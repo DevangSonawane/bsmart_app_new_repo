@@ -3,7 +3,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'self_store_dashboard_page.dart';
 import 'self_store_orders_page.dart';
+import 'self_store_products_page.dart';
 import 'self_store_service_page.dart';
+import 'self_store_services_manage_page.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_theme.dart';
 import 'visitor_store_cart_page.dart';
@@ -97,9 +99,9 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
           section: _StoreNavSection.service,
         ),
         _StoreNavItem(
-          icon: LucideIcons.messageCircle,
-          label: 'Inbox',
-          section: _StoreNavSection.inbox,
+          icon: LucideIcons.store,
+          label: 'Store',
+          section: _StoreNavSection.store,
         ),
         _StoreNavItem(
           icon: LucideIcons.circleUserRound,
@@ -151,7 +153,8 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     final usesCustomSelfHeader = widget.isSelfStore &&
         (selectedItem.section == _StoreNavSection.dashboard ||
             selectedItem.section == _StoreNavSection.orders ||
-            selectedItem.section == _StoreNavSection.service);
+            selectedItem.section == _StoreNavSection.service ||
+            selectedItem.section == _StoreNavSection.store);
     final usesCustomVisitorHeader = !widget.isSelfStore &&
         (selectedItem.section == _StoreNavSection.store ||
             selectedItem.section == _StoreNavSection.cart);
@@ -206,8 +209,9 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
       _StoreNavSection.network => const _NetworkSection(),
       _StoreNavSection.profile =>
         _ProfileSection(isSelfStore: widget.isSelfStore),
-      _StoreNavSection.store =>
-        VisitorStoreHomePage(ownerUserId: widget.ownerUserId),
+      _StoreNavSection.store => widget.isSelfStore
+          ? const _SelfStoreHubSection()
+          : VisitorStoreHomePage(ownerUserId: widget.ownerUserId),
       _StoreNavSection.product => const _VisitorProductSection(),
       _StoreNavSection.cart => widget.isSelfStore
           ? const _CartSection()
@@ -365,6 +369,196 @@ class _NetworkSection extends StatelessWidget {
               'Store followers, connections, and interactions will appear here.',
         ),
       ],
+    );
+  }
+}
+
+class _SelfStoreHubSection extends StatelessWidget {
+  const _SelfStoreHubSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverList.list(
+      children: [
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            18,
+            MediaQuery.of(context).padding.top + 12,
+            18,
+            0,
+          ),
+          child: const SizedBox(
+            height: 32,
+            child: Row(
+              children: [
+                Expanded(child: StoreBsmartWordmark()),
+                Icon(LucideIcons.search, color: Color(0xFF060D35), size: 23),
+                SizedBox(width: 18),
+                _StoreNotificationBell(),
+              ],
+            ),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(18, 22, 18, 0),
+          child: Text(
+            'My Store',
+            style: TextStyle(
+              color: Color(0xFF060D35),
+              fontSize: 25,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        _SelfStoreHubCard(
+          icon: LucideIcons.package,
+          title: 'My Products',
+          subtitle: 'Manage products, stock, drafts, and publishing.',
+          count: '3 active',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const SelfStoreProductsScreen(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _SelfStoreHubCard(
+          icon: LucideIcons.briefcaseBusiness,
+          title: 'My Services',
+          subtitle: 'Manage service listings, requests, and availability.',
+          count: '3 published',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const SelfStoreServicesManageScreen(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StoreNotificationBell extends StatelessWidget {
+  const _StoreNotificationBell();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        const Icon(LucideIcons.bell, color: Color(0xFF060D35), size: 23),
+        Positioned(
+          right: -2,
+          top: -4,
+          child: Container(
+            width: 9,
+            height: 9,
+            decoration: const BoxDecoration(
+              color: Color(0xFF684AC8),
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SelfStoreHubCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String count;
+  final VoidCallback onTap;
+
+  const _SelfStoreHubCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.count,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
+            decoration: storeSoftCardDecoration(radius: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE5F5F3),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: const Color(0xFF078D92), size: 26),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF060D35),
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            count,
+                            style: const TextStyle(
+                              color: Color(0xFF078D92),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        subtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF29304D),
+                          fontSize: 12.5,
+                          height: 1.3,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Icon(
+                  LucideIcons.chevronRight,
+                  color: Color(0xFF078D92),
+                  size: 22,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
