@@ -131,6 +131,23 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
     return fallback;
   }
 
+  String? _profileOwnerUserId() {
+    final source = profile;
+    if (source == null) return null;
+    for (final key in const [
+      'id',
+      '_id',
+      'user_id',
+      'userId',
+      'uid',
+      'ownerUserId',
+    ]) {
+      final value = source[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return null;
+  }
+
   List<String> _listValue(List<String> keys, {required List<String> fallback}) {
     final source = profile;
     if (source == null) return fallback;
@@ -373,10 +390,16 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                           onTap: () {
                             Navigator.of(dialogContext).pop();
                             if (!buttonContext.mounted) return;
+                            final ownerUserId = _profileOwnerUserId();
                             WidgetsBinding.instance.addPostFrameCallback((_) {
                               if (!buttonContext.mounted) return;
                               Navigator.of(buttonContext).pushNamed(
                                 '/store',
+                                arguments: {
+                                  'isSelfStore': widget.isMe,
+                                  if (ownerUserId != null)
+                                    'ownerUserId': ownerUserId,
+                                },
                               );
                             });
                           },
