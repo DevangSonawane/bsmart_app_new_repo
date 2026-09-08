@@ -6,6 +6,7 @@ import '../../services/supabase_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
+import 'store_bcoins_page.dart';
 import 'store_theme.dart';
 import 'visitor_product_payment_page.dart';
 
@@ -24,7 +25,10 @@ class VisitorStoreCartPage extends StatefulWidget {
 }
 
 class _VisitorStoreCartPageState extends State<VisitorStoreCartPage> {
+  static const double _subtotal = 39.99;
+
   late Future<_CartOwner?> _ownerFuture;
+  StoreBCoinsResult? _bCoinsResult;
 
   @override
   void initState() {
@@ -91,6 +95,26 @@ class _VisitorStoreCartPageState extends State<VisitorStoreCartPage> {
     return null;
   }
 
+  double get _total => (_subtotal - (_bCoinsResult?.savings ?? 0))
+      .clamp(0, _subtotal)
+      .toDouble();
+
+  String _money(double amount) => '\$${amount.toStringAsFixed(2)}';
+
+  Future<void> _openBCoins() async {
+    final result = await Navigator.of(context).push<StoreBCoinsResult>(
+      MaterialPageRoute<StoreBCoinsResult>(
+        builder: (_) => StoreBCoinsPage(
+          orderTotal: _subtotal,
+          initialCoins: _bCoinsResult?.coinsApplied ?? 0,
+          checkoutMode: true,
+        ),
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() => _bCoinsResult = result);
+  }
+
   @override
   Widget build(BuildContext context) {
     return SliverList.list(
@@ -118,9 +142,17 @@ class _VisitorStoreCartPageState extends State<VisitorStoreCartPage> {
           price: r'$15.00',
         ),
         const _DeliveryCard(),
-        const _BCoinsCard(),
-        const _CartTotalsCard(),
-        const _CheckoutButton(amount: r'$39.99'),
+        _BCoinsCard(
+          appliedCoins: _bCoinsResult?.coinsApplied ?? 0,
+          savings: _bCoinsResult?.savings ?? 0,
+          onTap: _openBCoins,
+        ),
+        _CartTotalsCard(
+          subtotal: _money(_subtotal),
+          savings: _bCoinsResult?.savings ?? 0,
+          total: _money(_total),
+        ),
+        _CheckoutButton(amount: _money(_total)),
       ],
     );
   }
@@ -550,54 +582,76 @@ class _DeliveryCard extends StatelessWidget {
 }
 
 class _BCoinsCard extends StatelessWidget {
-  const _BCoinsCard();
+  final int appliedCoins;
+  final double savings;
+  final VoidCallback onTap;
+
+  const _BCoinsCard({
+    required this.appliedCoins,
+    required this.savings,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final hasApplied = appliedCoins > 0;
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
-      child: Container(
-        height: 50,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: storeSoftCardDecoration(radius: 12),
-        child: const Row(
-          children: [
-            CircleAvatar(
-              radius: 19,
-              backgroundColor: BStoreColors.primary,
-              child: Text(
-                'b',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 23,
-                  fontWeight: FontWeight.w900,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 50,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: storeSoftCardDecoration(radius: 12),
+          child: Row(
+            children: [
+              const CircleAvatar(
+                radius: 19,
+                backgroundColor: BStoreColors.primary,
+                child: Text(
+                  'b',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 23,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
-            ),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text.rich(
-                TextSpan(
-                  text: 'You will earn ',
-                  children: [
-                    TextSpan(
-                      text: '400 bCoins',
-                      style: TextStyle(color: BStoreColors.primary),
-                    ),
-                  ],
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: BStoreColors.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    text: hasApplied ? 'Applied ' : 'Apply ',
+                    children: [
+                      TextSpan(
+                        text: hasApplied
+                            ? '$appliedCoins bCoins'
+                            : 'bCoins discount',
+                        style: const TextStyle(color: BStoreColors.primary),
+                      ),
+                      if (hasApplied)
+                        TextSpan(
+                          text: ' (-\$${savings.toStringAsFixed(2)})',
+                        ),
+                    ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: BStoreColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
-            ),
-            Icon(LucideIcons.chevronRight,
-                color: BStoreColors.textPrimary, size: 18),
-          ],
+              const Icon(
+                LucideIcons.chevronRight,
+                color: BStoreColors.textPrimary,
+                size: 18,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -605,28 +659,45 @@ class _BCoinsCard extends StatelessWidget {
 }
 
 class _CartTotalsCard extends StatelessWidget {
-  const _CartTotalsCard();
+  final String subtotal;
+  final double savings;
+  final String total;
+
+  const _CartTotalsCard({
+    required this.subtotal,
+    required this.savings,
+    required this.total,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final hasSavings = savings > 0;
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 12, 10, 0),
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         decoration: storeSoftCardDecoration(radius: 12),
-        child: const Column(
+        child: Column(
           children: [
-            _TotalRow(label: 'Subtotal', value: r'$39.99'),
-            SizedBox(height: 10),
-            _TotalRow(
+            _TotalRow(label: 'Subtotal', value: subtotal),
+            const SizedBox(height: 10),
+            const _TotalRow(
               label: 'Delivery',
               value: 'Free',
               valueColor: BStoreColors.primary,
             ),
-            Divider(height: 20, color: BStoreColors.divider),
+            if (hasSavings) ...[
+              const SizedBox(height: 10),
+              _TotalRow(
+                label: 'bCoins savings',
+                value: '-\$${savings.toStringAsFixed(2)}',
+                valueColor: BStoreColors.primary,
+              ),
+            ],
+            const Divider(height: 20, color: BStoreColors.divider),
             Row(
               children: [
-                Expanded(
+                const Expanded(
                   child: Text(
                     'Total',
                     style: TextStyle(
@@ -637,8 +708,8 @@ class _CartTotalsCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  r'$39.99',
-                  style: TextStyle(
+                  total,
+                  style: const TextStyle(
                     color: BStoreColors.primary,
                     fontSize: 22,
                     fontWeight: FontWeight.w900,

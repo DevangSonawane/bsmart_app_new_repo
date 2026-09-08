@@ -7,6 +7,7 @@ import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_theme.dart';
+import 'visitor_product_reviews_page.dart';
 import 'visitor_store_cart_page.dart';
 
 class VisitorProductDetailData {
@@ -114,6 +115,17 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
     );
   }
 
+  void _openReviews() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => VisitorProductReviewsPage(
+          product: widget.product,
+          ownerUserId: widget.ownerUserId,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final product = widget.product;
@@ -156,6 +168,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                   _RatingLine(
                     rating: product.rating,
                     reviews: product.reviews,
+                    onTap: _openReviews,
                   ),
                   const SizedBox(height: 9),
                   Row(
@@ -378,35 +391,48 @@ class _ProductImageCard extends StatelessWidget {
 class _RatingLine extends StatelessWidget {
   final String rating;
   final String reviews;
+  final VoidCallback? onTap;
 
-  const _RatingLine({required this.rating, required this.reviews});
+  const _RatingLine({
+    required this.rating,
+    required this.reviews,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const Icon(LucideIcons.star, color: BStoreColors.primary, size: 18),
-        const SizedBox(width: 8),
-        Text(
-          rating,
-          style: const TextStyle(
-            color: BStoreColors.textPrimary,
-            fontSize: 15,
-            fontWeight: FontWeight.w900,
-          ),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(LucideIcons.star, color: BStoreColors.primary, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              rating,
+              style: const TextStyle(
+                color: BStoreColors.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Container(width: 1, height: 20, color: const Color(0xFFD2D7E0)),
+            const SizedBox(width: 14),
+            Text(
+              '$reviews reviews',
+              style: const TextStyle(
+                color: BStoreColors.textSoft,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 14),
-        Container(width: 1, height: 20, color: const Color(0xFFD2D7E0)),
-        const SizedBox(width: 14),
-        Text(
-          '$reviews reviews',
-          style: const TextStyle(
-            color: BStoreColors.textSoft,
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

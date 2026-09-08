@@ -10,6 +10,8 @@ import 'self_store_products_page.dart';
 import 'self_store_service_page.dart';
 import 'self_store_services_manage_page.dart';
 import 'shared/store_shared_widgets.dart';
+import 'store_bcoins_page.dart';
+import 'store_order_tracking_page.dart';
 import 'store_theme.dart';
 import 'store_saved_address_page.dart';
 import 'visitor_store_cart_page.dart';
@@ -732,8 +734,26 @@ class _ProfileSectionState extends State<_ProfileSection> {
               _StoreProfileMenuItem(
                 icon: LucideIcons.coins,
                 title: 'Add bCoins',
-                subtitle: 'Top up wallet rewards',
-                onTap: () => Navigator.of(context).pushNamed('/wallet'),
+                subtitle: 'Use wallet rewards at checkout',
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const StoreBCoinsPage(),
+                    ),
+                  );
+                },
+              ),
+              _StoreProfileMenuItem(
+                icon: LucideIcons.truck,
+                title: 'Tracking Order',
+                subtitle: 'Live delivery updates and order status',
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const StoreOrderTrackingListPage(),
+                    ),
+                  );
+                },
               ),
             ],
           ),

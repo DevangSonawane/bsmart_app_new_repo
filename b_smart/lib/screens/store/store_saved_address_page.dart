@@ -48,31 +48,31 @@ class _StoreSavedAddressPageState extends State<StoreSavedAddressPage> {
                   physics: const BouncingScrollPhysics(),
                   padding: EdgeInsets.fromLTRB(
                     BStoreSpacing.screenX,
-                    12,
+                    8,
                     BStoreSpacing.screenX,
                     MediaQuery.of(context).padding.bottom + 104,
                   ),
                   children: [
                     const _AddressHeader(),
-                    const SizedBox(height: 22),
+                    const SizedBox(height: 14),
                     const _MapPreview(),
-                    const SizedBox(height: 26),
+                    const SizedBox(height: 20),
                     const Text(
                       'Saved addresses',
                       style: TextStyle(
                         color: BStoreColors.textPrimary,
-                        fontSize: 21,
+                        fontSize: 18,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 10),
                     for (var i = 0; i < _addresses.length; i++) ...[
                       _SavedAddressCard(
                         address: _addresses[i],
                         selected: _selectedIndex == i,
                         onTap: () => setState(() => _selectedIndex = i),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 9),
                     ],
                     const _AddAddressButton(),
                   ],
@@ -111,7 +111,7 @@ class _AddressHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 92,
+      height: 76,
       child: Stack(
         alignment: Alignment.topCenter,
         children: [
@@ -119,7 +119,7 @@ class _AddressHeader extends StatelessWidget {
             alignment: Alignment.topLeft,
             child: IconButton(
               onPressed: () => Navigator.of(context).maybePop(),
-              icon: const Icon(LucideIcons.chevronLeft, size: 30),
+              icon: const Icon(LucideIcons.chevronLeft, size: 26),
               color: BStoreColors.textPrimary,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints.tightFor(width: 34, height: 34),
@@ -129,12 +129,12 @@ class _AddressHeader extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               StoreBsmartWordmark(),
-              SizedBox(height: 22),
+              SizedBox(height: 14),
               Text(
                 'Select address',
                 style: TextStyle(
                   color: BStoreColors.textPrimary,
-                  fontSize: 25,
+                  fontSize: 20,
                   fontWeight: FontWeight.w900,
                 ),
               ),
@@ -152,7 +152,7 @@ class _MapPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 228,
+      height: 190,
       decoration: BStoreDecorations.card(radius: 18),
       clipBehavior: Clip.antiAlias,
       child: const CustomPaint(
@@ -320,20 +320,20 @@ class _SavedAddressCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 18, 14, 18),
+        padding: const EdgeInsets.fromLTRB(13, 14, 11, 14),
         decoration: BStoreDecorations.card(radius: 18),
         child: Row(
           children: [
             _AddressRadio(selected: selected),
-            const SizedBox(width: 18),
+            const SizedBox(width: 13),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(address.icon, color: BStoreColors.primary, size: 28),
-                      const SizedBox(width: 12),
+                      Icon(address.icon, color: BStoreColors.primary, size: 23),
+                      const SizedBox(width: 9),
                       Flexible(
                         child: Text(
                           address.type,
@@ -341,18 +341,18 @@ class _SavedAddressCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: BStoreColors.textPrimary,
-                            fontSize: 22,
+                            fontSize: 18,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
                       ),
                       if (address.isDefault) ...[
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 8),
                         const _DefaultBadge(),
                       ],
                     ],
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 10),
                   Text(
                     address.name,
                     maxLines: 1,
@@ -363,43 +363,43 @@ class _SavedAddressCard extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     address.address,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: BStoreColors.textSecondary,
-                      fontSize: 14,
+                      fontSize: 13,
                       height: 1.25,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     address.phone,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: BStoreColors.textSecondary,
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 14),
-            Container(width: 1, height: 92, color: BStoreColors.divider),
-            const SizedBox(width: 14),
+            const SizedBox(width: 10),
+            Container(width: 1, height: 74, color: BStoreColors.divider),
+            const SizedBox(width: 8),
             TextButton.icon(
               onPressed: () {},
-              icon: const Icon(LucideIcons.pencil, size: 23),
+              icon: const Icon(LucideIcons.pencil, size: 18),
               label: const Text('Edit'),
               style: TextButton.styleFrom(
                 foregroundColor: BStoreColors.primary,
                 textStyle: const TextStyle(
-                  fontSize: 15,
+                  fontSize: 13,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -420,14 +420,14 @@ class _AddressRadio extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 160),
-      width: 30,
-      height: 30,
-      padding: const EdgeInsets.all(5),
+      width: 25,
+      height: 25,
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: Border.all(
           color: selected ? BStoreColors.primary : BStoreColors.textMuted,
-          width: selected ? 2.6 : 1.4,
+          width: selected ? 2.2 : 1.2,
         ),
       ),
       child: DecoratedBox(
@@ -446,7 +446,7 @@ class _DefaultBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: BStoreColors.accentPurpleSoft,
         borderRadius: BorderRadius.circular(8),
@@ -455,7 +455,7 @@ class _DefaultBadge extends StatelessWidget {
         'Default',
         style: TextStyle(
           color: BStoreColors.accentPurple,
-          fontSize: 12,
+          fontSize: 10,
           fontWeight: FontWeight.w800,
         ),
       ),
@@ -476,7 +476,7 @@ class _AddAddressButton extends StatelessWidget {
         child: const CustomPaint(
           painter: _DashedBorderPainter(),
           child: SizedBox(
-            height: 68,
+            height: 56,
             width: double.infinity,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -484,14 +484,14 @@ class _AddAddressButton extends StatelessWidget {
                 Icon(
                   LucideIcons.circlePlus,
                   color: BStoreColors.primary,
-                  size: 25,
+                  size: 21,
                 ),
-                SizedBox(width: 14),
+                SizedBox(width: 10),
                 Text(
                   'Add new address',
                   style: TextStyle(
                     color: BStoreColors.primary,
-                    fontSize: 16,
+                    fontSize: 14,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -547,13 +547,13 @@ class _DeliverHereButton extends StatelessWidget {
       ),
       child: SizedBox(
         width: double.infinity,
-        height: 56,
+        height: 50,
         child: FilledButton(
           onPressed: () => Navigator.of(context).maybePop(),
           style: BStoreButtons.filled(radius: 10),
           child: const Text(
             'Deliver here',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
           ),
         ),
       ),
