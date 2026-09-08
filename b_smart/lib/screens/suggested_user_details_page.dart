@@ -1,15 +1,19 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_card_swiper/flutter_card_swiper.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../api/api_client.dart';
+import '../api/chat_api.dart';
 import '../api/follows_api.dart';
 import '../api/users_api.dart';
 import '../api/suggestions_api.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/safe_network_image.dart';
+import 'chat_conversation_screen.dart';
 
 class SuggestedUserDetailsPage extends StatefulWidget {
   const SuggestedUserDetailsPage({super.key});
@@ -23,13 +27,50 @@ class _SuggestedUserDetailsPageState extends State<SuggestedUserDetailsPage> {
   final SuggestionsApi _suggestionsApi = SuggestionsApi();
   final FollowsApi _followsApi = FollowsApi();
   final UsersApi _usersApi = UsersApi();
+  final ChatApi _chatApi = ChatApi();
+  final CardSwiperController _swiperController = CardSwiperController();
+  final TextEditingController _searchController = TextEditingController();
 
   bool _loading = true;
+  bool _followLoading = false;
+  bool _messageLoading = false;
   String? _error;
   String? _currentUserId;
   Map<String, String>? _imageHeaders;
   List<_SuggestedUserEntry> _people = const [];
-  _SuggestedUserEntry? _heroPerson;
+  int? _activeCardIndex;
+  String _searchQuery = '';
+
+  List<_SuggestedUserEntry> get _visiblePeople {
+    final query = _searchQuery.trim().toLowerCase();
+    if (query.isEmpty) return _people;
+    return _people.where((person) {
+      return [
+        person.displayName,
+        person.roleLabel,
+        person.tagline,
+        person.location,
+        person.company,
+        person.description,
+      ].any((value) => value.toLowerCase().contains(query));
+    }).toList(growable: false);
+  }
+
+  _SuggestedUserEntry? get _activePerson {
+    final visiblePeople = _visiblePeople;
+    final index = _activeCardIndex;
+    if (index == null || index < 0 || index >= visiblePeople.length) {
+      return null;
+    }
+    return visiblePeople[index];
+  }
+
+  @override
+  void dispose() {
+    _swiperController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -39,10 +80,12 @@ class _SuggestedUserDetailsPageState extends State<SuggestedUserDetailsPage> {
 
   Future<void> _load({bool rotateHero = false}) async {
     if (!mounted) return;
-    final previousHeroId = _heroPerson?.id.trim() ?? '';
     setState(() {
       _loading = true;
       _error = null;
+      _activeCardIndex = null;
+      _searchQuery = '';
+      _searchController.clear();
     });
 
     try {
@@ -102,25 +145,33 @@ class _SuggestedUserDetailsPageState extends State<SuggestedUserDetailsPage> {
         }
       }
 
-      _SuggestedUserEntry? heroPerson;
-      if (normalized.isNotEmpty) {
-        heroPerson = _pickHeroPerson(
-          normalized,
-          avoidId: rotateHero ? previousHeroId : '',
-        );
+      final enriched = normalized.toList(growable: false);
+      final profileFetchCount = math.min(enriched.length, 6);
+      for (var i = 0; i < profileFetchCount; i++) {
         try {
+          final entry = enriched[i];
           final profileResult = await Future.wait([
-            _usersApi.getUserProfile(heroPerson.id),
-            _usersApi.getUserProfileContent(heroPerson.id),
+            _usersApi.getUserProfile(entry.id),
+            _usersApi.getUserProfileContent(entry.id),
           ]);
-          final profile = profileResult[0];
-          final content = profileResult[1];
-          final mergedProfile = _mergeProfilePayloads(profile, content);
-          if (mergedProfile.isNotEmpty) {
-            final merged = _heroEntryFromProfile(mergedProfile);
-            if (merged != null) {
-              heroPerson = merged;
-            }
+          final mergedProfile = _mergeProfilePayloads(
+            profileResult[0],
+            profileResult[1],
+          );
+          final merged = _heroEntryFromProfile(mergedProfile);
+          if (merged != null) {
+            enriched[i] = entry.copyWith(
+              displayName: merged.displayName,
+              roleLabel: merged.roleLabel,
+              tagline: merged.tagline,
+              location: merged.location,
+              company: merged.company,
+              description: merged.description,
+              avatarUrl: merged.avatarUrl,
+              mutualsLabel: merged.mutualsLabel,
+              verified: merged.verified,
+              isFollowing: merged.isFollowing,
+            );
           }
         } catch (_) {
           // Keep the suggestion fallback if the profile fetch fails.
@@ -129,8 +180,10 @@ class _SuggestedUserDetailsPageState extends State<SuggestedUserDetailsPage> {
 
       if (!mounted) return;
       setState(() {
-        _people = normalized;
-        _heroPerson = heroPerson;
+        _people = rotateHero && enriched.length > 1
+            ? <_SuggestedUserEntry>[...enriched.skip(1), enriched.first]
+            : enriched;
+        _activeCardIndex = enriched.isEmpty ? null : 0;
         _loading = false;
       });
     } catch (e) {
@@ -143,8 +196,18 @@ class _SuggestedUserDetailsPageState extends State<SuggestedUserDetailsPage> {
   }
 
   void _dismiss(String id) {
+    final activeId = _activePerson?.id;
     setState(() {
       _people = _people.where((e) => e.id != id).toList(growable: false);
+      if (_people.isEmpty) {
+        _activeCardIndex = null;
+      } else if (activeId == id) {
+        _activeCardIndex = 0;
+      } else {
+        final currentIndex =
+            _people.indexWhere((person) => person.id == activeId);
+        _activeCardIndex = currentIndex == -1 ? 0 : currentIndex;
+      }
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Removed from suggestions')),
@@ -156,22 +219,86 @@ class _SuggestedUserDetailsPageState extends State<SuggestedUserDetailsPage> {
     Navigator.of(context).pushNamed('/profile/$userId');
   }
 
-  void _openDiscover() {
-    Navigator.of(context).pushNamed('/search');
+  Future<void> _followActivePerson() async {
+    final person = _activePerson;
+    if (person == null || person.isFollowing || _followLoading) return;
+    setState(() => _followLoading = true);
+    try {
+      await _followsApi.follow(person.id);
+      if (!mounted) return;
+      setState(() {
+        _people = _people
+            .map((entry) => entry.id == person.id
+                ? entry.copyWith(isFollowing: true)
+                : entry)
+            .toList(growable: false);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to follow this user right now.')),
+      );
+    } finally {
+      if (mounted) setState(() => _followLoading = false);
+    }
   }
 
-  void _openMessages() {
-    Navigator.of(context).pushNamed('/messages');
+  Future<void> _messageActivePerson() async {
+    final person = _activePerson;
+    if (person == null || _messageLoading) return;
+    setState(() => _messageLoading = true);
+    try {
+      final conversation =
+          await _chatApi.createOrGetConversation(participantId: person.id);
+      final id = (conversation['_id'] ??
+              conversation['id'] ??
+              conversation['conversationId'] ??
+              conversation['conversation_id'])
+          ?.toString()
+          .trim();
+      if (!mounted) return;
+      if (id == null || id.isEmpty) {
+        Navigator.of(context).pushNamed('/messages');
+        return;
+      }
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ChatConversationScreen(
+            conversationId: id,
+            initialConversation: {
+              ...conversation,
+              'participants': [
+                {
+                  '_id': person.id,
+                  'id': person.id,
+                  'name': person.displayName,
+                  'fullName': person.displayName,
+                  'avatarUrl': person.avatarUrl,
+                  'profileImageUrl': person.avatarUrl,
+                },
+              ],
+            },
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open messages right now.')),
+      );
+    } finally {
+      if (mounted) setState(() => _messageLoading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final people = _people;
-    final hero = _heroPerson ?? (people.isNotEmpty ? people.first : null);
-    final cards = hero == null
+    final people = _visiblePeople;
+    final activePerson = _activePerson;
+    final cards = activePerson == null
         ? people
         : people
-            .where((person) => person.id != hero.id)
+            .where((person) => person.id != activePerson.id)
             .toList(growable: false);
 
     return Scaffold(
@@ -194,16 +321,29 @@ class _SuggestedUserDetailsPageState extends State<SuggestedUserDetailsPage> {
                   onBack: () => Navigator.of(context).maybePop(),
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 22),
+                child: _SuggestedUserSearchBox(
+                  controller: _searchController,
+                  onChanged: _handleSearchChanged,
+                ),
+              ),
+              const SizedBox(height: 18),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 22),
                 child: _loading
                     ? const _HeroPlaceholder()
-                    : hero != null
-                        ? _HeroSuggestionCard(
-                            person: hero,
+                    : people.isNotEmpty
+                        ? _SuggestionCardSwiper(
+                            controller: _swiperController,
+                            people: people,
                             imageHeaders: _imageHeaders,
-                            onTap: () => _openProfile(hero.id),
+                            onTap: (person) => _openProfile(person.id),
+                            onSwipe: (currentIndex) {
+                              if (!mounted) return;
+                              setState(() => _activeCardIndex = currentIndex);
+                            },
                           )
                         : _EmptyHero(
                             message: _error ??
@@ -211,14 +351,25 @@ class _SuggestedUserDetailsPageState extends State<SuggestedUserDetailsPage> {
                             onRetry: _load,
                           ),
               ),
-              const SizedBox(height: 26),
+              const SizedBox(height: 22),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 22),
+                child: _SuggestedUserActions(
+                  person: activePerson,
+                  followLoading: _followLoading,
+                  messageLoading: _messageLoading,
+                  onFollow: _followActivePerson,
+                  onMessage: _messageActivePerson,
+                ),
+              ),
+              const SizedBox(height: 30),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 22),
                 child: Text(
                   'Do you know these?',
                   style: GoogleFonts.montserrat(
                     fontSize: 15,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w500,
                     color: const Color(0xFF1B1B1F),
                   ),
                 ),
@@ -258,93 +409,19 @@ class _SuggestedUserDetailsPageState extends State<SuggestedUserDetailsPage> {
                     },
                   ),
                 ),
-              const SizedBox(height: 34),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 22),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 58,
-                        child: ElevatedButton(
-                          onPressed: _openDiscover,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF16181D),
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                          ),
-                          child: Text(
-                            'Discover',
-                            style: GoogleFonts.montserrat(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 18),
-                    Expanded(
-                      child: SizedBox(
-                        height: 58,
-                        child: OutlinedButton(
-                          onPressed: _openMessages,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF1B1B1F),
-                            side: const BorderSide(
-                              color: Color(0xFF1B1B1F),
-                              width: 2.2,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                          ),
-                          child: Text(
-                            'Messages',
-                            style: GoogleFonts.montserrat(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
         ),
       ),
     );
   }
-}
 
-_SuggestedUserEntry _pickHeroPerson(
-  List<_SuggestedUserEntry> people, {
-  String avoidId = '',
-}) {
-  final trimmedAvoidId = avoidId.trim();
-  if (trimmedAvoidId.isEmpty) {
-    return people.first;
+  void _handleSearchChanged(String value) {
+    setState(() {
+      _searchQuery = value;
+      _activeCardIndex = _visiblePeople.isEmpty ? null : 0;
+    });
   }
-
-  final avoidIndex =
-      people.indexWhere((person) => person.id.trim() == trimmedAvoidId);
-  if (avoidIndex == -1) return people.first;
-  if (people.length == 1) return people.first;
-
-  final nextIndex = (avoidIndex + 1) % people.length;
-  if (people[nextIndex].id.trim() == trimmedAvoidId) {
-    return people.firstWhere(
-      (person) => person.id.trim() != trimmedAvoidId,
-      orElse: () => people.first,
-    );
-  }
-  return people[nextIndex];
 }
 
 class _Header extends StatelessWidget {
@@ -372,12 +449,224 @@ class _Header extends StatelessWidget {
           'Suggested User Details',
           style: GoogleFonts.montserrat(
             fontSize: 16,
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w500,
             color: const Color(0xFF202124),
           ),
         ),
         const Spacer(),
         const SizedBox(width: 46, height: 46),
+      ],
+    );
+  }
+}
+
+class _SuggestedUserSearchBox extends StatelessWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  const _SuggestedUserSearchBox({
+    required this.controller,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      onChanged: onChanged,
+      textInputAction: TextInputAction.search,
+      decoration: InputDecoration(
+        hintText: 'Search suggested users',
+        hintStyle: GoogleFonts.montserrat(
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+          color: const Color(0xFF7A7770),
+        ),
+        prefixIcon: const Icon(
+          Icons.search_rounded,
+          color: Color(0xFF6F6B64),
+          size: 22,
+        ),
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 15,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: Color(0xFFE2DED6)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(
+            color: Color(0xFF1B1B1F),
+            width: 1.4,
+          ),
+        ),
+      ),
+      style: GoogleFonts.montserrat(
+        fontSize: 14,
+        fontWeight: FontWeight.w400,
+        color: const Color(0xFF1B1B1F),
+      ),
+    );
+  }
+}
+
+class _SuggestionCardSwiper extends StatelessWidget {
+  final CardSwiperController controller;
+  final List<_SuggestedUserEntry> people;
+  final Map<String, String>? imageHeaders;
+  final void Function(_SuggestedUserEntry person) onTap;
+  final void Function(int? currentIndex) onSwipe;
+
+  const _SuggestionCardSwiper({
+    required this.controller,
+    required this.people,
+    required this.imageHeaders,
+    required this.onTap,
+    required this.onSwipe,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final displayedCards = math.min(3, people.length);
+
+    return SizedBox(
+      height: 470,
+      child: CardSwiper(
+        controller: controller,
+        cardsCount: people.length,
+        numberOfCardsDisplayed: displayedCards,
+        backCardOffset: const Offset(28, 0),
+        padding: EdgeInsets.zero,
+        onSwipe: (_, currentIndex, __) {
+          onSwipe(currentIndex);
+          return true;
+        },
+        onUndo: (_, currentIndex, __) {
+          onSwipe(currentIndex);
+          return true;
+        },
+        cardBuilder: (
+          context,
+          index,
+          horizontalThresholdPercentage,
+          verticalThresholdPercentage,
+        ) {
+          final person = people[index];
+          return _HeroSuggestionCard(
+            person: person,
+            imageHeaders: imageHeaders,
+            onTap: () => onTap(person),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SuggestedUserActions extends StatelessWidget {
+  final _SuggestedUserEntry? person;
+  final bool followLoading;
+  final bool messageLoading;
+  final VoidCallback onFollow;
+  final VoidCallback onMessage;
+
+  const _SuggestedUserActions({
+    required this.person,
+    required this.followLoading,
+    required this.messageLoading,
+    required this.onFollow,
+    required this.onMessage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final canAct = person != null;
+    final alreadyFollowing = person?.isFollowing == true;
+
+    return Row(
+      children: [
+        Expanded(
+          child: SizedBox(
+            height: 58,
+            child: ElevatedButton(
+              onPressed: canAct && !alreadyFollowing && !followLoading
+                  ? onFollow
+                  : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: alreadyFollowing
+                    ? const Color(0xFF3E7D55)
+                    : const Color(0xFF16181D),
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: alreadyFollowing
+                    ? const Color(0xFF3E7D55)
+                    : const Color(0xFFBEBAB2),
+                disabledForegroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              child: followLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.3,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(
+                      alreadyFollowing ? 'Following' : 'Follow',
+                      style: GoogleFonts.montserrat(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 18),
+        Expanded(
+          child: SizedBox(
+            height: 58,
+            child: OutlinedButton(
+              onPressed: canAct && !messageLoading ? onMessage : null,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF1B1B1F),
+                disabledForegroundColor: const Color(0xFF8A8780),
+                side: BorderSide(
+                  color: canAct
+                      ? const Color(0xFF1B1B1F)
+                      : const Color(0xFFC9C5BD),
+                  width: 2.2,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              child: messageLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.3,
+                        color: Color(0xFF1B1B1F),
+                      ),
+                    )
+                  : Text(
+                      'Message',
+                      style: GoogleFonts.montserrat(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -710,7 +999,7 @@ class _SuggestedPersonCard extends StatelessWidget {
               style: GoogleFonts.montserrat(
                 color: const Color(0xFF1F2024),
                 fontSize: 12,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],

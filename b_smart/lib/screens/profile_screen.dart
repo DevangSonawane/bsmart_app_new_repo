@@ -3423,6 +3423,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ? _openMessaging
               : (_canMessageProfile(displayProfile) ? _openMessaging : null),
           onShare: () => _shareProfile(displayProfile),
+          onInterests: profileUserId.isEmpty
+              ? null
+              : () => _openInterestsSelector(
+                    profileUserId: profileUserId,
+                    isMe: isMe,
+                  ),
         );
       },
     );

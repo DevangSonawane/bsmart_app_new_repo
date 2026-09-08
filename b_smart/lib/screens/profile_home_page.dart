@@ -44,6 +44,7 @@ class ProfileHomePage extends StatefulWidget {
   final VoidCallback? onFollow;
   final VoidCallback? onMessage;
   final VoidCallback? onShare;
+  final VoidCallback? onInterests;
 
   const ProfileHomePage({
     super.key,
@@ -70,6 +71,7 @@ class ProfileHomePage extends StatefulWidget {
     required this.onFollow,
     required this.onMessage,
     required this.onShare,
+    this.onInterests,
   });
 
   static const Color _goldSoft = Color(0xFFFFD77A);
@@ -111,6 +113,7 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
   VoidCallback? get onFollow => widget.onFollow;
   VoidCallback? get onMessage => widget.onMessage;
   VoidCallback? get onShare => widget.onShare;
+  VoidCallback? get onInterests => widget.onInterests;
 
   String _stringValue(List<String> keys, {String fallback = ''}) {
     final source = profile;
@@ -240,9 +243,16 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
     return _missingText;
   }
 
-  List<String> _hobbies() {
+  List<String> _interests() {
     return _listValue(
-      ['hobbies', 'interests', 'tags', 'favoriteThings'],
+      [
+        'interests',
+        'ad_interests',
+        'adInterests',
+        'hobbies',
+        'tags',
+        'favoriteThings',
+      ],
       fallback: const [],
     );
   }
@@ -312,7 +322,7 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
 
   Future<void> _showQuickActionsSheet(
     BuildContext buttonContext,
-    List<String> hobbies,
+    List<String> interests,
   ) async {
     final buttonBox = buttonContext.findRenderObject() as RenderBox?;
     final overlayBox =
@@ -375,35 +385,39 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                           context: dialogContext,
                           icon: Icons.favorite_rounded,
                           iconColor: _goldSoft,
-                          title: 'Hobbies',
+                          title: 'Interests',
                           onTap: () {
                             Navigator.of(dialogContext).pop();
-                            _showHobbiesSheet(buttonContext, hobbies);
+                            final action = onInterests;
+                            if (action != null) {
+                              action();
+                            } else {
+                              _showInterestsSheet(buttonContext, interests);
+                            }
                           },
                         ),
-                        const SizedBox(height: 8),
-                        _quickActionRow(
-                          context: dialogContext,
-                          icon: LucideIcons.store,
-                          iconColor: _gold,
-                          title: 'Visit Store',
-                          onTap: () {
-                            Navigator.of(dialogContext).pop();
-                            if (!buttonContext.mounted) return;
-                            final ownerUserId = _profileOwnerUserId();
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!widget.isMe) ...[
+                          const SizedBox(height: 8),
+                          _quickActionRow(
+                            context: dialogContext,
+                            icon: LucideIcons.store,
+                            iconColor: _gold,
+                            title: 'Visit Store',
+                            onTap: () {
+                              Navigator.of(dialogContext).pop();
                               if (!buttonContext.mounted) return;
+                              final ownerUserId = _profileOwnerUserId();
                               Navigator.of(buttonContext).pushNamed(
                                 '/store',
                                 arguments: {
-                                  'isSelfStore': widget.isMe,
+                                  'isSelfStore': false,
                                   if (ownerUserId != null)
                                     'ownerUserId': ownerUserId,
                                 },
                               );
-                            });
-                          },
-                        ),
+                            },
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -465,9 +479,9 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
     );
   }
 
-  Future<void> _showHobbiesSheet(
+  Future<void> _showInterestsSheet(
     BuildContext context,
-    List<String> hobbies,
+    List<String> interests,
   ) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -498,7 +512,7 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                 ),
                 const SizedBox(height: 14),
                 const Text(
-                  'Hobbies & Interests',
+                  'Interests',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 18,
@@ -510,9 +524,9 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                   spacing: 10,
                   runSpacing: 10,
                   children: [
-                    for (final hobby in hobbies)
+                    for (final interest in interests)
                       Chip(
-                        label: Text(hobby),
+                        label: Text(interest),
                         backgroundColor: Colors.white.withValues(alpha: 0.04),
                         side: BorderSide(
                           color: Colors.white.withValues(alpha: 0.08),
@@ -724,7 +738,7 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
               child: Row(
                 children: [
                   for (var i = 0; i < statItems.length; i++) ...[
@@ -732,7 +746,7 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                     if (i != statItems.length - 1)
                       Container(
                         width: 1,
-                        height: 68,
+                        height: 54,
                         color: Colors.white.withValues(alpha: 0.10),
                       ),
                   ],
@@ -769,87 +783,55 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
       _ProfileTabData(
         tab: ProfileContentTab.posts,
         label: 'Posts',
-        icon: LucideIcons.grid2x2,
       ),
       _ProfileTabData(
         tab: ProfileContentTab.reels,
         label: 'bSparks',
-        icon: LucideIcons.clapperboard,
       ),
       _ProfileTabData(
         tab: ProfileContentTab.tweets,
         label: 'Buzz',
-        icon: LucideIcons.messageCircle,
       ),
       _ProfileTabData(
         tab: ProfileContentTab.stories,
         label: 'Campaigns',
-        icon: LucideIcons.sparkles,
       ),
     ];
 
     const activeColor = Color(0xFFB07CFF);
     const inactiveColor = Color(0xFFB9A9D4);
-    final activeIndex = _contentTabIndex;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final tabWidth = constraints.maxWidth / tabs.length;
-        return SizedBox(
-          height: 38,
-          child: Stack(
-            children: [
-              Row(
-                children: [
-                  for (var i = 0; i < tabs.length; i++)
-                    Expanded(
-                      child: _contentTabButton(
-                        tabs[i],
-                        active: _contentTab == tabs[i].tab,
-                        activeColor: activeColor,
-                        inactiveColor: inactiveColor,
-                        onTap: () => _selectContentTab(tabs[i].tab),
-                      ),
-                    ),
-                ],
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  height: 1,
-                  color: Colors.white.withValues(alpha: 0.08),
-                ),
-              ),
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                left: activeIndex * tabWidth,
-                bottom: 0,
-                width: tabWidth,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Container(
-                    height: 2,
-                    decoration: BoxDecoration(
-                      color: activeColor,
-                      borderRadius: BorderRadius.circular(999),
-                      boxShadow: [
-                        BoxShadow(
-                          color: activeColor.withValues(alpha: 0.35),
-                          blurRadius: 10,
-                          spreadRadius: 0.5,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
+    return SizedBox(
+      height: 40,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              height: 1,
+              color: Colors.white.withValues(alpha: 0.08),
+            ),
           ),
-        );
-      },
+          Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (final tab in tabs)
+                  _contentTabButton(
+                    tab,
+                    active: _contentTab == tab.tab,
+                    activeColor: activeColor,
+                    inactiveColor: inactiveColor,
+                    onTap: () => _selectContentTab(tab.tab),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -863,45 +845,52 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,
-      child: Center(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              tab.icon,
-              size: 13,
-              color:
-                  active ? activeColor : inactiveColor.withValues(alpha: 0.8),
-            ),
-            const SizedBox(width: 2),
-            Text(
-              tab.label,
-              maxLines: 1,
-              style: TextStyle(
-                color:
-                    active ? activeColor : inactiveColor.withValues(alpha: 0.8),
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.15,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: SizedBox(
+          height: 40,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                tab.label,
+                maxLines: 1,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: active
+                      ? activeColor
+                      : inactiveColor.withValues(alpha: 0.8),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 8),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                width: active ? 22 : 0,
+                height: 2,
+                decoration: BoxDecoration(
+                  color: active ? activeColor : Colors.transparent,
+                  borderRadius: BorderRadius.circular(999),
+                  boxShadow: active
+                      ? [
+                          BoxShadow(
+                            color: activeColor.withValues(alpha: 0.35),
+                            blurRadius: 10,
+                            spreadRadius: 0.5,
+                          ),
+                        ]
+                      : null,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
-  }
-
-  int get _contentTabIndex {
-    switch (_contentTab) {
-      case ProfileContentTab.posts:
-        return 0;
-      case ProfileContentTab.reels:
-        return 1;
-      case ProfileContentTab.tweets:
-        return 2;
-      case ProfileContentTab.stories:
-        return 3;
-    }
   }
 
   Widget _buildContentTabBody(BuildContext context) {
@@ -1490,7 +1479,7 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
     final displayName = fullName?.trim().isNotEmpty == true
         ? fullName!.trim()
         : username.trim();
-    final hobbies = _hobbies();
+    final interests = _interests();
     const showBadge = true;
 
     return Scaffold(
@@ -1598,7 +1587,7 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                               icon: Icons.more_horiz_rounded,
                               onTap: () => _showQuickActionsSheet(
                                 buttonContext,
-                                hobbies,
+                                interests,
                               ),
                             ),
                           ),
@@ -1826,9 +1815,9 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                                         children: [
                                           _profileInfoTile(
                                             icon: LucideIcons.heart,
-                                            label: 'Hobbies',
-                                            value: hobbies.isNotEmpty
-                                                ? hobbies.join(', ')
+                                            label: 'Interests',
+                                            value: interests.isNotEmpty
+                                                ? interests.join(', ')
                                                 : _missingText,
                                             iconColor: const Color(0xFFF48FAF),
                                           ),
@@ -1869,14 +1858,14 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                           const SizedBox(height: 24),
                           Align(
                             alignment: Alignment.centerLeft,
-                            child: _sectionTitle('Hobbies & Interests'),
+                            child: _sectionTitle('Interests'),
                           ),
                           const SizedBox(height: 14),
                           Wrap(
                             spacing: 10,
                             runSpacing: 10,
                             children: [
-                              if (hobbies.isEmpty)
+                              if (interests.isEmpty)
                                 Chip(
                                   label: const Text(_missingText),
                                   backgroundColor:
@@ -1898,9 +1887,9 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                                   ),
                                 )
                               else
-                                for (final hobby in hobbies.take(6))
+                                for (final interest in interests.take(6))
                                   Chip(
-                                    label: Text(hobby),
+                                    label: Text(interest),
                                     backgroundColor:
                                         Colors.white.withValues(alpha: 0.03),
                                     side: BorderSide(
@@ -1960,12 +1949,10 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
 class _ProfileTabData {
   final ProfileContentTab tab;
   final String label;
-  final IconData icon;
 
   const _ProfileTabData({
     required this.tab,
     required this.label,
-    required this.icon,
   });
 }
 
@@ -1987,24 +1974,37 @@ class _StatTile extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(item.icon, color: ProfileHomePage._goldSoft, size: 22),
-        const SizedBox(height: 10),
-        Text(
-          item.value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 29,
-            fontWeight: FontWeight.w700,
-            height: 1.0,
+        Icon(item.icon, color: ProfileHomePage._goldSoft, size: 18),
+        const SizedBox(height: 8),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            item.value,
+            maxLines: 1,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              height: 1.0,
+            ),
           ),
         ),
-        const SizedBox(height: 6),
-        Text(
-          item.label,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.68),
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
+        const SizedBox(height: 7),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              item.label,
+              maxLines: 1,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.68),
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0,
+              ),
+            ),
           ),
         ),
       ],

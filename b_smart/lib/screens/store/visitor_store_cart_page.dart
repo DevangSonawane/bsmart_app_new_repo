@@ -6,11 +6,18 @@ import '../../services/supabase_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
+import 'store_theme.dart';
+import 'visitor_product_payment_page.dart';
 
 class VisitorStoreCartPage extends StatefulWidget {
   final String? ownerUserId;
+  final bool showBackButton;
 
-  const VisitorStoreCartPage({super.key, this.ownerUserId});
+  const VisitorStoreCartPage({
+    super.key,
+    this.ownerUserId,
+    this.showBackButton = false,
+  });
 
   @override
   State<VisitorStoreCartPage> createState() => _VisitorStoreCartPageState();
@@ -88,7 +95,7 @@ class _VisitorStoreCartPageState extends State<VisitorStoreCartPage> {
   Widget build(BuildContext context) {
     return SliverList.list(
       children: [
-        const _CartHeader(),
+        _CartHeader(showBackButton: widget.showBackButton),
         const _SelectionCard(),
         FutureBuilder<_CartOwner?>(
           future: _ownerFuture,
@@ -113,8 +120,34 @@ class _VisitorStoreCartPageState extends State<VisitorStoreCartPage> {
         const _DeliveryCard(),
         const _BCoinsCard(),
         const _CartTotalsCard(),
-        const _CheckoutButton(),
+        const _CheckoutButton(amount: r'$39.99'),
       ],
+    );
+  }
+}
+
+class VisitorStoreCartScreen extends StatelessWidget {
+  final String? ownerUserId;
+
+  const VisitorStoreCartScreen({super.key, this.ownerUserId});
+
+  @override
+  Widget build(BuildContext context) {
+    return Theme(
+      data: BStoreTheme.data(context),
+      child: Scaffold(
+        backgroundColor: BStoreColors.background,
+        body: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            VisitorStoreCartPage(
+              ownerUserId: ownerUserId,
+              showBackButton: true,
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 22)),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -132,7 +165,9 @@ class _CartOwner {
 }
 
 class _CartHeader extends StatelessWidget {
-  const _CartHeader();
+  final bool showBackButton;
+
+  const _CartHeader({required this.showBackButton});
 
   @override
   Widget build(BuildContext context) {
@@ -143,14 +178,39 @@ class _CartHeader extends StatelessWidget {
         16,
         0,
       ),
-      child: const Column(
+      child: Column(
         children: [
-          SizedBox(height: 30, child: Center(child: StoreBsmartWordmark())),
-          SizedBox(height: 12),
-          Text(
+          SizedBox(
+            height: 34,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                if (showBackButton)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      icon: const Icon(
+                        LucideIcons.chevronLeft,
+                        color: BStoreColors.textPrimary,
+                        size: 28,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 34,
+                        height: 34,
+                      ),
+                    ),
+                  ),
+                const Center(child: StoreBsmartWordmark()),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
             'My Cart',
             style: TextStyle(
-              color: Color(0xFF060D35),
+              color: BStoreColors.textPrimary,
               fontSize: 24,
               fontWeight: FontWeight.w900,
             ),
@@ -182,7 +242,7 @@ class _SelectionCard extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: Color(0xFF29304D),
+                  color: BStoreColors.textSecondary,
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
                 ),
@@ -191,7 +251,7 @@ class _SelectionCard extends StatelessWidget {
             TextButton(
               onPressed: () {},
               style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF078D92),
+                foregroundColor: BStoreColors.primary,
                 padding: EdgeInsets.zero,
                 minimumSize: const Size(66, 32),
               ),
@@ -245,7 +305,7 @@ class _CartStoreCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: Color(0xFF060D35),
+                      color: BStoreColors.textPrimary,
                       fontSize: 15.5,
                       fontWeight: FontWeight.w900,
                     ),
@@ -254,7 +314,7 @@ class _CartStoreCard extends StatelessWidget {
                   const Text(
                     'Personal Store',
                     style: TextStyle(
-                      color: Color(0xFF684AC8),
+                      color: BStoreColors.accentPurple,
                       fontSize: 11.5,
                       fontWeight: FontWeight.w900,
                     ),
@@ -287,7 +347,7 @@ class _OwnerAvatar extends StatelessWidget {
       child: Container(
         width: size,
         height: size,
-        color: const Color(0xFFEAD8CC),
+        color: BStoreColors.cardWarm,
         alignment: Alignment.center,
         child: avatarUrl.trim().isEmpty
             ? _Initial(name: name, fontSize: 15)
@@ -360,7 +420,7 @@ class _CartItemCard extends StatelessWidget {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: Color(0xFF060D35),
+                            color: BStoreColors.textPrimary,
                             fontSize: 14,
                             fontWeight: FontWeight.w900,
                             height: 1.15,
@@ -370,7 +430,7 @@ class _CartItemCard extends StatelessWidget {
                       const SizedBox(width: 6),
                       const Icon(
                         LucideIcons.heart,
-                        color: Color(0xFF060D35),
+                        color: BStoreColors.textPrimary,
                         size: 20,
                       ),
                     ],
@@ -379,7 +439,7 @@ class _CartItemCard extends StatelessWidget {
                   Text(
                     price,
                     style: const TextStyle(
-                      color: Color(0xFF078D92),
+                      color: BStoreColors.primary,
                       fontSize: 15,
                       fontWeight: FontWeight.w900,
                     ),
@@ -392,7 +452,7 @@ class _CartItemCard extends StatelessWidget {
                       IconButton(
                         onPressed: () {},
                         icon: const Icon(LucideIcons.trash2, size: 19),
-                        color: const Color(0xFF060D35),
+                        color: BStoreColors.textPrimary,
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints.tightFor(
                           width: 30,
@@ -426,16 +486,16 @@ class _QuantityStepper extends StatelessWidget {
       child: const Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          Icon(LucideIcons.minus, color: Color(0xFF078D92), size: 15),
+          Icon(LucideIcons.minus, color: BStoreColors.primary, size: 15),
           Text(
             '1',
             style: TextStyle(
-              color: Color(0xFF060D35),
+              color: BStoreColors.textPrimary,
               fontSize: 15,
               fontWeight: FontWeight.w900,
             ),
           ),
-          Icon(LucideIcons.plus, color: Color(0xFF078D92), size: 16),
+          Icon(LucideIcons.plus, color: BStoreColors.primary, size: 16),
         ],
       ),
     );
@@ -465,7 +525,7 @@ class _DeliveryCard extends StatelessWidget {
                   Text(
                     'Delivery',
                     style: TextStyle(
-                      color: Color(0xFF060D35),
+                      color: BStoreColors.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w900,
                     ),
@@ -474,7 +534,7 @@ class _DeliveryCard extends StatelessWidget {
                   Text(
                     'Arrives in 2-3 days',
                     style: TextStyle(
-                      color: Color(0xFF29304D),
+                      color: BStoreColors.textSecondary,
                       fontSize: 12.5,
                       fontWeight: FontWeight.w600,
                     ),
@@ -504,7 +564,7 @@ class _BCoinsCard extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 19,
-              backgroundColor: Color(0xFF078D92),
+              backgroundColor: BStoreColors.primary,
               child: Text(
                 'b',
                 style: TextStyle(
@@ -522,20 +582,21 @@ class _BCoinsCard extends StatelessWidget {
                   children: [
                     TextSpan(
                       text: '400 bCoins',
-                      style: TextStyle(color: Color(0xFF078D92)),
+                      style: TextStyle(color: BStoreColors.primary),
                     ),
                   ],
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: Color(0xFF060D35),
+                  color: BStoreColors.textPrimary,
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
                 ),
               ),
             ),
-            Icon(LucideIcons.chevronRight, color: Color(0xFF060D35), size: 18),
+            Icon(LucideIcons.chevronRight,
+                color: BStoreColors.textPrimary, size: 18),
           ],
         ),
       ),
@@ -560,16 +621,16 @@ class _CartTotalsCard extends StatelessWidget {
             _TotalRow(
               label: 'Delivery',
               value: 'Free',
-              valueColor: Color(0xFF078D92),
+              valueColor: BStoreColors.primary,
             ),
-            Divider(height: 20, color: Color(0xFFE1E5EA)),
+            Divider(height: 20, color: BStoreColors.divider),
             Row(
               children: [
                 Expanded(
                   child: Text(
                     'Total',
                     style: TextStyle(
-                      color: Color(0xFF060D35),
+                      color: BStoreColors.textPrimary,
                       fontSize: 16,
                       fontWeight: FontWeight.w900,
                     ),
@@ -578,7 +639,7 @@ class _CartTotalsCard extends StatelessWidget {
                 Text(
                   r'$39.99',
                   style: TextStyle(
-                    color: Color(0xFF078D92),
+                    color: BStoreColors.primary,
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
                   ),
@@ -611,7 +672,7 @@ class _TotalRow extends StatelessWidget {
           child: Text(
             label,
             style: const TextStyle(
-              color: Color(0xFF29304D),
+              color: BStoreColors.textSecondary,
               fontSize: 13.5,
               fontWeight: FontWeight.w600,
             ),
@@ -620,7 +681,7 @@ class _TotalRow extends StatelessWidget {
         Text(
           value,
           style: TextStyle(
-            color: valueColor ?? const Color(0xFF060D35),
+            color: valueColor ?? BStoreColors.textPrimary,
             fontSize: 14,
             fontWeight: FontWeight.w800,
           ),
@@ -631,7 +692,9 @@ class _TotalRow extends StatelessWidget {
 }
 
 class _CheckoutButton extends StatelessWidget {
-  const _CheckoutButton();
+  final String amount;
+
+  const _CheckoutButton({required this.amount});
 
   @override
   Widget build(BuildContext context) {
@@ -640,9 +703,15 @@ class _CheckoutButton extends StatelessWidget {
       child: SizedBox(
         height: 46,
         child: FilledButton(
-          onPressed: () {},
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => VisitorProductPaymentPage(amount: amount),
+              ),
+            );
+          },
           style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF078D92),
+            backgroundColor: BStoreColors.primary,
             foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
@@ -669,7 +738,7 @@ class _CheckedBox extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: const Color(0xFF078D92),
+        color: BStoreColors.primary,
         borderRadius: BorderRadius.circular(7),
         boxShadow: [
           BoxShadow(
@@ -694,7 +763,7 @@ class _SoftIconBubble extends StatelessWidget {
     return CircleAvatar(
       radius: 19,
       backgroundColor: const Color(0xFFE5F5F3),
-      child: Icon(icon, color: const Color(0xFF060D35), size: 19),
+      child: Icon(icon, color: BStoreColors.textPrimary, size: 19),
     );
   }
 }
@@ -713,7 +782,7 @@ class _Initial extends StatelessWidget {
     return Text(
       initial,
       style: TextStyle(
-        color: const Color(0xFF060D35),
+        color: BStoreColors.textPrimary,
         fontSize: fontSize,
         fontWeight: FontWeight.w900,
       ),

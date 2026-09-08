@@ -42,6 +42,7 @@ import '../widgets/post_detail_modal.dart';
 import '../widgets/comments_sheet.dart';
 import '../widgets/share_content_modal.dart';
 import 'ads_page_screen.dart';
+import 'miles_screen.dart';
 import 'promote_screen.dart';
 import 'reels_screen.dart';
 import '../services/reels_service.dart';
@@ -284,9 +285,9 @@ class _HomeDashboardState extends State<HomeDashboard>
   );
   final HomeOnboardingStep _adsStep = HomeOnboardingStep(
     key: GlobalKey(),
-    title: '📢 Spotlights',
+    title: 'Store',
     description:
-        'Explore sponsored offers, promotions, and featured opportunities from businesses.',
+        'Open your store dashboard, products, services, orders, and store activity.',
     tooltipPosition: TooltipPosition.top,
   );
   final HomeOnboardingStep _createStep = HomeOnboardingStep(
@@ -299,16 +300,15 @@ class _HomeDashboardState extends State<HomeDashboard>
   );
   final HomeOnboardingStep _rocketStep = HomeOnboardingStep(
     key: GlobalKey(),
-    title: '🚀 Campaigns',
+    title: 'Miles',
     description:
-        'Find trending creators, popular content, and exciting communities waiting for you.',
+        'Check your Miles, rewards, transactions, and redemption options.',
     tooltipPosition: TooltipPosition.top,
   );
   final HomeOnboardingStep _reelsStep = HomeOnboardingStep(
     key: GlobalKey(),
-    title: '🎬 B.Sparks',
-    description:
-        'Watch engaging short videos and discover entertaining content from creators.',
+    title: 'bSparks',
+    description: 'Watch short-form bSparks and discover videos from creators.',
     tooltipPosition: TooltipPosition.top,
   );
   final HomeOnboardingStep _walletStep = HomeOnboardingStep(
@@ -3072,6 +3072,18 @@ class _HomeDashboardState extends State<HomeDashboard>
   }
 
   void _onNavTap(int idx) {
+    if (idx == 1) {
+      Navigator.of(context).pushNamed('/store');
+      return;
+    }
+    if (idx == 3) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => const MilesScreen(),
+        ),
+      );
+      return;
+    }
     if (_swipeTabs.contains(idx)) {
       final page = _swipeTabs.indexOf(idx);
       final controller = _tabPageController;
@@ -3924,10 +3936,10 @@ class _HomeDashboardState extends State<HomeDashboard>
                     currentIndex: _currentIndex,
                     onTap: _onNavTap,
                     homeStep: _homeStep,
-                    adsStep: _adsStep,
+                    storeStep: _adsStep,
                     createStep: _createStep,
-                    rocketStep: _rocketStep,
-                    reelsStep: _reelsStep,
+                    milesStep: _rocketStep,
+                    bsparksStep: _reelsStep,
                   )
                 : const SizedBox.shrink()),
       );

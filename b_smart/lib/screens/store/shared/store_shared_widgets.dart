@@ -13,14 +13,12 @@ class StoreBsmartWordmark extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: RichText(
         text: const TextSpan(
-          style: TextStyle(
-            fontSize: 25,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.2,
-          ),
+          style: BStoreTypography.wordmark,
           children: [
-            TextSpan(text: 'B', style: TextStyle(color: Color(0xFF078D92))),
-            TextSpan(text: 'SMART', style: TextStyle(color: Color(0xFF071238))),
+            TextSpan(text: 'B', style: TextStyle(color: BStoreColors.primary)),
+            TextSpan(
+                text: 'SMART',
+                style: TextStyle(color: BStoreColors.textStrong)),
           ],
         ),
       ),
@@ -32,29 +30,18 @@ enum StoreDashboardTone { teal, purple }
 
 extension StoreDashboardToneColor on StoreDashboardTone {
   Color get color => switch (this) {
-        StoreDashboardTone.teal => const Color(0xFF078D92),
-        StoreDashboardTone.purple => const Color(0xFF684AC8),
+        StoreDashboardTone.teal => BStoreColors.primary,
+        StoreDashboardTone.purple => BStoreColors.accentPurple,
       };
 
   Color get background => switch (this) {
-        StoreDashboardTone.teal => const Color(0xFFE9F6F5),
-        StoreDashboardTone.purple => const Color(0xFFF1ECFA),
+        StoreDashboardTone.teal => BStoreColors.primarySoft,
+        StoreDashboardTone.purple => BStoreColors.accentPurpleSoft,
       };
 }
 
 BoxDecoration storeSoftCardDecoration({required double radius}) {
-  return BoxDecoration(
-    color: Colors.white,
-    borderRadius: BorderRadius.circular(radius),
-    border: Border.all(color: const Color(0xFFE9ECEF)),
-    boxShadow: [
-      BoxShadow(
-        color: Colors.black.withValues(alpha: 0.055),
-        blurRadius: 20,
-        offset: const Offset(0, 8),
-      ),
-    ],
-  );
+  return BStoreDecorations.card(radius: radius);
 }
 
 class StoreSectionTitle extends StatelessWidget {
@@ -120,7 +107,7 @@ class StoreEmptyState extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFE3E7ED)),
+          border: Border.all(color: BStoreColors.border),
         ),
         child: Column(
           children: [
@@ -198,7 +185,7 @@ class StoreListingRow extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE3E7ED)),
+        border: Border.all(color: BStoreColors.border),
       ),
       child: Row(
         children: [
@@ -262,7 +249,7 @@ class StoreActionPanel extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE3E7ED)),
+        border: Border.all(color: BStoreColors.border),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -353,7 +340,7 @@ class StoreSearchStrip extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 13),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE3E7ED)),
+            border: Border.all(color: BStoreColors.border),
           ),
           child: const Row(
             children: [
@@ -403,7 +390,7 @@ class StoreProductThumb extends StatelessWidget {
           width: size,
           height: size,
           color: const Color(0xFFEAF5FF),
-          child: const Icon(LucideIcons.image, color: Color(0xFF078D92)),
+          child: const Icon(LucideIcons.image, color: BStoreColors.primary),
         ),
       ),
     );
@@ -424,7 +411,7 @@ class StoreOrderNumberText extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(
-          color: Color(0xFF060D35),
+          color: BStoreColors.textPrimary,
           fontSize: 13,
           fontWeight: FontWeight.w900,
         ),
@@ -436,7 +423,7 @@ class StoreOrderNumberText extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       text: TextSpan(
         style: const TextStyle(
-          color: Color(0xFF060D35),
+          color: BStoreColors.textPrimary,
           fontSize: 13,
           fontWeight: FontWeight.w900,
         ),
@@ -444,7 +431,7 @@ class StoreOrderNumberText extends StatelessWidget {
           TextSpan(text: '${parts.first}#'),
           TextSpan(
             text: parts.sublist(1).join('#'),
-            style: const TextStyle(color: Color(0xFF684AC8)),
+            style: const TextStyle(color: BStoreColors.accentPurple),
           ),
         ],
       ),

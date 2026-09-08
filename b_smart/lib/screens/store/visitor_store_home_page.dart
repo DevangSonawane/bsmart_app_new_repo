@@ -6,6 +6,8 @@ import '../../services/supabase_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
+import 'visitor_product_detail_page.dart';
+import 'visitor_store_cart_page.dart';
 import 'visitor_service_detail_page.dart';
 
 class VisitorStoreHomePage extends StatefulWidget {
@@ -512,16 +514,18 @@ class _StoreItemsContent extends StatelessWidget {
     return switch (filter) {
       _VisitorStoreFilter.services =>
         _VisitorServiceList(ownerUserId: ownerUserId),
-      _VisitorStoreFilter.products => const _VisitorProductList(),
-      _VisitorStoreFilter.all => const _StoreItemsGrid(
+      _VisitorStoreFilter.products =>
+        _VisitorProductList(ownerUserId: ownerUserId),
+      _VisitorStoreFilter.all => _StoreItemsGrid(
           children: [
-            _ServiceFeatureCard(),
+            const _ServiceFeatureCard(),
             _ProductCard(
               imageAsset: 'assets/bSmart_Store/mockimages/vegetables.jpg',
               title: 'Eco Cleaning Kit',
               price: r'$24.99',
               rating: '4.8',
               reviews: '64',
+              ownerUserId: ownerUserId,
             ),
             _ProductCard(
               imageAsset: 'assets/bSmart_Store/mockimages/electronics.jpg',
@@ -529,6 +533,7 @@ class _StoreItemsContent extends StatelessWidget {
               price: r'$32.00',
               rating: '4.7',
               reviews: '38',
+              ownerUserId: ownerUserId,
             ),
           ],
         ),
@@ -1018,6 +1023,7 @@ class _ProductCard extends StatelessWidget {
   final String price;
   final String rating;
   final String reviews;
+  final String? ownerUserId;
 
   const _ProductCard({
     required this.imageAsset,
@@ -1025,153 +1031,177 @@ class _ProductCard extends StatelessWidget {
     required this.price,
     required this.rating,
     required this.reviews,
+    this.ownerUserId,
   });
+
+  void _openDetail(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VisitorProductDetailPage(
+          ownerUserId: ownerUserId,
+          product: VisitorProductDetailData(
+            imageAsset: imageAsset,
+            title: title,
+            price: price,
+            rating: rating,
+            reviews: reviews,
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: storeSoftCardDecoration(radius: 14),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Stack(
-            children: [
-              Image.asset(
-                imageAsset,
-                width: double.infinity,
-                height: 108,
-                fit: BoxFit.cover,
-                cacheWidth: 360,
-              ),
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 9,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    LucideIcons.heart,
-                    color: Color(0xFF060D35),
-                    size: 18,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 11, 10, 11),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return InkWell(
+      onTap: () => _openDetail(context),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        decoration: storeSoftCardDecoration(radius: 14),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
               children: [
-                Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF060D35),
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  price,
-                  style: const TextStyle(
-                    color: Color(0xFF078D92),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                Row(
-                  children: [
-                    const Icon(
-                      LucideIcons.star,
-                      color: Color(0xFF078D92),
-                      size: 13,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      rating,
-                      style: const TextStyle(
-                        color: Color(0xFF060D35),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    Flexible(
-                      child: Text(
-                        '($reviews)',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF29304D),
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  height: 34,
+                Image.asset(
+                  imageAsset,
                   width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: () {},
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF078D92),
-                      side: const BorderSide(color: Color(0xFFD5DEE4)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(LucideIcons.shoppingCart, size: 15),
-                        SizedBox(width: 7),
-                        Text(
-                          'Add',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w900,
-                          ),
+                  height: 108,
+                  fit: BoxFit.cover,
+                  cacheWidth: 360,
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 9,
+                          offset: const Offset(0, 4),
                         ),
                       ],
+                    ),
+                    child: const Icon(
+                      LucideIcons.heart,
+                      color: Color(0xFF060D35),
+                      size: 18,
                     ),
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 11, 10, 11),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF060D35),
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    price,
+                    style: const TextStyle(
+                      color: Color(0xFF078D92),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Row(
+                    children: [
+                      const Icon(
+                        LucideIcons.star,
+                        color: Color(0xFF078D92),
+                        size: 13,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        rating,
+                        style: const TextStyle(
+                          color: Color(0xFF060D35),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          '($reviews)',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF29304D),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 34,
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () => _openDetail(context),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF078D92),
+                        side: const BorderSide(color: Color(0xFFD5DEE4)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(LucideIcons.shoppingCart, size: 15),
+                          SizedBox(width: 7),
+                          Text(
+                            'Add',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _VisitorProductList extends StatelessWidget {
-  const _VisitorProductList();
+  final String? ownerUserId;
+
+  const _VisitorProductList({required this.ownerUserId});
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        const _VisitorProductGrid(
+        _VisitorProductGrid(
           children: [
             _VisitorProductGridCard(
               imageAsset: 'assets/bSmart_Store/mockimages/vegetables.jpg',
@@ -1179,6 +1209,7 @@ class _VisitorProductList extends StatelessWidget {
               price: r'$24.99',
               rating: '4.8',
               reviews: '64',
+              ownerUserId: ownerUserId,
             ),
             _VisitorProductGridCard(
               imageAsset: 'assets/bSmart_Store/mockimages/electronics.jpg',
@@ -1186,6 +1217,7 @@ class _VisitorProductList extends StatelessWidget {
               price: r'$32.00',
               rating: '4.7',
               reviews: '38',
+              ownerUserId: ownerUserId,
             ),
             _VisitorProductGridCard(
               imageAsset: 'assets/bSmart_Store/mockimages/clothes.jpg',
@@ -1193,6 +1225,7 @@ class _VisitorProductList extends StatelessWidget {
               price: r'$15.00',
               rating: '4.9',
               reviews: '57',
+              ownerUserId: ownerUserId,
             ),
             _VisitorProductGridCard(
               imageAsset:
@@ -1201,13 +1234,23 @@ class _VisitorProductList extends StatelessWidget {
               price: r'$18.00',
               rating: '4.8',
               reviews: '42',
+              ownerUserId: ownerUserId,
             ),
           ],
         ),
         Positioned(
           right: 6,
           bottom: 8,
-          child: _FloatingCartShortcut(onTap: () {}),
+          child: _FloatingCartShortcut(
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      VisitorStoreCartScreen(ownerUserId: ownerUserId),
+                ),
+              );
+            },
+          ),
         ),
       ],
     );
@@ -1244,6 +1287,7 @@ class _VisitorProductGridCard extends StatelessWidget {
   final String price;
   final String rating;
   final String reviews;
+  final String? ownerUserId;
 
   const _VisitorProductGridCard({
     required this.imageAsset,
@@ -1251,145 +1295,167 @@ class _VisitorProductGridCard extends StatelessWidget {
     required this.price,
     required this.rating,
     required this.reviews,
+    this.ownerUserId,
   });
+
+  void _openDetail(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VisitorProductDetailPage(
+          ownerUserId: ownerUserId,
+          product: VisitorProductDetailData(
+            imageAsset: imageAsset,
+            title: title,
+            price: price,
+            rating: rating,
+            reviews: reviews,
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: storeSoftCardDecoration(radius: 14),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Stack(
-            children: [
-              Image.asset(
-                imageAsset,
-                width: double.infinity,
-                height: 132,
-                fit: BoxFit.cover,
-                cacheWidth: 360,
-              ),
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 9,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    LucideIcons.heart,
-                    color: Color(0xFF060D35),
-                    size: 18,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return InkWell(
+      onTap: () => _openDetail(context),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        decoration: storeSoftCardDecoration(radius: 14),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
               children: [
-                Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF060D35),
-                    fontSize: 14.5,
-                    height: 1.15,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  price,
-                  style: const TextStyle(
-                    color: Color(0xFF078D92),
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                Row(
-                  children: [
-                    const Icon(
-                      LucideIcons.star,
-                      color: Color(0xFF078D92),
-                      size: 13,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      rating,
-                      style: const TextStyle(
-                        color: Color(0xFF060D35),
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    Flexible(
-                      child: Text(
-                        '($reviews)',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF29304D),
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  height: 34,
+                Image.asset(
+                  imageAsset,
                   width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: () {},
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF078D92),
-                      side: const BorderSide(color: Color(0xFFD5DEE4)),
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(7),
-                      ),
+                  height: 132,
+                  fit: BoxFit.cover,
+                  cacheWidth: 360,
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 9,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                    child: const FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(LucideIcons.shoppingCart, size: 15),
-                          SizedBox(width: 8),
-                          Text(
-                            'Add',
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
+                    child: const Icon(
+                      LucideIcons.heart,
+                      color: Color(0xFF060D35),
+                      size: 18,
                     ),
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF060D35),
+                      fontSize: 14.5,
+                      height: 1.15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    price,
+                    style: const TextStyle(
+                      color: Color(0xFF078D92),
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Row(
+                    children: [
+                      const Icon(
+                        LucideIcons.star,
+                        color: Color(0xFF078D92),
+                        size: 13,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        rating,
+                        style: const TextStyle(
+                          color: Color(0xFF060D35),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          '($reviews)',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF29304D),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 34,
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () => _openDetail(context),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF078D92),
+                        side: const BorderSide(color: Color(0xFFD5DEE4)),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                      ),
+                      child: const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(LucideIcons.shoppingCart, size: 15),
+                            SizedBox(width: 8),
+                            Text(
+                              'Add',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

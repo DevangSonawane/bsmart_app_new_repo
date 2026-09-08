@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:showcaseview/showcaseview.dart';
 import '../theme/design_tokens.dart';
@@ -12,20 +11,20 @@ class BottomNav extends StatefulWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
   final HomeOnboardingStep? homeStep;
-  final HomeOnboardingStep? adsStep;
+  final HomeOnboardingStep? storeStep;
   final HomeOnboardingStep? createStep;
-  final HomeOnboardingStep? rocketStep;
-  final HomeOnboardingStep? reelsStep;
+  final HomeOnboardingStep? milesStep;
+  final HomeOnboardingStep? bsparksStep;
 
   const BottomNav({
     super.key,
     required this.currentIndex,
     required this.onTap,
     this.homeStep,
-    this.adsStep,
+    this.storeStep,
     this.createStep,
-    this.rocketStep,
-    this.reelsStep,
+    this.milesStep,
+    this.bsparksStep,
   });
 
   @override
@@ -74,33 +73,25 @@ class _BottomNavState extends State<BottomNav> {
                   ),
                   _buildShowcaseNavItem(
                     context,
-                    step: widget.adsStep,
+                    step: widget.storeStep,
                     index: 1,
-                    icon: LucideIcons.badgeDollarSign,
-                    isActive: widget.currentIndex == 1,
-                    customIcon: _buildSpotlightIcon(
-                      context,
-                      isActive: widget.currentIndex == 1,
-                    ),
+                    icon: LucideIcons.store,
+                    isActive: false,
                   ),
                   _buildShowcaseCreateButton(context),
                   _buildShowcaseNavItem(
                     context,
-                    step: widget.rocketStep,
+                    step: widget.milesStep,
                     index: 3,
-                    icon: LucideIcons.rocket,
-                    isActive: widget.currentIndex == 3,
+                    icon: LucideIcons.route,
+                    isActive: false,
                   ),
                   _buildShowcaseNavItem(
                     context,
-                    step: widget.reelsStep,
+                    step: widget.bsparksStep,
                     index: 4,
-                    icon: LucideIcons.clapperboard,
+                    icon: LucideIcons.zap,
                     isActive: widget.currentIndex == 4,
-                    customIcon: _buildBSparksIcon(
-                      context,
-                      isActive: widget.currentIndex == 4,
-                    ),
                   ),
                 ],
               ),
@@ -117,10 +108,12 @@ class _BottomNavState extends State<BottomNav> {
     required int index,
     required IconData icon,
     required bool isActive,
-    Widget? customIcon,
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final color = isActive
+        ? DesignTokens.instaPink
+        : (isDark ? Colors.white : Colors.black);
     final child = InkWell(
       onTap: () => widget.onTap(index),
       borderRadius: BorderRadius.circular(12),
@@ -130,14 +123,11 @@ class _BottomNavState extends State<BottomNav> {
           width: _navIconBoxSize,
           height: _navIconBoxSize,
           child: Center(
-            child: customIcon ??
-                Icon(
-                  icon,
-                  size: 30,
-                  color: isActive
-                      ? DesignTokens.instaPink
-                      : (isDark ? Colors.white : Colors.black),
-                ),
+            child: Icon(
+              icon,
+              size: 30,
+              color: color,
+            ),
           ),
         ),
       ),
@@ -192,10 +182,10 @@ class _BottomNavState extends State<BottomNav> {
             child: AnimatedRotation(
               turns: _rotating ? 1 / 8 : 0, // 45 degrees
               duration: const Duration(milliseconds: 300),
-              child: SvgPicture.string(
-                '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>',
-                width: 32,
-                height: 32,
+              child: const Icon(
+                LucideIcons.plus,
+                color: Colors.white,
+                size: 34,
               ),
             ),
           ),
@@ -261,40 +251,6 @@ class _BottomNavState extends State<BottomNav> {
       enableAutoScroll: false,
       scrollAlignment: 0.45,
       child: child,
-    );
-  }
-
-  Widget _buildSpotlightIcon(
-    BuildContext context, {
-    required bool isActive,
-  }) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final color = isActive
-        ? DesignTokens.instaPink
-        : (isDark ? Colors.white : Colors.black);
-
-    return Icon(
-      LucideIcons.circlePlay,
-      size: 30,
-      color: color,
-    );
-  }
-
-  Widget _buildBSparksIcon(
-    BuildContext context, {
-    required bool isActive,
-  }) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final color = isActive
-        ? DesignTokens.instaPink
-        : (isDark ? Colors.white : Colors.black);
-
-    return Icon(
-      LucideIcons.zap,
-      size: 30,
-      color: color,
     );
   }
 }
