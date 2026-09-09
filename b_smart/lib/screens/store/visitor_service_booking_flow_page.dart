@@ -7,22 +7,24 @@ import '../../services/supabase_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
+import 'store_home_screen.dart';
+import 'store_models.dart';
+import 'visitor_store_cart_page.dart';
 
 class VisitorServiceBookingFlowPage extends StatefulWidget {
   final String? ownerUserId;
-  final String imageAsset;
-  final String title;
-  final String duration;
-  final String price;
+  final StoreMockCatalogItem item;
 
   const VisitorServiceBookingFlowPage({
     super.key,
     required this.ownerUserId,
-    required this.imageAsset,
-    required this.title,
-    required this.duration,
-    required this.price,
+    required this.item,
   });
+
+  String get imageAsset => item.imageAsset;
+  String get title => item.title;
+  String get duration => item.duration;
+  String get price => item.priceLabel;
 
   @override
   State<VisitorServiceBookingFlowPage> createState() =>
@@ -87,6 +89,39 @@ class _VisitorServiceBookingFlowPageState
       _selectedDate = selected;
       _dateWindowStart = selected;
     });
+  }
+
+  void _handleFooterTap() {
+    if (_step == 0) {
+      setState(() => _step += 1);
+      return;
+    }
+
+    final schedule =
+        '${_selectedBookingDate.heading}, $_selectedTime • $_selectedDuration';
+    StoreMockState.instance.addToCart(widget.item, schedule: schedule);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => VisitorStoreCartScreen(
+          ownerUserId: widget.ownerUserId,
+          showContinueShopping: true,
+          onBack: _goToStoreHome,
+          onContinueShopping: _goToStoreHome,
+        ),
+      ),
+    );
+  }
+
+  void _goToStoreHome(BuildContext context) {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => StoreHomeScreen(
+          isSelfStore: false,
+          ownerUserId: widget.ownerUserId,
+        ),
+      ),
+      (_) => false,
+    );
   }
 
   Future<_BookingProvider?> _loadProvider() async {
@@ -227,11 +262,11 @@ class _VisitorServiceBookingFlowPageState
                   _BookingFooterButton(
                     label: switch (_step) {
                       0 => 'Continue',
-                      1 => 'Send request',
+                      1 => 'Add to cart',
                       _ => 'Pay ${widget.price}',
                     },
                     icon: _step == 2 ? LucideIcons.lockKeyhole : null,
-                    onPressed: () => setState(() => _step += 1),
+                    onPressed: _handleFooterTap,
                   ),
               ],
             ),

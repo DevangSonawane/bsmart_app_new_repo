@@ -6,6 +6,7 @@ import '../../services/supabase_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
+import 'store_models.dart';
 import 'visitor_product_detail_page.dart';
 import 'visitor_store_cart_page.dart';
 import 'visitor_service_detail_page.dart';
@@ -511,30 +512,22 @@ class _StoreItemsContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final store = StoreMockState.instance;
     return switch (filter) {
       _VisitorStoreFilter.services =>
-        _VisitorServiceList(ownerUserId: ownerUserId),
+        _VisitorServiceList(ownerUserId: ownerUserId, services: store.services),
       _VisitorStoreFilter.products =>
-        _VisitorProductList(ownerUserId: ownerUserId),
+        _VisitorProductList(ownerUserId: ownerUserId, products: store.products),
       _VisitorStoreFilter.all => _StoreItemsGrid(
           children: [
-            const _ServiceFeatureCard(),
-            _ProductCard(
-              imageAsset: 'assets/bSmart_Store/mockimages/vegetables.jpg',
-              title: 'Eco Cleaning Kit',
-              price: r'$24.99',
-              rating: '4.8',
-              reviews: '64',
+            _ServiceFeatureCard(
               ownerUserId: ownerUserId,
+              service: store.services.first,
             ),
-            _ProductCard(
-              imageAsset: 'assets/bSmart_Store/mockimages/electronics.jpg',
-              title: 'Aroma Diffuser',
-              price: r'$32.00',
-              rating: '4.7',
-              reviews: '38',
-              ownerUserId: ownerUserId,
-            ),
+            for (final item in StoreMockState.catalog.skip(1).take(7))
+              item.type == StoreMockItemType.service
+                  ? _ServiceFeatureCard(ownerUserId: ownerUserId, service: item)
+                  : _ProductCard(item: item, ownerUserId: ownerUserId),
           ],
         ),
     };
@@ -567,49 +560,21 @@ class _StoreItemsGrid extends StatelessWidget {
 
 class _VisitorServiceList extends StatelessWidget {
   final String? ownerUserId;
+  final List<StoreMockCatalogItem> services;
 
-  const _VisitorServiceList({required this.ownerUserId});
+  const _VisitorServiceList({
+    required this.ownerUserId,
+    required this.services,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _VisitorServiceCard(
-          ownerUserId: ownerUserId,
-          imageAsset: 'assets/bSmart_Store/mockimages/clothes.jpg',
-          icon: LucideIcons.house,
-          title: 'Home Cleaning',
-          description:
-              'Thorough and reliable cleaning for a fresh, healthy home.',
-          duration: '2-3 hrs',
-          price: r'$40',
-          rating: '4.8',
-          reviews: '64',
-        ),
-        const SizedBox(height: 10),
-        _VisitorServiceCard(
-          ownerUserId: ownerUserId,
-          imageAsset: 'assets/bSmart_Store/mockimages/electronics.jpg',
-          icon: LucideIcons.briefcaseBusiness,
-          title: 'Business Consulting',
-          description: 'Expert advice to help your business grow and succeed.',
-          duration: '60 min',
-          price: r'$60',
-          rating: '4.9',
-          reviews: '52',
-        ),
-        const SizedBox(height: 10),
-        _VisitorServiceCard(
-          ownerUserId: ownerUserId,
-          imageAsset: 'assets/bSmart_Store/mockimages/vegetables.jpg',
-          icon: LucideIcons.flower2,
-          title: 'Yoga Coaching',
-          description: 'Personalized sessions to improve your mind and body.',
-          duration: '45 min',
-          price: r'$35',
-          rating: '4.9',
-          reviews: '48',
-        ),
+        for (var i = 0; i < services.length; i++) ...[
+          _VisitorServiceCard(ownerUserId: ownerUserId, service: services[i]),
+          if (i != services.length - 1) const SizedBox(height: 10),
+        ],
       ],
     );
   }
@@ -617,25 +582,11 @@ class _VisitorServiceList extends StatelessWidget {
 
 class _VisitorServiceCard extends StatelessWidget {
   final String? ownerUserId;
-  final String imageAsset;
-  final IconData icon;
-  final String title;
-  final String description;
-  final String duration;
-  final String price;
-  final String rating;
-  final String reviews;
+  final StoreMockCatalogItem service;
 
   const _VisitorServiceCard({
     required this.ownerUserId,
-    required this.imageAsset,
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.duration,
-    required this.price,
-    required this.rating,
-    required this.reviews,
+    required this.service,
   });
 
   @override
@@ -652,7 +603,7 @@ class _VisitorServiceCard extends StatelessWidget {
               children: [
                 Positioned.fill(
                   child: Image.asset(
-                    imageAsset,
+                    service.imageAsset,
                     fit: BoxFit.cover,
                     cacheWidth: 420,
                   ),
@@ -674,7 +625,11 @@ class _VisitorServiceCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                    child: Icon(icon, color: const Color(0xFF078D92), size: 18),
+                    child: Icon(
+                      service.icon,
+                      color: const Color(0xFF078D92),
+                      size: 18,
+                    ),
                   ),
                 ),
               ],
@@ -692,7 +647,7 @@ class _VisitorServiceCard extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          title,
+                          service.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -728,7 +683,7 @@ class _VisitorServiceCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    description,
+                    service.description,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -749,7 +704,7 @@ class _VisitorServiceCard extends StatelessWidget {
                       const SizedBox(width: 4),
                       Flexible(
                         child: Text(
-                          duration,
+                          service.duration,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -769,7 +724,7 @@ class _VisitorServiceCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        price,
+                        service.priceLabel,
                         style: const TextStyle(
                           color: Color(0xFF078D92),
                           fontSize: 14,
@@ -788,7 +743,7 @@ class _VisitorServiceCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        rating,
+                        service.rating,
                         style: const TextStyle(
                           color: Color(0xFF060D35),
                           fontSize: 10.5,
@@ -798,7 +753,7 @@ class _VisitorServiceCard extends StatelessWidget {
                       const SizedBox(width: 4),
                       Flexible(
                         child: Text(
-                          '($reviews)',
+                          '(${service.reviews})',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -819,17 +774,7 @@ class _VisitorServiceCard extends StatelessWidget {
                         MaterialPageRoute<void>(
                           builder: (_) => VisitorServiceDetailPage(
                             ownerUserId: ownerUserId,
-                            imageAsset: imageAsset,
-                            category: title == 'Home Cleaning'
-                                ? 'Home Services'
-                                : 'Services',
-                            title: title,
-                            description: description,
-                            duration: duration,
-                            price: price,
-                            rating: rating,
-                            reviews: reviews,
-                            methodIcon: icon,
+                            item: service,
                           ),
                         ),
                       ),
@@ -871,7 +816,13 @@ class _VisitorServiceCard extends StatelessWidget {
 }
 
 class _ServiceFeatureCard extends StatelessWidget {
-  const _ServiceFeatureCard();
+  final String? ownerUserId;
+  final StoreMockCatalogItem service;
+
+  const _ServiceFeatureCard({
+    required this.ownerUserId,
+    required this.service,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -884,7 +835,7 @@ class _ServiceFeatureCard extends StatelessWidget {
           Stack(
             children: [
               Image.asset(
-                'assets/bSmart_Store/mockimages/clothes.jpg',
+                service.imageAsset,
                 width: double.infinity,
                 height: 160,
                 fit: BoxFit.cover,
@@ -907,9 +858,9 @@ class _ServiceFeatureCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  child: const Icon(
-                    LucideIcons.house,
-                    color: Color(0xFF078D92),
+                  child: Icon(
+                    service.icon,
+                    color: const Color(0xFF078D92),
                     size: 21,
                   ),
                 ),
@@ -921,22 +872,22 @@ class _ServiceFeatureCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Home Cleaning',
+                Text(
+                  service.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Color(0xFF060D35),
                     fontSize: 15,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Thorough and reliable cleaning for a fresh, healthy home.',
+                Text(
+                  service.description,
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Color(0xFF29304D),
                     fontSize: 11.5,
                     height: 1.35,
@@ -944,21 +895,21 @@ class _ServiceFeatureCard extends StatelessWidget {
                   ),
                 ),
                 const Divider(height: 22, color: Color(0xFFE1E5EA)),
-                const Row(
+                Row(
                   children: [
-                    Icon(LucideIcons.clock3,
+                    const Icon(LucideIcons.clock3,
                         color: Color(0xFF29304D), size: 14),
-                    SizedBox(width: 5),
+                    const SizedBox(width: 5),
                     Text(
-                      '2-3 hrs',
-                      style: TextStyle(
+                      service.duration,
+                      style: const TextStyle(
                         color: Color(0xFF29304D),
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    Spacer(),
-                    Text(
+                    const Spacer(),
+                    const Text(
                       'From ',
                       style: TextStyle(
                         color: Color(0xFF29304D),
@@ -967,8 +918,8 @@ class _ServiceFeatureCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      r'$40',
-                      style: TextStyle(
+                      service.priceLabel,
+                      style: const TextStyle(
                         color: Color(0xFF078D92),
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
@@ -981,7 +932,14 @@ class _ServiceFeatureCard extends StatelessWidget {
                   height: 38,
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: () {},
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => VisitorServiceDetailPage(
+                          ownerUserId: ownerUserId,
+                          item: service,
+                        ),
+                      ),
+                    ),
                     style: FilledButton.styleFrom(
                       backgroundColor: const Color(0xFF078D92),
                       foregroundColor: Colors.white,
@@ -1018,19 +976,11 @@ class _ServiceFeatureCard extends StatelessWidget {
 }
 
 class _ProductCard extends StatelessWidget {
-  final String imageAsset;
-  final String title;
-  final String price;
-  final String rating;
-  final String reviews;
+  final StoreMockCatalogItem item;
   final String? ownerUserId;
 
   const _ProductCard({
-    required this.imageAsset,
-    required this.title,
-    required this.price,
-    required this.rating,
-    required this.reviews,
+    required this.item,
     this.ownerUserId,
   });
 
@@ -1040,11 +990,7 @@ class _ProductCard extends StatelessWidget {
         builder: (_) => VisitorProductDetailPage(
           ownerUserId: ownerUserId,
           product: VisitorProductDetailData(
-            imageAsset: imageAsset,
-            title: title,
-            price: price,
-            rating: rating,
-            reviews: reviews,
+            item: item,
           ),
         ),
       ),
@@ -1065,7 +1011,7 @@ class _ProductCard extends StatelessWidget {
             Stack(
               children: [
                 Image.asset(
-                  imageAsset,
+                  item.imageAsset,
                   width: double.infinity,
                   height: 108,
                   fit: BoxFit.cover,
@@ -1103,7 +1049,7 @@ class _ProductCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    title,
+                    item.title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -1114,7 +1060,7 @@ class _ProductCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    price,
+                    item.priceLabel,
                     style: const TextStyle(
                       color: Color(0xFF078D92),
                       fontSize: 15,
@@ -1131,7 +1077,7 @@ class _ProductCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        rating,
+                        item.rating,
                         style: const TextStyle(
                           color: Color(0xFF060D35),
                           fontSize: 11,
@@ -1141,7 +1087,7 @@ class _ProductCard extends StatelessWidget {
                       const SizedBox(width: 5),
                       Flexible(
                         child: Text(
-                          '($reviews)',
+                          '(${item.reviews})',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -1157,30 +1103,7 @@ class _ProductCard extends StatelessWidget {
                   SizedBox(
                     height: 34,
                     width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: () => _openDetail(context),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF078D92),
-                        side: const BorderSide(color: Color(0xFFD5DEE4)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                      ),
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(LucideIcons.shoppingCart, size: 15),
-                          SizedBox(width: 7),
-                          Text(
-                            'Add',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    child: _InlineCartStepper(item: item),
                   ),
                 ],
               ),
@@ -1194,8 +1117,12 @@ class _ProductCard extends StatelessWidget {
 
 class _VisitorProductList extends StatelessWidget {
   final String? ownerUserId;
+  final List<StoreMockCatalogItem> products;
 
-  const _VisitorProductList({required this.ownerUserId});
+  const _VisitorProductList({
+    required this.ownerUserId,
+    required this.products,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1203,39 +1130,11 @@ class _VisitorProductList extends StatelessWidget {
       children: [
         _VisitorProductGrid(
           children: [
-            _VisitorProductGridCard(
-              imageAsset: 'assets/bSmart_Store/mockimages/vegetables.jpg',
-              title: 'Eco Cleaning Kit',
-              price: r'$24.99',
-              rating: '4.8',
-              reviews: '64',
-              ownerUserId: ownerUserId,
-            ),
-            _VisitorProductGridCard(
-              imageAsset: 'assets/bSmart_Store/mockimages/electronics.jpg',
-              title: 'Aroma Diffuser',
-              price: r'$32.00',
-              rating: '4.7',
-              reviews: '38',
-              ownerUserId: ownerUserId,
-            ),
-            _VisitorProductGridCard(
-              imageAsset: 'assets/bSmart_Store/mockimages/clothes.jpg',
-              title: 'Handmade Notebook',
-              price: r'$15.00',
-              rating: '4.9',
-              reviews: '57',
-              ownerUserId: ownerUserId,
-            ),
-            _VisitorProductGridCard(
-              imageAsset:
-                  'assets/bSmart_Store/mockimages/clothes_clean_test.jpg',
-              title: 'Wellness Candle',
-              price: r'$18.00',
-              rating: '4.8',
-              reviews: '42',
-              ownerUserId: ownerUserId,
-            ),
+            for (final product in products)
+              _VisitorProductGridCard(
+                item: product,
+                ownerUserId: ownerUserId,
+              ),
           ],
         ),
         Positioned(
@@ -1282,19 +1181,11 @@ class _VisitorProductGrid extends StatelessWidget {
 }
 
 class _VisitorProductGridCard extends StatelessWidget {
-  final String imageAsset;
-  final String title;
-  final String price;
-  final String rating;
-  final String reviews;
+  final StoreMockCatalogItem item;
   final String? ownerUserId;
 
   const _VisitorProductGridCard({
-    required this.imageAsset,
-    required this.title,
-    required this.price,
-    required this.rating,
-    required this.reviews,
+    required this.item,
     this.ownerUserId,
   });
 
@@ -1304,11 +1195,7 @@ class _VisitorProductGridCard extends StatelessWidget {
         builder: (_) => VisitorProductDetailPage(
           ownerUserId: ownerUserId,
           product: VisitorProductDetailData(
-            imageAsset: imageAsset,
-            title: title,
-            price: price,
-            rating: rating,
-            reviews: reviews,
+            item: item,
           ),
         ),
       ),
@@ -1329,7 +1216,7 @@ class _VisitorProductGridCard extends StatelessWidget {
             Stack(
               children: [
                 Image.asset(
-                  imageAsset,
+                  item.imageAsset,
                   width: double.infinity,
                   height: 132,
                   fit: BoxFit.cover,
@@ -1367,7 +1254,7 @@ class _VisitorProductGridCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    title,
+                    item.title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -1379,7 +1266,7 @@ class _VisitorProductGridCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    price,
+                    item.priceLabel,
                     style: const TextStyle(
                       color: Color(0xFF078D92),
                       fontSize: 15.5,
@@ -1396,7 +1283,7 @@ class _VisitorProductGridCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        rating,
+                        item.rating,
                         style: const TextStyle(
                           color: Color(0xFF060D35),
                           fontSize: 11.5,
@@ -1406,7 +1293,7 @@ class _VisitorProductGridCard extends StatelessWidget {
                       const SizedBox(width: 5),
                       Flexible(
                         child: Text(
-                          '($reviews)',
+                          '(${item.reviews})',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -1422,40 +1309,121 @@ class _VisitorProductGridCard extends StatelessWidget {
                   SizedBox(
                     height: 34,
                     width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: () => _openDetail(context),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF078D92),
-                        side: const BorderSide(color: Color(0xFFD5DEE4)),
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                      ),
-                      child: const FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(LucideIcons.shoppingCart, size: 15),
-                            SizedBox(width: 8),
-                            Text(
-                              'Add',
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                    child: _InlineCartStepper(item: item),
                   ),
                 ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _InlineCartStepper extends StatelessWidget {
+  final StoreMockCatalogItem item;
+
+  const _InlineCartStepper({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: StoreMockState.instance,
+      builder: (context, _) {
+        final quantity = StoreMockState.instance.quantityFor(item.id);
+        if (quantity == 0) {
+          return OutlinedButton(
+            onPressed: () => StoreMockState.instance.addToCart(item),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF078D92),
+              side: const BorderSide(color: Color(0xFFD5DEE4)),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(7),
+              ),
+            ),
+            child: const FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(LucideIcons.shoppingCart, size: 15),
+                  SizedBox(width: 8),
+                  Text(
+                    'Add',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF078D92),
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: _StepperTapTarget(
+                  icon: LucideIcons.minus,
+                  onTap: () => StoreMockState.instance.updateQuantity(
+                    item.id,
+                    quantity - 1,
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 34,
+                child: Text(
+                  '$quantity',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: _StepperTapTarget(
+                  icon: LucideIcons.plus,
+                  onTap: () => StoreMockState.instance.updateQuantity(
+                    item.id,
+                    quantity + 1,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _StepperTapTarget extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _StepperTapTarget({
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(7),
+      child: Center(
+        child: Icon(icon, color: Colors.white, size: 16),
       ),
     );
   }
@@ -1468,73 +1436,78 @@ class _FloatingCartShortcut extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 76,
-      height: 76,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Material(
-            color: const Color(0xFF078D92),
-            shape: const CircleBorder(),
-            elevation: 8,
-            shadowColor: Colors.black.withValues(alpha: 0.16),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: onTap,
-              child: const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      LucideIcons.shoppingCart,
-                      color: Colors.white,
-                      size: 25,
+    return AnimatedBuilder(
+      animation: StoreMockState.instance,
+      builder: (context, _) {
+        return SizedBox(
+          width: 76,
+          height: 76,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Material(
+                color: const Color(0xFF078D92),
+                shape: const CircleBorder(),
+                elevation: 8,
+                shadowColor: Colors.black.withValues(alpha: 0.16),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: onTap,
+                  child: const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          LucideIcons.shoppingCart,
+                          color: Colors.white,
+                          size: 25,
+                        ),
+                        SizedBox(height: 3),
+                        Text(
+                          'My Cart',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
                     ),
-                    SizedBox(height: 3),
-                    Text(
-                      'My Cart',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            right: 0,
-            top: 4,
-            child: Container(
-              width: 24,
-              height: 24,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
                   ),
-                ],
-              ),
-              child: const Text(
-                '2',
-                style: TextStyle(
-                  color: Color(0xFF078D92),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
                 ),
               ),
-            ),
+              Positioned(
+                right: 0,
+                top: 4,
+                child: Container(
+                  width: 24,
+                  height: 24,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    '${StoreMockState.instance.cartCount}',
+                    style: const TextStyle(
+                      color: Color(0xFF078D92),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

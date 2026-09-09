@@ -2,14 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'shared/store_shared_widgets.dart';
+import 'store_models.dart';
 import 'store_theme.dart';
 
 class VisitorProductPaymentPage extends StatefulWidget {
   final String amount;
+  final double bCoinsSavings;
 
   const VisitorProductPaymentPage({
     super.key,
     required this.amount,
+    this.bCoinsSavings = 0,
   });
 
   @override
@@ -95,7 +98,10 @@ class _VisitorProductPaymentPageState extends State<VisitorProductPaymentPage> {
                   ],
                 ),
               ),
-              _PayButton(amount: widget.amount),
+              _PayButton(
+                amount: widget.amount,
+                bCoinsSavings: widget.bCoinsSavings,
+              ),
             ],
           ),
         ),
@@ -130,7 +136,7 @@ class _PaymentHeader extends StatelessWidget {
               StoreBsmartWordmark(),
               SizedBox(height: 14),
               Text(
-                'Payment',
+                'Checkout',
                 style: TextStyle(
                   color: BStoreColors.textPrimary,
                   fontSize: 19,
@@ -159,7 +165,7 @@ class _AmountDueCard extends StatelessWidget {
       child: Column(
         children: [
           const Text(
-            'Amount due',
+            'Total due',
             style: TextStyle(
               color: Color(0xFF4B546D),
               fontSize: 14,
@@ -480,8 +486,12 @@ class _SecurePaymentNote extends StatelessWidget {
 
 class _PayButton extends StatelessWidget {
   final String amount;
+  final double bCoinsSavings;
 
-  const _PayButton({required this.amount});
+  const _PayButton({
+    required this.amount,
+    required this.bCoinsSavings,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -498,17 +508,26 @@ class _PayButton extends StatelessWidget {
         width: double.infinity,
         child: FilledButton.icon(
           onPressed: () {
+            if (StoreMockState.instance.cartLines.isEmpty) {
+              Navigator.of(context).maybePop();
+              return;
+            }
+            final order = StoreMockState.instance.placeOrder(
+              paidAmount: _amountValue(amount),
+              bCoinsSavings: bCoinsSavings,
+            );
             Navigator.of(context).pushReplacement(
               MaterialPageRoute<void>(
                 builder: (_) => VisitorProductPurchaseSuccessPage(
                   amount: amount,
+                  order: order,
                 ),
               ),
             );
           },
           icon: const Icon(LucideIcons.lockKeyhole, size: 18),
           label: Text(
-            'Pay $amount',
+            'Confirm and pay $amount',
             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
           ),
           style: BStoreButtons.filled(radius: 9),
@@ -516,14 +535,20 @@ class _PayButton extends StatelessWidget {
       ),
     );
   }
+
+  static double _amountValue(String amount) {
+    return double.tryParse(amount.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
+  }
 }
 
 class VisitorProductPurchaseSuccessPage extends StatelessWidget {
   final String amount;
+  final StoreMockOrder order;
 
   const VisitorProductPurchaseSuccessPage({
     super.key,
     required this.amount,
+    required this.order,
   });
 
   @override
@@ -556,7 +581,7 @@ class VisitorProductPurchaseSuccessPage extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               const Text(
-                'Product purchased',
+                'Order confirmed',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: BStoreColors.textPrimary,
@@ -565,10 +590,10 @@ class VisitorProductPurchaseSuccessPage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 7),
-              const Text(
-                'Order #BS2048',
+              Text(
+                'Order #${order.id}',
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   color: BStoreColors.accentPurple,
                   fontSize: 13.5,
                   fontWeight: FontWeight.w900,
@@ -586,12 +611,17 @@ class VisitorProductPurchaseSuccessPage extends StatelessWidget {
                     const _SuccessRow(
                         label: 'Payment method', value: 'Visa 4821'),
                     const SizedBox(height: 10),
-                    const _SuccessRow(label: 'Delivery', value: 'Processing'),
+                    _SuccessRow(
+                      label: _hasService(order) ? 'Fulfillment' : 'Delivery',
+                      value: _hasService(order) ? 'Scheduled' : 'Processing',
+                    ),
                     const Divider(height: 24, color: BStoreColors.border),
-                    const Text(
-                      'Your order has been placed successfully. We will notify you when the seller starts delivery.',
+                    Text(
+                      _hasService(order)
+                          ? 'Your order has been confirmed successfully. We will notify you when the provider accepts the service request.'
+                          : 'Your order has been placed successfully. We will notify you when the seller starts delivery.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: BStoreColors.textSecondary,
                         fontSize: 13,
                         height: 1.35,
@@ -633,6 +663,11 @@ class VisitorProductPurchaseSuccessPage extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  bool _hasService(StoreMockOrder order) {
+    return order.lines
+        .any((line) => line.item.type == StoreMockItemType.service);
   }
 }
 

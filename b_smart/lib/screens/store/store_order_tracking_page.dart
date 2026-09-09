@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'shared/store_shared_widgets.dart';
+import 'store_models.dart';
 import 'store_theme.dart';
 
 class StoreOrderTrackingListPage extends StatelessWidget {
@@ -15,6 +16,7 @@ class StoreOrderTrackingListPage extends StatelessWidget {
       eta: '2:30-3:15 PM',
       imageAsset: 'assets/bSmart_Store/mockimages/vegetables.jpg',
       currentStep: 2,
+      isService: false,
       courierName: 'Jordan Lee',
       courierRating: '4.9',
       courierDeliveries: '128 deliveries',
@@ -26,6 +28,7 @@ class StoreOrderTrackingListPage extends StatelessWidget {
       eta: 'Tomorrow, 11:00 AM',
       imageAsset: 'assets/bSmart_Store/mockimages/clothes.jpg',
       currentStep: 1,
+      isService: false,
       courierName: 'Aarav Mehta',
       courierRating: '4.8',
       courierDeliveries: '96 deliveries',
@@ -37,6 +40,7 @@ class StoreOrderTrackingListPage extends StatelessWidget {
       eta: 'Sep 10, 4:00 PM',
       imageAsset: 'assets/bSmart_Store/mockimages/electronics.jpg',
       currentStep: 0,
+      isService: false,
       courierName: 'Nina Carter',
       courierRating: '4.7',
       courierDeliveries: '214 deliveries',
@@ -62,10 +66,24 @@ class StoreOrderTrackingListPage extends StatelessWidget {
             children: [
               const _StorePageHeader(title: 'Tracking Order'),
               const SizedBox(height: 12),
-              for (final order in _orders) ...[
-                _TrackingOrderCard(order: order),
-                const SizedBox(height: 10),
-              ],
+              AnimatedBuilder(
+                animation: StoreMockState.instance,
+                builder: (context, _) {
+                  final liveOrders = StoreMockState.instance.orders
+                      .map(_TrackingOrder.fromMockOrder)
+                      .toList();
+                  final visibleOrders =
+                      liveOrders.isEmpty ? _orders : liveOrders;
+                  return Column(
+                    children: [
+                      for (final order in visibleOrders) ...[
+                        _TrackingOrderCard(order: order),
+                        const SizedBox(height: 10),
+                      ],
+                    ],
+                  );
+                },
+              ),
             ],
           ),
         ),
@@ -102,7 +120,7 @@ class _StoreOrderTrackingDetailPage extends StatelessWidget {
               const SizedBox(height: 12),
               _ArrivalCard(order: order),
               const SizedBox(height: 10),
-              const _TrackingMapCard(),
+              _TrackingMapCard(isService: order.isService),
               const SizedBox(height: 10),
               _TimelineCard(order: order),
               const SizedBox(height: 10),
@@ -124,6 +142,7 @@ class _TrackingOrder {
   final String eta;
   final String imageAsset;
   final int currentStep;
+  final bool isService;
   final String courierName;
   final String courierRating;
   final String courierDeliveries;
@@ -135,10 +154,34 @@ class _TrackingOrder {
     required this.eta,
     required this.imageAsset,
     required this.currentStep,
+    required this.isService,
     required this.courierName,
     required this.courierRating,
     required this.courierDeliveries,
   });
+
+  factory _TrackingOrder.fromMockOrder(StoreMockOrder order) {
+    final firstLine = order.lines.isEmpty ? null : order.lines.first;
+    final hasService =
+        order.lines.any((line) => line.item.type == StoreMockItemType.service);
+    return _TrackingOrder(
+      id: order.id,
+      title: firstLine == null
+          ? 'Store order'
+          : order.lines.length == 1
+              ? firstLine.item.title
+              : '${firstLine.item.title} + ${order.lines.length - 1} more',
+      status: hasService ? 'Request confirmed' : 'Order confirmed',
+      eta: hasService ? 'Awaiting provider' : 'Sep 10, 4:00 PM',
+      imageAsset: firstLine?.item.imageAsset ??
+          'assets/bSmart_Store/mockimages/vegetables.jpg',
+      currentStep: 0,
+      isService: hasService,
+      courierName: hasService ? 'Service provider' : 'Nina Carter',
+      courierRating: '4.8',
+      courierDeliveries: hasService ? '52 services' : '214 deliveries',
+    );
+  }
 }
 
 class _StorePageHeader extends StatelessWidget {
@@ -288,8 +331,10 @@ class _ArrivalCard extends StatelessWidget {
               color: BStoreColors.primarySoft,
               shape: BoxShape.circle,
             ),
-            child: const Icon(
-              LucideIcons.package,
+            child: Icon(
+              order.isService
+                  ? LucideIcons.briefcaseBusiness
+                  : LucideIcons.package,
               color: BStoreColors.primary,
               size: 30,
             ),
@@ -332,7 +377,9 @@ class _ArrivalCard extends StatelessWidget {
 }
 
 class _TrackingMapCard extends StatelessWidget {
-  const _TrackingMapCard();
+  final bool isService;
+
+  const _TrackingMapCard({required this.isService});
 
   @override
   Widget build(BuildContext context) {
@@ -342,14 +389,18 @@ class _TrackingMapCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: CustomPaint(
         painter: _TrackingMapPainter(),
-        child: const Stack(
+        child: Stack(
           children: [
             Positioned(
               left: 70,
               top: 58,
-              child: _MapPin(icon: LucideIcons.package),
+              child: _MapPin(
+                icon: isService
+                    ? LucideIcons.briefcaseBusiness
+                    : LucideIcons.package,
+              ),
             ),
-            Positioned(
+            const Positioned(
               right: 42,
               top: 36,
               child: _MapPin(icon: LucideIcons.house),
@@ -466,8 +517,16 @@ class _TimelineCard extends StatelessWidget {
     ('Delivered', 'Upcoming'),
   ];
 
+  static const _serviceSteps = [
+    ('Request confirmed', '9:12 AM'),
+    ('Provider assigned', '10:03 AM'),
+    ('Service scheduled', 'Upcoming'),
+    ('Completed', 'Upcoming'),
+  ];
+
   @override
   Widget build(BuildContext context) {
+    final steps = order.isService ? _serviceSteps : _steps;
     return Container(
       padding: const EdgeInsets.fromLTRB(15, 14, 15, 14),
       decoration: BStoreDecorations.card(radius: 14),
@@ -491,13 +550,13 @@ class _TimelineCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 13),
-          for (var i = 0; i < _steps.length; i++)
+          for (var i = 0; i < steps.length; i++)
             _TimelineStep(
-              title: _steps[i].$1,
-              time: i <= order.currentStep ? _steps[i].$2 : 'Upcoming',
+              title: steps[i].$1,
+              time: i <= order.currentStep ? steps[i].$2 : 'Upcoming',
               isComplete: i < order.currentStep,
               isCurrent: i == order.currentStep,
-              showLine: i != _steps.length - 1,
+              showLine: i != steps.length - 1,
             ),
         ],
       ),
@@ -608,9 +667,9 @@ class _CourierCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Your courier',
-            style: TextStyle(
+          Text(
+            order.isService ? 'Your provider' : 'Your courier',
+            style: const TextStyle(
               color: BStoreColors.textPrimary,
               fontSize: 14.5,
               fontWeight: FontWeight.w900,

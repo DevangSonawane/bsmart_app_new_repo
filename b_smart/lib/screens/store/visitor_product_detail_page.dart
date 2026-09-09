@@ -6,29 +6,25 @@ import '../../services/supabase_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
+import 'store_models.dart';
 import 'store_theme.dart';
 import 'visitor_product_reviews_page.dart';
 import 'visitor_store_cart_page.dart';
 
 class VisitorProductDetailData {
-  final String imageAsset;
-  final String title;
-  final String price;
-  final String rating;
-  final String reviews;
-  final String category;
-  final String description;
+  final StoreMockCatalogItem item;
 
   const VisitorProductDetailData({
-    required this.imageAsset,
-    required this.title,
-    required this.price,
-    required this.rating,
-    required this.reviews,
-    this.category = 'Home & Living',
-    this.description =
-        'A complete set of reusable, plant-friendly cleaning essentials for a naturally fresh home.',
+    required this.item,
   });
+
+  String get imageAsset => item.imageAsset;
+  String get title => item.title;
+  String get price => item.priceLabel;
+  String get rating => item.rating;
+  String get reviews => item.reviews;
+  String get category => item.category;
+  String get description => item.description;
 }
 
 class VisitorProductDetailPage extends StatefulWidget {
@@ -54,6 +50,26 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
   void initState() {
     super.initState();
     _ownerFuture = _loadOwner();
+    final cartQuantity =
+        StoreMockState.instance.quantityFor(widget.product.item.id);
+    if (cartQuantity > 0) {
+      _quantity = cartQuantity;
+    }
+    StoreMockState.instance.addListener(_syncQuantityFromCart);
+  }
+
+  @override
+  void dispose() {
+    StoreMockState.instance.removeListener(_syncQuantityFromCart);
+    super.dispose();
+  }
+
+  void _syncQuantityFromCart() {
+    final cartQuantity =
+        StoreMockState.instance.quantityFor(widget.product.item.id);
+    final nextQuantity = cartQuantity > 0 ? cartQuantity : 1;
+    if (!mounted || nextQuantity == _quantity) return;
+    setState(() => _quantity = nextQuantity);
   }
 
   Future<_ProductOwner?> _loadOwner() async {
@@ -113,6 +129,26 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
         builder: (_) => VisitorStoreCartScreen(ownerUserId: widget.ownerUserId),
       ),
     );
+  }
+
+  void _addToCart({required bool openCart}) {
+    final product = widget.product;
+    StoreMockState.instance.setCartQuantity(product.item, _quantity);
+    if (openCart) {
+      _openCart();
+      return;
+    }
+  }
+
+  void _setQuantity(int quantity) {
+    final nextQuantity = quantity.clamp(1, 99);
+    setState(() => _quantity = nextQuantity);
+    if (StoreMockState.instance.quantityFor(widget.product.item.id) > 0) {
+      StoreMockState.instance.setCartQuantity(
+        widget.product.item,
+        nextQuantity,
+      );
+    }
   }
 
   void _openReviews() {
@@ -226,8 +262,8 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                         quantity: _quantity,
                         onMinus: _quantity <= 1
                             ? null
-                            : () => setState(() => _quantity--),
-                        onPlus: () => setState(() => _quantity++),
+                            : () => _setQuantity(_quantity - 1),
+                        onPlus: () => _setQuantity(_quantity + 1),
                       ),
                     ],
                   ),
@@ -242,8 +278,8 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                 right: 0,
                 bottom: 0,
                 child: _ProductBottomActions(
-                  onAddToCart: _openCart,
-                  onBuyNow: _openCart,
+                  onAddToCart: () => _addToCart(openCart: false),
+                  onBuyNow: () => _addToCart(openCart: true),
                 ),
               ),
             ],
@@ -289,14 +325,17 @@ class _ProductTopBar extends StatelessWidget {
           const Center(child: StoreBsmartWordmark()),
           Align(
             alignment: Alignment.centerRight,
-            child: IconButton(
-              onPressed: onCart,
-              icon: Badge.count(
-                count: 2,
-                backgroundColor: BStoreColors.primary,
-                child: const Icon(LucideIcons.shoppingCart, size: 26),
+            child: AnimatedBuilder(
+              animation: StoreMockState.instance,
+              builder: (context, _) => IconButton(
+                onPressed: onCart,
+                icon: Badge.count(
+                  count: StoreMockState.instance.cartCount,
+                  backgroundColor: BStoreColors.primary,
+                  child: const Icon(LucideIcons.shoppingCart, size: 26),
+                ),
+                color: BStoreColors.textPrimary,
               ),
-              color: BStoreColors.textPrimary,
             ),
           ),
         ],

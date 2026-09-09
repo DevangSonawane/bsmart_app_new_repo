@@ -6,33 +6,28 @@ import '../../services/supabase_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
+import 'store_models.dart';
 import 'visitor_service_booking_flow_page.dart';
 
 class VisitorServiceDetailPage extends StatefulWidget {
   final String? ownerUserId;
-  final String imageAsset;
-  final String category;
-  final String title;
-  final String description;
-  final String duration;
-  final String price;
-  final String rating;
-  final String reviews;
-  final IconData methodIcon;
+  final StoreMockCatalogItem item;
 
   const VisitorServiceDetailPage({
     super.key,
     required this.ownerUserId,
-    required this.imageAsset,
-    required this.category,
-    required this.title,
-    required this.description,
-    required this.duration,
-    required this.price,
-    required this.rating,
-    required this.reviews,
-    required this.methodIcon,
+    required this.item,
   });
+
+  String get imageAsset => item.imageAsset;
+  String get category => item.category;
+  String get title => item.title;
+  String get description => item.description;
+  String get duration => item.duration;
+  String get price => item.priceLabel;
+  String get rating => item.rating;
+  String get reviews => item.reviews;
+  IconData get methodIcon => item.icon;
 
   @override
   State<VisitorServiceDetailPage> createState() =>
@@ -783,10 +778,7 @@ class _AvailabilityButton extends StatelessWidget {
               MaterialPageRoute(
                 builder: (_) => VisitorServiceBookingFlowPage(
                   ownerUserId: service.ownerUserId,
-                  imageAsset: service.imageAsset,
-                  title: service.title,
-                  duration: service.duration,
-                  price: service.price,
+                  item: service.item,
                 ),
               ),
             );

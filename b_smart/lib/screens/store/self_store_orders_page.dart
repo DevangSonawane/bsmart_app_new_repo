@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'shared/store_shared_widgets.dart';
+import 'store_models.dart';
 
 class SelfStoreOrdersPage extends StatefulWidget {
   const SelfStoreOrdersPage({super.key});
@@ -12,114 +13,14 @@ class SelfStoreOrdersPage extends StatefulWidget {
 
 enum _OrderManagerPage { list, details, fulfill }
 
-enum _SelfOrderStatus { newOrder, processing, shipped, completed }
-
-class _SelfOrder {
-  final String id;
-  final String customerName;
-  final String customerInitials;
-  final Color avatarColor;
-  final String amount;
-  final int itemCount;
-  final _SelfOrderStatus status;
-  final List<_SelfOrderProduct> products;
-  final String address;
-
-  const _SelfOrder({
-    required this.id,
-    required this.customerName,
-    required this.customerInitials,
-    required this.avatarColor,
-    required this.amount,
-    required this.itemCount,
-    required this.status,
-    required this.products,
-    required this.address,
-  });
-}
-
-class _SelfOrderProduct {
-  final String name;
-  final String price;
-  final String imageAsset;
-
-  const _SelfOrderProduct({
-    required this.name,
-    required this.price,
-    required this.imageAsset,
-  });
-}
+typedef _SelfOrderStatus = StoreMockOrderStatus;
+typedef _SelfOrder = StoreMockOrder;
+typedef _SelfOrderProduct = StoreMockCartLine;
 
 class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
   _OrderManagerPage _page = _OrderManagerPage.list;
-  _SelfOrderStatus _selectedStatus = _SelfOrderStatus.newOrder;
-  _SelfOrder _selectedOrder = _orders.first;
-
-  static const _orders = [
-    _SelfOrder(
-      id: 'BS10482',
-      customerName: 'Emily Carter',
-      customerInitials: 'EC',
-      avatarColor: Color(0xFFEAD8CC),
-      amount: r'$39.99',
-      itemCount: 2,
-      status: _SelfOrderStatus.newOrder,
-      address:
-          'Emily Carter\n123 Greenway St.\nPortland, OR 97201\nUnited States',
-      products: [
-        _SelfOrderProduct(
-          name: 'Eco Cleaning Kit',
-          price: r'$24.99',
-          imageAsset: 'assets/bSmart_Store/mockimages/vegetables.jpg',
-        ),
-        _SelfOrderProduct(
-          name: 'Handmade Notebook',
-          price: r'$15.00',
-          imageAsset: 'assets/bSmart_Store/mockimages/clothes.jpg',
-        ),
-      ],
-    ),
-    _SelfOrder(
-      id: 'BS10481',
-      customerName: 'Ryan Kim',
-      customerInitials: 'RK',
-      avatarColor: Color(0xFFD9E8F2),
-      amount: r'$32.00',
-      itemCount: 1,
-      status: _SelfOrderStatus.newOrder,
-      address: 'Ryan Kim\n45 Market Street\nSeattle, WA 98101\nUnited States',
-      products: [
-        _SelfOrderProduct(
-          name: 'Aroma Diffuser',
-          price: r'$32.00',
-          imageAsset: 'assets/bSmart_Store/mockimages/electronics.jpg',
-        ),
-      ],
-    ),
-    _SelfOrder(
-      id: 'BS10479',
-      customerName: 'Sophie Williams',
-      customerInitials: 'SW',
-      avatarColor: Color(0xFFEBD8C8),
-      amount: r'$50.00',
-      itemCount: 2,
-      status: _SelfOrderStatus.newOrder,
-      address:
-          'Sophie Williams\n88 Lake Avenue\nAustin, TX 78701\nUnited States',
-      products: [
-        _SelfOrderProduct(
-          name: 'Scented Candle',
-          price: r'$35.00',
-          imageAsset: 'assets/bSmart_Store/mockimages/vegetables.jpg',
-        ),
-        _SelfOrderProduct(
-          name: 'Handmade Notebook',
-          price: r'$15.00',
-          imageAsset: 'assets/bSmart_Store/mockimages/clothes.jpg',
-        ),
-      ],
-    ),
-  ];
+  _SelfOrderStatus _selectedStatus = StoreMockOrderStatus.newOrder;
+  _SelfOrder _selectedOrder = StoreMockState.instance.orders.first;
 
   @override
   Widget build(BuildContext context) {
@@ -131,8 +32,9 @@ class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
   }
 
   Widget _buildListPage() {
-    final filteredOrders =
-        _orders.where((order) => order.status == _selectedStatus).toList();
+    final filteredOrders = StoreMockState.instance.orders
+        .where((order) => order.status == _selectedStatus)
+        .toList();
     return SliverList.list(
       children: [
         const _OrdersTopBar(showBack: false, title: 'Orders'),
@@ -304,10 +206,10 @@ class _OrderStatusTabs extends StatelessWidget {
   });
 
   static const _tabs = [
-    (_SelfOrderStatus.newOrder, 'New'),
-    (_SelfOrderStatus.processing, 'Processing'),
-    (_SelfOrderStatus.shipped, 'Shipped'),
-    (_SelfOrderStatus.completed, 'Completed'),
+    (StoreMockOrderStatus.newOrder, 'New'),
+    (StoreMockOrderStatus.processing, 'Processing'),
+    (StoreMockOrderStatus.shipped, 'Shipped'),
+    (StoreMockOrderStatus.completed, 'Completed'),
   ];
 
   @override
@@ -434,7 +336,7 @@ class _OrderSummaryCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      order.amount,
+                      StoreMockState.instance.money(order.paidAmount),
                       style: const TextStyle(
                         color: Color(0xFF060D35),
                         fontSize: 14,
@@ -453,8 +355,8 @@ class _OrderSummaryCard extends StatelessWidget {
               child: Row(
                 children: [
                   const SizedBox(width: 72),
-                  for (final product in order.products.take(3)) ...[
-                    StoreProductThumb(asset: product.imageAsset, size: 58),
+                  for (final line in order.lines.take(3)) ...[
+                    StoreProductThumb(asset: line.item.imageAsset, size: 58),
                     const SizedBox(width: 8),
                   ],
                 ],
@@ -542,7 +444,7 @@ class _OrderDetailsCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        order.amount,
+                        StoreMockState.instance.money(order.paidAmount),
                         style: const TextStyle(
                           color: Color(0xFF060D35),
                           fontSize: 15,
@@ -557,8 +459,7 @@ class _OrderDetailsCard extends StatelessWidget {
               ),
             ),
             const Divider(height: 1, color: Color(0xFFE9ECEF)),
-            for (final product in order.products)
-              _OrderProductRow(product: product),
+            for (final line in order.lines) _OrderProductRow(product: line),
             const Divider(height: 1, color: Color(0xFFE9ECEF)),
             _InfoRow(
               icon: LucideIcons.mapPin,
@@ -569,21 +470,22 @@ class _OrderDetailsCard extends StatelessWidget {
             _MoneyRow(
               icon: LucideIcons.creditCard,
               label: 'Payment received',
-              value: order.amount,
+              value: StoreMockState.instance.money(order.paidAmount),
             ),
             const Divider(height: 1, color: Color(0xFFE9ECEF)),
-            const _MoneyRow(
+            _MoneyRow(
               icon: LucideIcons.badgePercent,
               label: 'bCoins discount',
-              value: r'-$4.00',
-              valueColor: Color(0xFF684AC8),
+              value: '-${StoreMockState.instance.money(order.bCoinsSavings)}',
+              valueColor: const Color(0xFF684AC8),
             ),
             const Divider(height: 1, color: Color(0xFFE9ECEF)),
-            const _MoneyRow(
+            _MoneyRow(
               icon: LucideIcons.circleDollarSign,
               label: 'Your earnings',
-              value: r'$35.99',
-              valueColor: Color(0xFF078D92),
+              value: StoreMockState.instance
+                  .money(order.paidAmount - order.bCoinsSavings),
+              valueColor: const Color(0xFF078D92),
             ),
           ],
         ),
@@ -603,11 +505,11 @@ class _OrderProductRow extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: Row(
         children: [
-          StoreProductThumb(asset: product.imageAsset, size: 74),
+          StoreProductThumb(asset: product.item.imageAsset, size: 74),
           const SizedBox(width: 14),
           Expanded(
             child: Text(
-              product.name,
+              product.item.title,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
@@ -622,7 +524,7 @@ class _OrderProductRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                product.price,
+                StoreMockState.instance.money(product.item.price),
                 style: const TextStyle(
                   color: Color(0xFF060D35),
                   fontSize: 13,
@@ -630,9 +532,9 @@ class _OrderProductRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 10),
-              const Text(
-                'Qty: 1',
-                style: TextStyle(
+              Text(
+                'Qty: ${product.quantity}',
+                style: const TextStyle(
                   color: Color(0xFF29304D),
                   fontSize: 11,
                   fontWeight: FontWeight.w700,

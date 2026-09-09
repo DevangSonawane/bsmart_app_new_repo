@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../api/users_api.dart';
 import '../../../services/auth/auth_service.dart';
+import '../store_order_tracking_page.dart';
 
 class StoreAccountTab extends StatefulWidget {
   const StoreAccountTab({super.key});
@@ -148,30 +149,40 @@ class _StoreAccountTabState extends State<StoreAccountTab> {
           ),
           itemBuilder: (_, index) {
             final action = actions[index];
-            return Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(5),
-                border: Border.all(color: const Color(0xFFD8D8D8)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(action.$1, color: const Color(0xFF2A62DC), size: 20),
-                  const SizedBox(width: 10),
-                  Flexible(
-                    child: Text(
-                      action.$2,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.black87,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
+            return InkWell(
+              onTap: action.$2 == 'Orders'
+                  ? () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const StoreOrderTrackingListPage(),
+                        ),
+                      )
+                  : null,
+              borderRadius: BorderRadius.circular(5),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(color: const Color(0xFFD8D8D8)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(action.$1, color: const Color(0xFF2A62DC), size: 20),
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Text(
+                        action.$2,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.black87,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },

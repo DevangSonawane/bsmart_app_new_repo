@@ -7,17 +7,24 @@ import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_bcoins_page.dart';
+import 'store_models.dart';
 import 'store_theme.dart';
 import 'visitor_product_payment_page.dart';
 
 class VisitorStoreCartPage extends StatefulWidget {
   final String? ownerUserId;
   final bool showBackButton;
+  final bool showContinueShopping;
+  final void Function(BuildContext context)? onBack;
+  final void Function(BuildContext context)? onContinueShopping;
 
   const VisitorStoreCartPage({
     super.key,
     this.ownerUserId,
     this.showBackButton = false,
+    this.showContinueShopping = false,
+    this.onBack,
+    this.onContinueShopping,
   });
 
   @override
@@ -25,15 +32,22 @@ class VisitorStoreCartPage extends StatefulWidget {
 }
 
 class _VisitorStoreCartPageState extends State<VisitorStoreCartPage> {
-  static const double _subtotal = 39.99;
-
   late Future<_CartOwner?> _ownerFuture;
   StoreBCoinsResult? _bCoinsResult;
+  double _lastSubtotal = 0;
 
   @override
   void initState() {
     super.initState();
     _ownerFuture = _loadOwner();
+    _lastSubtotal = StoreMockState.instance.subtotal;
+    StoreMockState.instance.addListener(_handleCartChanged);
+  }
+
+  @override
+  void dispose() {
+    StoreMockState.instance.removeListener(_handleCartChanged);
+    super.dispose();
   }
 
   @override
@@ -99,7 +113,18 @@ class _VisitorStoreCartPageState extends State<VisitorStoreCartPage> {
       .clamp(0, _subtotal)
       .toDouble();
 
+  double get _subtotal => StoreMockState.instance.subtotal;
+
   String _money(double amount) => '\$${amount.toStringAsFixed(2)}';
+
+  void _handleCartChanged() {
+    final subtotal = StoreMockState.instance.subtotal;
+    final shouldResetBCoins =
+        _bCoinsResult != null && subtotal != _lastSubtotal;
+    _lastSubtotal = subtotal;
+    if (!mounted || !shouldResetBCoins) return;
+    setState(() => _bCoinsResult = null);
+  }
 
   Future<void> _openBCoins() async {
     final result = await Navigator.of(context).push<StoreBCoinsResult>(
@@ -112,56 +137,104 @@ class _VisitorStoreCartPageState extends State<VisitorStoreCartPage> {
       ),
     );
     if (result == null || !mounted) return;
-    setState(() => _bCoinsResult = result);
+    setState(() {
+      _lastSubtotal = _subtotal;
+      _bCoinsResult = result;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return SliverList.list(
-      children: [
-        _CartHeader(showBackButton: widget.showBackButton),
-        const _SelectionCard(),
-        FutureBuilder<_CartOwner?>(
-          future: _ownerFuture,
-          builder: (context, snapshot) {
-            return _CartStoreCard(
-              owner: snapshot.data,
-              isLoading: snapshot.connectionState != ConnectionState.done,
-            );
-          },
-        ),
-        const _CartItemCard(
-          imageAsset: 'assets/bSmart_Store/mockimages/vegetables.jpg',
-          title: 'Eco Cleaning Kit',
-          price: r'$24.99',
-        ),
-        const SizedBox(height: 10),
-        const _CartItemCard(
-          imageAsset: 'assets/bSmart_Store/mockimages/clothes.jpg',
-          title: 'Handmade Notebook',
-          price: r'$15.00',
-        ),
-        const _DeliveryCard(),
-        _BCoinsCard(
-          appliedCoins: _bCoinsResult?.coinsApplied ?? 0,
-          savings: _bCoinsResult?.savings ?? 0,
-          onTap: _openBCoins,
-        ),
-        _CartTotalsCard(
-          subtotal: _money(_subtotal),
-          savings: _bCoinsResult?.savings ?? 0,
-          total: _money(_total),
-        ),
-        _CheckoutButton(amount: _money(_total)),
-      ],
+    return SliverToBoxAdapter(
+      child: AnimatedBuilder(
+        animation: StoreMockState.instance,
+        builder: (context, _) {
+          final cartLines = StoreMockState.instance.cartLines;
+          final hasProducts = cartLines.any(
+            (line) => line.item.type == StoreMockItemType.product,
+          );
+          final hasServices = cartLines.any(
+            (line) => line.item.type == StoreMockItemType.service,
+          );
+          return Column(
+            children: [
+              _CartHeader(
+                showBackButton: widget.showBackButton,
+                onBack: widget.onBack,
+              ),
+              if (cartLines.isNotEmpty)
+                _SelectionCard(itemCount: StoreMockState.instance.cartCount),
+              FutureBuilder<_CartOwner?>(
+                future: _ownerFuture,
+                builder: (context, snapshot) {
+                  return _CartStoreCard(
+                    owner: snapshot.data,
+                    isLoading: snapshot.connectionState != ConnectionState.done,
+                  );
+                },
+              ),
+              if (cartLines.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(10, 18, 10, 0),
+                  child: StoreEmptyState(
+                    icon: LucideIcons.shoppingCart,
+                    title: 'Your cart is empty',
+                    body: 'Products and services you add will appear here.',
+                  ),
+                )
+              else ...[
+                for (final line in cartLines) _CartItemCard(line: line),
+                _DeliveryCard(
+                  hasProducts: hasProducts,
+                  hasServices: hasServices,
+                ),
+                _BCoinsCard(
+                  appliedCoins: _bCoinsResult?.coinsApplied ?? 0,
+                  savings: _bCoinsResult?.savings ?? 0,
+                  onTap: _openBCoins,
+                ),
+                _CartTotalsCard(
+                  subtotal: _money(_subtotal),
+                  savings: _bCoinsResult?.savings ?? 0,
+                  total: _money(_total),
+                ),
+                _CheckoutButton(
+                  amount: _money(_total),
+                  bCoinsSavings: _bCoinsResult?.savings ?? 0,
+                ),
+                if (widget.showContinueShopping)
+                  _ContinueShoppingButton(
+                    onPressed: () {
+                      final onContinueShopping = widget.onContinueShopping;
+                      if (onContinueShopping != null) {
+                        onContinueShopping(context);
+                      } else {
+                        Navigator.of(context).maybePop();
+                      }
+                    },
+                  ),
+              ],
+            ],
+          );
+        },
+      ),
     );
   }
 }
 
 class VisitorStoreCartScreen extends StatelessWidget {
   final String? ownerUserId;
+  final bool showContinueShopping;
+  final void Function(BuildContext context)? onBack;
+  final void Function(BuildContext context)? onContinueShopping;
 
-  const VisitorStoreCartScreen({super.key, this.ownerUserId});
+  const VisitorStoreCartScreen({
+    super.key,
+    this.ownerUserId,
+    this.showContinueShopping = false,
+    this.onBack,
+    this.onContinueShopping,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -175,6 +248,9 @@ class VisitorStoreCartScreen extends StatelessWidget {
             VisitorStoreCartPage(
               ownerUserId: ownerUserId,
               showBackButton: true,
+              showContinueShopping: showContinueShopping,
+              onBack: onBack,
+              onContinueShopping: onContinueShopping,
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 22)),
           ],
@@ -198,8 +274,12 @@ class _CartOwner {
 
 class _CartHeader extends StatelessWidget {
   final bool showBackButton;
+  final void Function(BuildContext context)? onBack;
 
-  const _CartHeader({required this.showBackButton});
+  const _CartHeader({
+    required this.showBackButton,
+    this.onBack,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -221,7 +301,14 @@ class _CartHeader extends StatelessWidget {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: IconButton(
-                      onPressed: () => Navigator.of(context).maybePop(),
+                      onPressed: () {
+                        final onBack = this.onBack;
+                        if (onBack != null) {
+                          onBack(context);
+                        } else {
+                          Navigator.of(context).maybePop();
+                        }
+                      },
                       icon: const Icon(
                         LucideIcons.chevronLeft,
                         color: BStoreColors.textPrimary,
@@ -254,7 +341,9 @@ class _CartHeader extends StatelessWidget {
 }
 
 class _SelectionCard extends StatelessWidget {
-  const _SelectionCard();
+  final int itemCount;
+
+  const _SelectionCard({required this.itemCount});
 
   @override
   Widget build(BuildContext context) {
@@ -268,12 +357,12 @@ class _SelectionCard extends StatelessWidget {
           children: [
             const _CheckedBox(size: 24),
             const SizedBox(width: 12),
-            const Expanded(
+            Expanded(
               child: Text(
-                '2 selected items',
+                '$itemCount selected ${itemCount == 1 ? 'item' : 'items'}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
+                style: const TextStyle(
                   color: BStoreColors.textSecondary,
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
@@ -398,14 +487,10 @@ class _OwnerAvatar extends StatelessWidget {
 }
 
 class _CartItemCard extends StatelessWidget {
-  final String imageAsset;
-  final String title;
-  final String price;
+  final StoreMockCartLine line;
 
   const _CartItemCard({
-    required this.imageAsset,
-    required this.title,
-    required this.price,
+    required this.line,
   });
 
   @override
@@ -423,7 +508,7 @@ class _CartItemCard extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(9),
                   child: Image.asset(
-                    imageAsset,
+                    line.item.imageAsset,
                     width: 116,
                     height: 106,
                     fit: BoxFit.cover,
@@ -442,14 +527,26 @@ class _CartItemCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 8),
+                  Text(
+                    line.item.type == StoreMockItemType.service
+                        ? 'Service${line.schedule == null ? '' : ' • ${line.schedule}'}'
+                        : 'Product',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: BStoreColors.textSecondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: Text(
-                          title,
-                          maxLines: 2,
+                          line.item.title,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: BStoreColors.textPrimary,
@@ -469,7 +566,8 @@ class _CartItemCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    price,
+                    '${StoreMockState.instance.money(line.item.price)}'
+                    '${line.quantity > 1 ? ' x ${line.quantity}' : ''}',
                     style: const TextStyle(
                       color: BStoreColors.primary,
                       fontSize: 15,
@@ -479,16 +577,29 @@ class _CartItemCard extends StatelessWidget {
                   const Spacer(),
                   Row(
                     children: [
-                      const _QuantityStepper(),
+                      _QuantityStepper(
+                        quantity: line.quantity,
+                        onMinus: () => StoreMockState.instance.updateQuantity(
+                          line.item.id,
+                          line.quantity - 1,
+                        ),
+                        onPlus: () => StoreMockState.instance.updateQuantity(
+                          line.item.id,
+                          line.quantity + 1,
+                        ),
+                      ),
                       const Spacer(),
-                      IconButton(
-                        onPressed: () {},
-                        icon: const Icon(LucideIcons.trash2, size: 19),
-                        color: BStoreColors.textPrimary,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 30,
-                          height: 30,
+                      SizedBox.square(
+                        dimension: 30,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () => StoreMockState.instance
+                              .removeFromCart(line.item.id),
+                          child: const Icon(
+                            LucideIcons.trash2,
+                            size: 19,
+                            color: BStoreColors.textPrimary,
+                          ),
                         ),
                       ),
                     ],
@@ -504,7 +615,15 @@ class _CartItemCard extends StatelessWidget {
 }
 
 class _QuantityStepper extends StatelessWidget {
-  const _QuantityStepper();
+  final int quantity;
+  final VoidCallback onMinus;
+  final VoidCallback onPlus;
+
+  const _QuantityStepper({
+    required this.quantity,
+    required this.onMinus,
+    required this.onPlus,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -515,19 +634,33 @@ class _QuantityStepper extends StatelessWidget {
         border: Border.all(color: const Color(0xFFD5DEE4)),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: const Row(
+      child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          Icon(LucideIcons.minus, color: BStoreColors.primary, size: 15),
+          InkWell(
+            onTap: onMinus,
+            child: const Icon(
+              LucideIcons.minus,
+              color: BStoreColors.primary,
+              size: 15,
+            ),
+          ),
           Text(
-            '1',
-            style: TextStyle(
+            '$quantity',
+            style: const TextStyle(
               color: BStoreColors.textPrimary,
               fontSize: 15,
               fontWeight: FontWeight.w900,
             ),
           ),
-          Icon(LucideIcons.plus, color: BStoreColors.primary, size: 16),
+          InkWell(
+            onTap: onPlus,
+            child: const Icon(
+              LucideIcons.plus,
+              color: BStoreColors.primary,
+              size: 16,
+            ),
+          ),
         ],
       ),
     );
@@ -535,7 +668,13 @@ class _QuantityStepper extends StatelessWidget {
 }
 
 class _DeliveryCard extends StatelessWidget {
-  const _DeliveryCard();
+  final bool hasProducts;
+  final bool hasServices;
+
+  const _DeliveryCard({
+    required this.hasProducts,
+    required this.hasServices,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -545,27 +684,39 @@ class _DeliveryCard extends StatelessWidget {
         height: 58,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: storeSoftCardDecoration(radius: 12),
-        child: const Row(
+        child: Row(
           children: [
-            _SoftIconBubble(icon: LucideIcons.truck),
-            SizedBox(width: 12),
+            _SoftIconBubble(
+              icon: hasServices && !hasProducts
+                  ? LucideIcons.calendarCheck
+                  : LucideIcons.truck,
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Delivery',
-                    style: TextStyle(
+                    hasServices && hasProducts
+                        ? 'Delivery & service'
+                        : hasServices
+                            ? 'Service booking'
+                            : 'Delivery',
+                    style: const TextStyle(
                       color: BStoreColors.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  SizedBox(height: 2),
+                  const SizedBox(height: 2),
                   Text(
-                    'Arrives in 2-3 days',
-                    style: TextStyle(
+                    hasServices && hasProducts
+                        ? 'Products ship, services stay scheduled'
+                        : hasServices
+                            ? 'Provider will confirm your selected slot'
+                            : 'Arrives in 2-3 days',
+                    style: const TextStyle(
                       color: BStoreColors.textSecondary,
                       fontSize: 12.5,
                       fontWeight: FontWeight.w600,
@@ -764,8 +915,12 @@ class _TotalRow extends StatelessWidget {
 
 class _CheckoutButton extends StatelessWidget {
   final String amount;
+  final double bCoinsSavings;
 
-  const _CheckoutButton({required this.amount});
+  const _CheckoutButton({
+    required this.amount,
+    required this.bCoinsSavings,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -777,7 +932,10 @@ class _CheckoutButton extends StatelessWidget {
           onPressed: () {
             Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (_) => VisitorProductPaymentPage(amount: amount),
+                builder: (_) => VisitorProductPaymentPage(
+                  amount: amount,
+                  bCoinsSavings: bCoinsSavings,
+                ),
               ),
             );
           },
@@ -790,6 +948,37 @@ class _CheckoutButton extends StatelessWidget {
           ),
           child: const Text(
             'Proceed to Checkout',
+            style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ContinueShoppingButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _ContinueShoppingButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+      child: SizedBox(
+        height: 44,
+        width: double.infinity,
+        child: OutlinedButton(
+          onPressed: onPressed,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: BStoreColors.primary,
+            side: const BorderSide(color: BStoreColors.primary, width: 1.2),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          child: const Text(
+            'Continue shopping',
             style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900),
           ),
         ),
