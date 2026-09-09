@@ -6,7 +6,9 @@ import '../utils/url_helper.dart';
 import '../widgets/post_card.dart';
 import '../widgets/posts_grid.dart';
 import '../widgets/safe_network_image.dart';
+import 'follow_list_screen.dart';
 import 'messaging_screen.dart';
+import 'profile_posts_page.dart';
 
 enum ProfileHomeSection {
   overview,
@@ -654,10 +656,42 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
   }
 
   Widget _statsCard(BuildContext context) {
+    final profileUserId = _profileOwnerUserId();
+    final canOpenFollowLists = profileUserId != null && profileUserId.isNotEmpty;
     final statItems = <_StatItem>[
       _StatItem('Posts', postsCount.toString(), LucideIcons.grid2x2),
-      _StatItem('Followers', _formatCompact(followers), LucideIcons.users),
-      _StatItem('Following', _formatCompact(following), LucideIcons.userRound),
+      _StatItem(
+        'Followers',
+        _formatCompact(followers),
+        LucideIcons.users,
+        onTap: canOpenFollowLists
+            ? () => FollowListScreen.open(
+                  context,
+                  userId: profileUserId,
+                  username: username,
+                  mode: FollowListMode.followers,
+                  isOwnProfile: isMe,
+                  initialFollowersCount: followers,
+                  initialFollowingCount: following,
+                )
+            : null,
+      ),
+      _StatItem(
+        'Following',
+        _formatCompact(following),
+        LucideIcons.userRound,
+        onTap: canOpenFollowLists
+            ? () => FollowListScreen.open(
+                  context,
+                  userId: profileUserId,
+                  username: username,
+                  mode: FollowListMode.following,
+                  isOwnProfile: isMe,
+                  initialFollowersCount: followers,
+                  initialFollowingCount: following,
+                )
+            : null,
+      ),
       _StatItem('Likes', _formatCompact(_likesFallback()), LucideIcons.heart),
     ];
 
@@ -898,7 +932,7 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
       case ProfileContentTab.posts:
         return _buildPostsTab(context, posts);
       case ProfileContentTab.reels:
-        return _buildPostsTab(context, reels, emptyLabel: 'No bSparks yet');
+        return _buildBSparksTab(context);
       case ProfileContentTab.tweets:
         return _buildTweetsTab(context);
       case ProfileContentTab.stories:
@@ -921,15 +955,93 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
             icon: LucideIcons.grid2x2,
           )
         else
-          PostsGrid(
-            posts: items,
-            onTap: (post) {
-              Navigator.of(context).pushNamed('/post/${post.id}');
-            },
+          _PreviewContentBlock(
+            showArrow: items.isNotEmpty,
+            onArrowTap: () => _openAllContent(context, ProfileContentTab.posts),
+            child: PostsGrid(
+              posts: items.take(5).toList(),
+              backgroundColor: Colors.black,
+              onTap: (post) {
+                Navigator.of(context).pushNamed('/post/${post.id}');
+              },
+            ),
           ),
         const SizedBox(height: 18),
         _buildPostsActionCards(context),
       ],
+    );
+  }
+
+  Widget _buildBSparksTab(BuildContext context) {
+    if (reels.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _emptyContentState(
+            title: 'No bSparks yet',
+            subtitle: 'Posts will appear here once they are available.',
+            icon: LucideIcons.clapperboard,
+          ),
+          const SizedBox(height: 18),
+          _buildPostsActionCards(context),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 156,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            clipBehavior: Clip.none,
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            itemCount: reels.length >= 5 ? 6 : reels.length + 1,
+            itemBuilder: (context, index) {
+              if (index >= reels.length || index == 5) {
+                return _PreviewArrowPill(
+                  onTap: () =>
+                      _openAllContent(context, ProfileContentTab.reels),
+                );
+              }
+              final post = reels[index];
+              return _BSparkPreviewPill(
+                post: post,
+                onTap: () =>
+                    Navigator.of(context).pushNamed('/post/${post.id}'),
+              );
+            },
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+          ),
+        ),
+        const SizedBox(height: 18),
+        _buildPostsActionCards(context),
+      ],
+    );
+  }
+
+  void _openAllContent(BuildContext context, ProfileContentTab initialTab) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProfilePostsPage(
+          profile: profile,
+          username: username,
+          fullName: fullName,
+          avatarUrl: avatarUrl,
+          avatarHeaders: avatarHeaders,
+          posts: posts,
+          reels: reels,
+          tweets: tweets,
+          promotes: promotes,
+          isMe: isMe,
+          isValidated: isValidated,
+          initialTab: initialTab.index,
+          onBack: () => Navigator.of(context).maybePop(),
+          onMenu: onMenu,
+        ),
+      ),
     );
   }
 
@@ -1956,12 +2068,186 @@ class _ProfileTabData {
   });
 }
 
+class _PreviewContentBlock extends StatelessWidget {
+  final Widget child;
+  final bool showArrow;
+  final VoidCallback onArrowTap;
+
+  const _PreviewContentBlock({
+    required this.child,
+    required this.showArrow,
+    required this.onArrowTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        child,
+        if (showArrow)
+          Positioned(
+            right: 8,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: _PreviewArrowButton(onTap: onArrowTap),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _PreviewArrowButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _PreviewArrowButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.62),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Container(
+          width: 42,
+          height: 42,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+          ),
+          child: const Icon(
+            LucideIcons.chevronRight,
+            color: Colors.white,
+            size: 24,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PreviewArrowPill extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _PreviewArrowPill({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 78,
+      child: Center(child: _PreviewArrowButton(onTap: onTap)),
+    );
+  }
+}
+
+class _BSparkPreviewPill extends StatelessWidget {
+  final FeedPost post;
+  final VoidCallback onTap;
+
+  const _BSparkPreviewPill({
+    required this.post,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final thumb = _thumbFor(post);
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(26),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          width: 104,
+          height: 156,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (thumb.isNotEmpty)
+                SafeNetworkImage(
+                  url: thumb,
+                  fit: BoxFit.cover,
+                  debugLabel: 'profile-bspark-preview',
+                  placeholder: _placeholder(),
+                  errorWidget: _placeholder(),
+                )
+              else
+                _placeholder(),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: 64,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0),
+                        Colors.black.withValues(alpha: 0.70),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const Positioned(
+                top: 10,
+                right: 10,
+                child: Icon(
+                  LucideIcons.play,
+                  color: Colors.white,
+                  size: 18,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static Widget _placeholder() {
+    return ColoredBox(
+      color: Colors.white.withValues(alpha: 0.06),
+      child: Center(
+        child: Icon(
+          LucideIcons.clapperboard,
+          color: Colors.white.withValues(alpha: 0.48),
+          size: 26,
+        ),
+      ),
+    );
+  }
+
+  static String _thumbFor(FeedPost post) {
+    final raw = post.thumbnailUrl?.trim().isNotEmpty == true
+        ? post.thumbnailUrl!.trim()
+        : post.mediaUrls.isNotEmpty
+            ? post.mediaUrls.first.trim()
+            : '';
+    return UrlHelper.normalizeUrl(raw);
+  }
+}
+
 class _StatItem {
   final String label;
   final String value;
   final IconData icon;
+  final VoidCallback? onTap;
 
-  const _StatItem(this.label, this.value, this.icon);
+  const _StatItem(this.label, this.value, this.icon, {this.onTap});
 }
 
 class _StatTile extends StatelessWidget {
@@ -1971,7 +2257,7 @@ class _StatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    final content = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(item.icon, color: ProfileHomePage._goldSoft, size: 18),
@@ -2008,6 +2294,18 @@ class _StatTile extends StatelessWidget {
           ),
         ),
       ],
+    );
+    if (item.onTap == null) return content;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: item.onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: content,
+        ),
+      ),
     );
   }
 }

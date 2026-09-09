@@ -130,9 +130,13 @@ class _WalletScreenState extends State<WalletScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final scaffoldBg = isDark ? const Color(0xFF0A0A0A) : Colors.white;
-    final appBarBg = isDark ? const Color(0xE60A0A0A) : const Color(0xE6FFFFFF);
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final scaffoldBg =
+        isDark ? const Color(0xFF0A0A0A) : theme.scaffoldBackgroundColor;
+    final appBarBg = isDark
+        ? const Color(0xE60A0A0A)
+        : theme.scaffoldBackgroundColor.withValues(alpha: 0.9);
     final titleColor = isDark ? Colors.white : const Color(0xFF0A0A0A);
     return Scaffold(
       backgroundColor: scaffoldBg,

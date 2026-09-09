@@ -3384,6 +3384,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             avatarHeaders: _reelImageHeaders,
             posts: postsForGrid,
             reels: reelsForGrid,
+            tweets: tweetsForHome,
+            promotes: _promotes,
             isMe: isMe,
             isValidated: isValidated,
             onBack: () => Navigator.of(context)

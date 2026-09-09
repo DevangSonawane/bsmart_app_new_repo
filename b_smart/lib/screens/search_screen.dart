@@ -791,6 +791,7 @@ class _SearchScreenState extends State<SearchScreen> {
         : const <Map<String, dynamic>>[];
 
     return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [

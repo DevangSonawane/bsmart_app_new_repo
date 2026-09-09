@@ -13,8 +13,14 @@ import '../utils/url_helper.dart';
 class PostsGrid extends StatefulWidget {
   final List<FeedPost> posts;
   final void Function(FeedPost) onTap;
+  final Color? backgroundColor;
 
-  const PostsGrid({super.key, required this.posts, required this.onTap});
+  const PostsGrid({
+    super.key,
+    required this.posts,
+    required this.onTap,
+    this.backgroundColor,
+  });
 
   @override
   State<PostsGrid> createState() => _PostsGridState();
@@ -45,9 +51,10 @@ class _PostsGridState extends State<PostsGrid> {
       return const SizedBox.shrink();
     }
     final theme = Theme.of(context);
-    final seamColor = theme.brightness == Brightness.dark
-        ? const Color(0xFF0B0B0C)
-        : const Color(0xFFF3F4F6);
+    final seamColor = widget.backgroundColor ??
+        (theme.brightness == Brightness.dark
+            ? const Color(0xFF0B0B0C)
+            : const Color(0xFFF3F4F6));
 
     return ColoredBox(
       // Helps hide 1px outer seams on some devices.

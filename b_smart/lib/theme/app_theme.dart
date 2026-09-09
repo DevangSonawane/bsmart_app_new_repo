@@ -24,6 +24,8 @@ class AppTheme {
   static const Color _darkTextPrimary = Color(0xFFF5F5F5);
   static const Color _darkTextSecondary = Color(0xFFB3B3B3);
   static const Color _darkTextMuted = Color(0xFF7A7A7A);
+  static const Color _lightBStoreBackground = Color(0xFFFFFCF8);
+  static const Color _lightBStoreBackgroundAlt = Color(0xFFFFFEFC);
 
   static ThemeData get theme => lightTheme();
 
@@ -61,8 +63,9 @@ class AppTheme {
                   secondary: DesignTokens.instaPink,
                 ))
           .copyWith(error: const Color(0xFFE11D48)),
-      scaffoldBackgroundColor: Colors.white,
-      canvasColor: Colors.white,
+      scaffoldBackgroundColor:
+          highContrast ? Colors.white : _lightBStoreBackground,
+      canvasColor: highContrast ? Colors.white : _lightBStoreBackground,
       cardColor: Colors.white,
       dividerColor: borderColor,
       highlightColor: Colors.black.withValues(alpha: 0.03),
@@ -70,7 +73,7 @@ class AppTheme {
       splashFactory: InkRipple.splashFactory,
       appBarTheme: AppBarTheme(
         elevation: 0,
-        backgroundColor: Colors.white,
+        backgroundColor: highContrast ? Colors.white : _lightBStoreBackground,
         foregroundColor: Colors.black,
         surfaceTintColor: Colors.transparent,
         iconTheme: const IconThemeData(color: Colors.black),
@@ -147,7 +150,8 @@ class AppTheme {
         ),
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: Colors.white,
+        backgroundColor:
+            highContrast ? Colors.white : _lightBStoreBackgroundAlt,
         surfaceTintColor: Colors.transparent,
         titleTextStyle: TextStyle(
           color: onSurface,
@@ -164,17 +168,19 @@ class AppTheme {
           borderRadius: BorderRadius.circular(20),
         ),
       ),
-      bottomSheetTheme: const BottomSheetThemeData(
-        backgroundColor: Colors.white,
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor:
+            highContrast ? Colors.white : _lightBStoreBackgroundAlt,
         surfaceTintColor: Colors.transparent,
-        modalBackgroundColor: Colors.white,
+        modalBackgroundColor:
+            highContrast ? Colors.white : _lightBStoreBackgroundAlt,
         elevation: 0,
-        shape: RoundedRectangleBorder(
+        shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
       ),
       popupMenuTheme: PopupMenuThemeData(
-        color: Colors.white,
+        color: highContrast ? Colors.white : _lightBStoreBackgroundAlt,
         surfaceTintColor: Colors.transparent,
         textStyle: TextStyle(color: onSurface),
         shape: RoundedRectangleBorder(
@@ -193,14 +199,14 @@ class AppTheme {
         space: 1,
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: Colors.white,
+        backgroundColor: highContrast ? Colors.white : _lightBStoreBackground,
         selectedItemColor: highContrast ? Colors.black : DesignTokens.instaPink,
         unselectedItemColor: const Color(0xFF6B7280),
         type: BottomNavigationBarType.fixed,
         elevation: 0,
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: Colors.white,
+        backgroundColor: highContrast ? Colors.white : _lightBStoreBackground,
         indicatorColor: (highContrast ? Colors.black : DesignTokens.instaPink)
             .withValues(alpha: 0.16),
         labelTextStyle: WidgetStateProperty.all(

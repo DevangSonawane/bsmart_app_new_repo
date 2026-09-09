@@ -455,7 +455,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? Colors.black : Colors.white,
+      backgroundColor: isDark ? Colors.black : theme.scaffoldBackgroundColor,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async {
@@ -494,7 +494,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final theme = Theme.of(context);
     final border =
         (isDark ? Colors.white : Colors.black).withValues(alpha: 0.08);
-    final bg = isDark ? const Color(0xFF111827) : Colors.white;
+    final bg = isDark ? const Color(0xFF111827) : theme.cardColor;
     final secondary = theme.colorScheme.onSurfaceVariant
         .withValues(alpha: isDark ? 0.9 : 1.0);
     final count = _followRequestsCount;
