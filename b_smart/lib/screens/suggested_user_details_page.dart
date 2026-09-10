@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_card_swiper/flutter_card_swiper.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:just_audio/just_audio.dart';
 
 import '../api/api_client.dart';
 import '../api/chat_api.dart';
@@ -30,10 +31,14 @@ class _SuggestedUserDetailsPageState extends State<SuggestedUserDetailsPage> {
   final ChatApi _chatApi = ChatApi();
   final CardSwiperController _swiperController = CardSwiperController();
   final TextEditingController _searchController = TextEditingController();
+  final AudioPlayer _swipeSoundPlayer = AudioPlayer();
+  final AudioPlayer _followSoundPlayer = AudioPlayer();
 
   bool _loading = true;
   bool _followLoading = false;
   bool _messageLoading = false;
+  bool _soundEffectsReady = false;
+  bool _swipeSoundArmed = true;
   String? _error;
   String? _currentUserId;
   Map<String, String>? _imageHeaders;
@@ -69,13 +74,57 @@ class _SuggestedUserDetailsPageState extends State<SuggestedUserDetailsPage> {
   void dispose() {
     _swiperController.dispose();
     _searchController.dispose();
+    _swipeSoundPlayer.dispose();
+    _followSoundPlayer.dispose();
     super.dispose();
   }
 
   @override
   void initState() {
     super.initState();
+    _initSoundEffects();
     unawaited(_load());
+  }
+
+  Future<void> _initSoundEffects() async {
+    try {
+      await Future.wait([
+        _prepareSoundEffect(
+          _swipeSoundPlayer,
+          'assets/sounds/swoosh-sound-effects.mp3',
+          volume: 0.55,
+        ),
+        _prepareSoundEffect(
+          _followSoundPlayer,
+          'assets/sounds/quick-ting.mp3',
+          volume: 0.45,
+        ),
+      ]);
+      _soundEffectsReady = true;
+    } catch (_) {
+      _soundEffectsReady = false;
+    }
+  }
+
+  Future<void> _prepareSoundEffect(
+    AudioPlayer player,
+    String assetPath, {
+    required double volume,
+  }) async {
+    await player.setVolume(volume);
+    await player.setAsset(assetPath);
+  }
+
+  void _playSoundEffect(AudioPlayer player) {
+    if (!_soundEffectsReady) return;
+    unawaited(() async {
+      try {
+        await player.seek(Duration.zero);
+        unawaited(player.play());
+      } catch (_) {
+        // Sound effects are decorative; never block the main interaction.
+      }
+    }());
   }
 
   Future<void> _load({bool rotateHero = false}) async {
@@ -222,6 +271,7 @@ class _SuggestedUserDetailsPageState extends State<SuggestedUserDetailsPage> {
   Future<void> _followActivePerson() async {
     final person = _activePerson;
     if (person == null || person.isFollowing || _followLoading) return;
+    _playSoundEffect(_followSoundPlayer);
     setState(() => _followLoading = true);
     try {
       await _followsApi.follow(person.id);
@@ -341,9 +391,21 @@ class _SuggestedUserDetailsPageState extends State<SuggestedUserDetailsPage> {
                             imageHeaders: _imageHeaders,
                             onTap: (person) => _openProfile(person.id),
                             onSwipe: (currentIndex) {
+                              _swipeSoundArmed = true;
                               if (!mounted) return;
                               setState(() => _activeCardIndex = currentIndex);
                             },
+                            onUndo: (currentIndex) {
+                              _swipeSoundArmed = true;
+                              if (!mounted) return;
+                              setState(() => _activeCardIndex = currentIndex);
+                            },
+                            onSwipeStarted: () {
+                              if (!_swipeSoundArmed) return;
+                              _swipeSoundArmed = false;
+                              _playSoundEffect(_swipeSoundPlayer);
+                            },
+                            onSwipeReset: () => _swipeSoundArmed = true,
                           )
                         : _EmptyHero(
                             message: _error ??
@@ -520,6 +582,9 @@ class _SuggestionCardSwiper extends StatelessWidget {
   final Map<String, String>? imageHeaders;
   final void Function(_SuggestedUserEntry person) onTap;
   final void Function(int? currentIndex) onSwipe;
+  final void Function(int? currentIndex) onUndo;
+  final VoidCallback onSwipeStarted;
+  final VoidCallback onSwipeReset;
 
   const _SuggestionCardSwiper({
     required this.controller,
@@ -527,6 +592,9 @@ class _SuggestionCardSwiper extends StatelessWidget {
     required this.imageHeaders,
     required this.onTap,
     required this.onSwipe,
+    required this.onUndo,
+    required this.onSwipeStarted,
+    required this.onSwipeReset,
   });
 
   @override
@@ -546,8 +614,18 @@ class _SuggestionCardSwiper extends StatelessWidget {
           return true;
         },
         onUndo: (_, currentIndex, __) {
-          onSwipe(currentIndex);
+          onUndo(currentIndex);
           return true;
+        },
+        onSwipeDirectionChange: (horizontalDirection, verticalDirection) {
+          final hasDirection =
+              horizontalDirection != CardSwiperDirection.none ||
+                  verticalDirection != CardSwiperDirection.none;
+          if (hasDirection) {
+            onSwipeStarted();
+          } else {
+            onSwipeReset();
+          }
         },
         cardBuilder: (
           context,
