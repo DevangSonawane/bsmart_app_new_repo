@@ -10,7 +10,7 @@ const String _kDisableAutoPlayKey = 'disable_auto_play';
 /// Holds appearance preferences and persists them.
 class ThemeNotifier extends ChangeNotifier {
   ThemeNotifier({
-    ThemeMode initialThemeMode = ThemeMode.system,
+    ThemeMode initialThemeMode = ThemeMode.light,
     double initialFontScale = 1.0,
     bool initialHighContrast = false,
     bool initialReduceMotion = false,
@@ -35,7 +35,7 @@ class ThemeNotifier extends ChangeNotifier {
   bool get disableAutoPlay => _disableAutoPlay;
 
   static Future<ThemeNotifier> create() async {
-    final notifier = ThemeNotifier(initialThemeMode: ThemeMode.system);
+    final notifier = ThemeNotifier(initialThemeMode: ThemeMode.light);
     await notifier.hydrateFromPreferences();
     return notifier;
   }
@@ -68,7 +68,7 @@ class ThemeNotifier extends ChangeNotifier {
       case 'dark':
         return ThemeMode.dark;
       default:
-        return ThemeMode.system;
+        return ThemeMode.light;
     }
   }
 

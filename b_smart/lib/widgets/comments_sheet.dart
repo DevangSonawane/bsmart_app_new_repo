@@ -854,15 +854,155 @@ class _CommentsSheetState extends State<CommentsSheet> {
     });
   }
 
+  Future<bool> _confirmDeleteComment() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete comment?'),
+        content: const Text('This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  Future<void> _deleteComment(
+    String commentId, {
+    String? parentId,
+  }) async {
+    final id = commentId.trim();
+    if (id.isEmpty) return;
+
+    final hasToken = await ApiClient().hasToken;
+    if (!hasToken) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to delete comments')),
+      );
+      return;
+    }
+
+    final confirmed = await _confirmDeleteComment();
+    if (!confirmed) return;
+
+    final ok = await _svc.deleteComment(id, isTweet: _isTweet);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to delete comment')),
+      );
+      return;
+    }
+
+    setState(() {
+      final pid = parentId?.trim();
+      if (pid != null && pid.isNotEmpty) {
+        final replies =
+            List<Map<String, dynamic>>.from(_replies[pid] ?? const []);
+        replies.removeWhere((r) => _commentIdOf(r) == id);
+        _replies[pid] = replies;
+        _svc.setRepliesCache(pid, replies);
+
+        final parentIndex = _comments.indexWhere((c) => _commentIdOf(c) == pid);
+        if (parentIndex >= 0) {
+          final parent = Map<String, dynamic>.from(_comments[parentIndex]);
+          final count = _replyCount(parent, pid);
+          parent['replies_count'] = count > 0 ? count - 1 : 0;
+          _comments[parentIndex] = parent;
+        }
+      } else {
+        _comments.removeWhere((c) => _commentIdOf(c) == id);
+        _replies.remove(id);
+        _expandedComments.remove(id);
+        _loadingReplies.remove(id);
+        _dispatchCommentsDelta(-1);
+      }
+      _liked.remove(id);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Comment deleted')),
+    );
+  }
+
+  void _showCommentActions({
+    required String commentId,
+    required bool isMine,
+    String? parentId,
+  }) {
+    if (commentId.isEmpty) return;
+    if (!isMine) {
+      ContentReportSheet.show(
+        context,
+        contentType: 'comment',
+        contentId: commentId,
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text(
+                'Delete',
+                style: TextStyle(color: Colors.red),
+              ),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                unawaited(_deleteComment(commentId, parentId: parentId));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.report_outlined),
+              title: const Text('Report'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                ContentReportSheet.show(
+                  context,
+                  contentType: 'comment',
+                  contentId: commentId,
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _onLongPressComment(Map<String, dynamic> c, bool isMine, int index) {
     final id = _commentIdOf(c);
     if (id.isEmpty) return;
     if (!mounted) return;
-    ContentReportSheet.show(
-      context,
-      contentType: 'comment',
-      contentId: id,
-    );
+    _showCommentActions(commentId: id, isMine: isMine);
   }
 
   void _onLongPressReply(String parentId, int replyIndex, bool isMine) {
@@ -870,11 +1010,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
     final id = reply == null ? '' : _commentIdOf(reply);
     if (id.isEmpty) return;
     if (!mounted) return;
-    ContentReportSheet.show(
-      context,
-      contentType: 'comment',
-      contentId: id,
-    );
+    _showCommentActions(commentId: id, isMine: isMine, parentId: parentId);
   }
 
   String _relative(String dateString) {
@@ -1586,10 +1722,10 @@ class _CommentsSheetState extends State<CommentsSheet> {
                       final hasText = value.text.trim().isNotEmpty;
                       return TextButton(
                         onPressed: _posting || !hasText ? null : _postComment,
-                        child: Text(
+                        child: const Text(
                           'Post',
                           style: TextStyle(
-                            color: const Color(0xFF3B82F6),
+                            color: Color(0xFF3B82F6),
                             fontWeight: FontWeight.w600,
                           ),
                         ),

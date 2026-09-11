@@ -253,7 +253,7 @@ void main() async {
     final store = createStore();
     setGlobalStore(store);
 
-    final themeNotifier = ThemeNotifier(initialThemeMode: ThemeMode.system);
+    final themeNotifier = ThemeNotifier(initialThemeMode: ThemeMode.light);
     final contentPreferencesNotifier = ContentPreferencesNotifier();
     final storagePreferencesNotifier = StoragePreferencesNotifier();
 
