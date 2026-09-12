@@ -25,6 +25,12 @@ val hasReleaseSigningConfig = listOf(
     releaseStorePassword,
 ).all { !it.isNullOrBlank() }
 
+if (!hasReleaseSigningConfig && gradle.startParameter.taskNames.any { it.contains("Release") }) {
+    throw GradleException(
+        "Release signing is missing. Add android/key.properties with keyAlias, keyPassword, storeFile, and storePassword before building a release AAB.",
+    )
+}
+
 android {
     namespace = "com.ruvees.bsmart"
     compileSdk = flutter.compileSdkVersion

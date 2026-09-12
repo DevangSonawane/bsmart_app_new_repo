@@ -2134,6 +2134,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     final muted = cs.onSurface.withValues(alpha: 0.70);
     final hint = cs.onSurface.withValues(alpha: 0.55);
     final bg = cs.onSurface.withValues(alpha: 0.08);
+    const composerAccent = Color(0xFF3B82F6);
     final canSend = _inputController.text.trim().isNotEmpty;
     final messagingBlocked = _messagingPrivacyBlocked();
     final messagingBlockedText = _messagingPrivacyBlockedText();
@@ -2238,116 +2239,130 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             ),
           ),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Color(0xFF3B82F6),
-              ),
-              child: IconButton(
-                onPressed: (_uploadingMedia || messagingBlocked)
-                    ? null
-                    : () => _pickAndSendImages(fromCamera: true),
-                icon: const Icon(
-                  LucideIcons.camera,
-                  size: 20,
-                  color: Colors.white,
+            if (!canSend) ...[
+              Container(
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFF3B82F6),
+                ),
+                child: IconButton(
+                  onPressed: (_uploadingMedia || messagingBlocked)
+                      ? null
+                      : () => _pickAndSendImages(fromCamera: true),
+                  icon: const Icon(
+                    LucideIcons.camera,
+                    size: 20,
+                    color: Colors.white,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 4),
+              const SizedBox(width: 4),
+            ],
             Expanded(
               child: Container(
-                height: 42,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+                constraints: const BoxConstraints(minHeight: 42),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: bg,
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(21),
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Expanded(
-                      child: TextField(
-                        controller: _inputController,
-                        focusNode: _inputFocusNode,
-                        enabled: !messagingBlocked,
-                        textInputAction: TextInputAction.send,
-                        onSubmitted: (_) => _send(),
-                        style: TextStyle(color: cs.onSurface),
-                        cursorColor: cs.primary,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          border: InputBorder.none,
-                          hintText: 'Message…',
-                          hintStyle: TextStyle(color: hint),
+                      child: TextSelectionTheme(
+                        data: TextSelectionThemeData(
+                          cursorColor: composerAccent,
+                          selectionColor:
+                              composerAccent.withValues(alpha: 0.22),
+                          selectionHandleColor: composerAccent,
+                        ),
+                        child: TextField(
+                          controller: _inputController,
+                          focusNode: _inputFocusNode,
+                          enabled: !messagingBlocked,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) => _send(),
+                          keyboardType: TextInputType.multiline,
+                          minLines: 1,
+                          maxLines: 5,
+                          style: TextStyle(color: cs.onSurface),
+                          cursorColor: composerAccent,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            filled: false,
+                            contentPadding:
+                                const EdgeInsets.symmetric(vertical: 8),
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
+                            errorBorder: InputBorder.none,
+                            focusedErrorBorder: InputBorder.none,
+                            hintText: 'Message…',
+                            hintStyle: TextStyle(color: hint),
+                          ),
                         ),
                       ),
                     ),
-                    IconButton(
-                      onPressed: messagingBlocked
-                          ? null
-                          : () {
-                              showModalBottomSheet(
-                                context: context,
-                                isScrollControlled: true,
-                                backgroundColor: Colors.transparent,
-                                barrierColor: Colors.black54,
-                                builder: (_) => Padding(
-                                  padding: EdgeInsets.only(
-                                    bottom: MediaQuery.of(context)
-                                        .viewInsets
-                                        .bottom,
+                    if (!canSend) ...[
+                      IconButton(
+                        onPressed: messagingBlocked
+                            ? null
+                            : () {
+                                showModalBottomSheet(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  backgroundColor: Colors.transparent,
+                                  barrierColor: Colors.black54,
+                                  builder: (_) => Padding(
+                                    padding: EdgeInsets.only(
+                                      bottom: MediaQuery.of(context)
+                                          .viewInsets
+                                          .bottom,
+                                    ),
+                                    child: VoiceRecorderSheet(
+                                      onSend: (bytes, duration) async {
+                                        Navigator.of(context).pop();
+                                        await _sendVoiceMessage(
+                                            bytes, duration);
+                                      },
+                                      onCancel: () =>
+                                          Navigator.of(context).pop(),
+                                    ),
                                   ),
-                                  child: VoiceRecorderSheet(
-                                    onSend: (bytes, duration) async {
-                                      Navigator.of(context).pop();
-                                      await _sendVoiceMessage(bytes, duration);
-                                    },
-                                    onCancel: () => Navigator.of(context).pop(),
-                                  ),
+                                );
+                              },
+                        icon: Icon(LucideIcons.mic, size: 20, color: muted),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints:
+                            const BoxConstraints(minWidth: 22, minHeight: 32),
+                      ),
+                      IconButton(
+                        onPressed: (_uploadingMedia || messagingBlocked)
+                            ? null
+                            : () => _pickAndSendImages(fromCamera: false),
+                        icon: _uploadingMedia
+                            ? SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: cs.primary,
                                 ),
-                              );
-                            },
-                      icon: Icon(LucideIcons.mic, size: 20, color: muted),
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints:
-                          const BoxConstraints(minWidth: 22, minHeight: 32),
-                    ),
-                    IconButton(
-                      onPressed: (_uploadingMedia || messagingBlocked)
-                          ? null
-                          : () => _pickAndSendImages(fromCamera: false),
-                      icon: _uploadingMedia
-                          ? SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: cs.primary,
-                              ),
-                            )
-                          : Icon(LucideIcons.image, size: 20, color: muted),
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints:
-                          const BoxConstraints(minWidth: 22, minHeight: 32),
-                    ),
-                    IconButton(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Comments coming soon')),
-                        );
-                      },
-                      icon: Icon(LucideIcons.messageCircle,
-                          size: 20, color: muted),
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints:
-                          const BoxConstraints(minWidth: 22, minHeight: 32),
-                    ),
+                              )
+                            : Icon(LucideIcons.image, size: 20, color: muted),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints:
+                            const BoxConstraints(minWidth: 22, minHeight: 32),
+                      ),
+                    ],
                     IconButton(
                       onPressed: canSend
                           ? (_sending ? null : _send)

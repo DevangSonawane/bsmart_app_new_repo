@@ -197,9 +197,7 @@ class PromoteService {
       'userId': pickedUserId,
       'username': username,
       'avatarUrl': (avatarUrl ?? ''),
-      'videoUrl': videoUrl.isEmpty
-          ? 'https://assets.mixkit.co/videos/preview/mixkit-working-on-a-new-project-4240-large.mp4'
-          : videoUrl,
+      'videoUrl': videoUrl,
       'thumbnailUrl': (thumbnailUrl ?? '').trim(),
       'likesCount': likesCount,
       'commentsCount': commentsCount,
@@ -229,88 +227,8 @@ class PromoteService {
     };
   }
 
-  static List<Map<String, dynamic>> _defaultPromotes() {
-    return [
-      {
-        'id': 'p1',
-        'userId': '',
-        'username': 'business_growth',
-        'avatarUrl': '',
-        'videoUrl':
-            'https://assets.mixkit.co/videos/preview/mixkit-working-on-a-new-project-4240-large.mp4',
-        'likes': '1.2k',
-        'comments': '34',
-        'likesCount': 1200,
-        'commentsCount': 34,
-        'isLikedByMe': false,
-        'description':
-            'Boost your business with our new tools! 🚀 #growth #business',
-        'caption':
-            'Boost your business with our new tools! 🚀 #growth #business',
-        'tags': ['#growth', '#business'],
-        'brandName': 'Growth Tools Inc.',
-        'rating': 4.5,
-        'products': [
-          {
-            'id': 1,
-            'image':
-                'https://images.unsplash.com/photo-1556742049-0cfed4f7a07d?w=400&h=300&fit=crop',
-            'title': 'Product A',
-            'description': 'Featured product',
-            'price': 999,
-            'mrp': 1299,
-            'websiteUrl': 'https://example.com',
-            'rating': 4.6,
-          },
-          {
-            'id': 2,
-            'image':
-                'https://images.unsplash.com/photo-1556740758-90de374c12ad?w=400&h=300&fit=crop',
-            'title': 'Product B',
-            'description': 'Featured product',
-            'price': 799,
-            'mrp': 1099,
-            'websiteUrl': 'https://example.com',
-            'rating': 4.4,
-          },
-        ],
-      },
-      {
-        'id': 'p2',
-        'userId': '',
-        'username': 'marketing_pro',
-        'avatarUrl': '',
-        'videoUrl':
-            'https://assets.mixkit.co/videos/preview/mixkit-discussion-of-a-marketing-project-4248-large.mp4',
-        'likes': '850',
-        'comments': '22',
-        'likesCount': 850,
-        'commentsCount': 22,
-        'isLikedByMe': false,
-        'description': 'Marketing strategies that work. 📈 #marketing #tips',
-        'caption': 'Marketing strategies that work. 📈 #marketing #tips',
-        'tags': ['#marketing', '#tips'],
-        'brandName': 'MarketMaster',
-        'rating': 4.2,
-        'products': [
-          {
-            'id': 1,
-            'image':
-                'https://images.unsplash.com/photo-1533750516457-a7f992034fec?w=400&h=300&fit=crop',
-            'title': 'Tool X',
-            'description': 'Featured product',
-            'price': 499,
-            'mrp': 699,
-            'websiteUrl': 'https://example.com',
-            'rating': 4.2,
-          },
-        ],
-      },
-    ];
-  }
-
   /// Fetches promote list. When backend is ready, query e.g. promoted_videos
-  /// and map to this shape; on error or empty return default mock list.
+  /// and map to this shape; on error or empty return no promoted content.
   Future<List<Map<String, dynamic>>> fetchPromotes({int limit = 20}) async {
     try {
       // Prefer the dedicated PromoteReels API. React uses:
@@ -339,11 +257,11 @@ class PromoteService {
         }).toList();
       }
 
-      if (items.isEmpty) return _defaultPromotes();
+      if (items.isEmpty) return const <Map<String, dynamic>>[];
 
       return items.map(mapPromote).toList();
     } catch (_) {
-      return _defaultPromotes();
+      return const <Map<String, dynamic>>[];
     }
   }
 

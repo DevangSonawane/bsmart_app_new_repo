@@ -5,114 +5,14 @@ class AdvertiserService {
   factory AdvertiserService() => _instance;
 
   final Map<String, AdvertiserAccount> _accounts = {};
-  List<AdvertiserAd> _ads = [];
+  final List<AdvertiserAd> _ads = [];
   final Map<String, AdAnalytics> _analytics = {};
   final String _currentAdvertiserId = 'advertiser-1';
 
   // Conversion rate: ₹1 = 10 coins
   static const double rupeesToCoinsRate = 10.0;
 
-  AdvertiserService._internal() {
-    _initializeDummyData();
-  }
-
-  void _initializeDummyData() {
-    final now = DateTime.now();
-
-    // Advertiser Account
-    _accounts[_currentAdvertiserId] = AdvertiserAccount(
-      id: _currentAdvertiserId,
-      companyName: 'TechBrand',
-      email: 'advertiser@techbrand.com',
-      phone: '+1234567890',
-      currentPlan: AdPlan.premium,
-      planExpiresAt: now.add(const Duration(days: 30)),
-      totalCoinsPurchased: 50000,
-      coinsAvailable: 25000,
-      coinsConsumed: 25000,
-      createdAt: now.subtract(const Duration(days: 90)),
-      kycVerified: true,
-      salesOfficerContact: 'sales@bsmart.com',
-    );
-
-    // Sample Ads
-    _ads = [
-      AdvertiserAd(
-        id: 'ad-adv-1',
-        advertiserId: _currentAdvertiserId,
-        category: AdCategory.product,
-        companyName: 'TechBrand',
-        companyDescription: 'Leading technology products',
-        targetLocations: ['US', 'India'],
-        targetLanguages: ['en', 'hi'],
-        targetInterests: ['technology', 'gadgets'],
-        budgetRupees: 5000.0,
-        coinsAllocated: 50000,
-        coinsConsumed: 25000,
-        coinsRemaining: 25000,
-        estimatedRewards: 5000,
-        estimatedReach: 10000,
-        status: AdStatus.active,
-        createdAt: now.subtract(const Duration(days: 5)),
-        approvedAt: now.subtract(const Duration(days: 4)),
-        startedAt: now.subtract(const Duration(days: 4)),
-        plan: AdPlan.premium,
-      ),
-      AdvertiserAd(
-        id: 'ad-adv-2',
-        advertiserId: _currentAdvertiserId,
-        category: AdCategory.companyPromotion,
-        companyName: 'TechBrand',
-        budgetRupees: 3000.0,
-        coinsAllocated: 30000,
-        coinsConsumed: 30000,
-        coinsRemaining: 0,
-        estimatedRewards: 3000,
-        estimatedReach: 6000,
-        status: AdStatus.completed,
-        createdAt: now.subtract(const Duration(days: 30)),
-        approvedAt: now.subtract(const Duration(days: 29)),
-        startedAt: now.subtract(const Duration(days: 29)),
-        endedAt: now.subtract(const Duration(days: 15)),
-        plan: AdPlan.standard,
-      ),
-    ];
-
-    // Sample Analytics
-    _analytics['ad-adv-1'] = AdAnalytics(
-      adId: 'ad-adv-1',
-      totalImpressions: 12500,
-      uniqueViewers: 10000,
-      repeatViewers: 2500,
-      reachByGeography: {'US': 8000, 'India': 4500},
-      reachByLanguage: {'en': 10000, 'hi': 2500},
-      reachByInterest: {'technology': 7000, 'gadgets': 5500},
-      totalViews: 10000,
-      validViews: 8500,
-      viewThroughRate: 0.85,
-      averageWatchDuration: 25.5,
-      completionRate: 0.75,
-      dropOffPoints: {'0-25%': 500, '25-50%': 1000, '50-75%': 500, '75-100%': 2500},
-      totalWatchHours: 70.8,
-      averageWatchTimePerView: 25.5,
-      watchHoursByDay: {'Monday': 12.5, 'Tuesday': 15.2, 'Wednesday': 14.8},
-      genderSplit: {'Male': 6000, 'Female': 4000},
-      ageGroups: {'18-24': 3000, '25-34': 5000, '35-44': 2000},
-      totalCoinsAllocated: 50000,
-      coinsConsumed: 25000,
-      coinsRemaining: 25000,
-      rewardsIssued: 2500,
-      averageCoinsPerUser: 10.0,
-      costPerValidReward: 10.0,
-      costPerWatchMinute: 0.35,
-      clickThroughRate: 250,
-      profileVisits: 500,
-      companyPageOpens: 300,
-      externalLinkClicks: 150,
-      followActions: 200,
-      lastUpdated: now,
-    );
-  }
+  AdvertiserService._internal();
 
   // Get advertiser account
   AdvertiserAccount? getAccount(String advertiserId) {
@@ -120,11 +20,12 @@ class AdvertiserService {
   }
 
   AdvertiserAccount getCurrentAccount() {
-    return _accounts[_currentAdvertiserId] ?? AdvertiserAccount(
-      id: _currentAdvertiserId,
-      companyName: 'Unknown',
-      createdAt: DateTime.now(),
-    );
+    return _accounts[_currentAdvertiserId] ??
+        AdvertiserAccount(
+          id: _currentAdvertiserId,
+          companyName: 'Unknown',
+          createdAt: DateTime.now(),
+        );
   }
 
   // Convert rupees to coins
@@ -158,9 +59,8 @@ class AdvertiserService {
       final analytics = _analytics[ad.id];
       return sum + (analytics?.totalWatchHours ?? 0.0);
     });
-    final averageWatchTime = totalWatchHours > 0
-        ? (totalWatchHours * 3600) / totalImpressions
-        : 0.0;
+    final averageWatchTime =
+        totalWatchHours > 0 ? (totalWatchHours * 3600) / totalImpressions : 0.0;
 
     // Find best and worst performing ads
     AdvertiserAd? bestAd;
@@ -242,17 +142,19 @@ class AdvertiserService {
 
     // Check plan limits
     if (account.currentPlan != null) {
-      final activeAds = _ads.where((a) =>
-        a.advertiserId == advertiserId && a.status == AdStatus.active
-      ).length;
-      
+      final activeAds = _ads
+          .where((a) =>
+              a.advertiserId == advertiserId && a.status == AdStatus.active)
+          .length;
+
       if (activeAds >= account.currentPlan!.maxAdsPerMonth) {
         throw Exception('Plan limit reached. Upgrade to create more ads.');
       }
     }
 
     final coinsAllocated = rupeesToCoins(budgetRupees);
-    final estimatedRewards = (coinsAllocated / 10).round(); // Assuming 10 coins per reward
+    final estimatedRewards =
+        (coinsAllocated / 10).round(); // Assuming 10 coins per reward
     final estimatedReach = estimatedRewards * 2; // Rough estimate
 
     final ad = AdvertiserAd(
@@ -341,7 +243,8 @@ class AdvertiserService {
   }
 
   // Update ad analytics (called by ad serving system)
-  void updateAdAnalytics(String adId, {
+  void updateAdAnalytics(
+    String adId, {
     int? impressions,
     int? views,
     int? validViews,
@@ -357,16 +260,19 @@ class AdvertiserService {
     final analytics = _analytics[adId];
     if (analytics == null) return;
 
-    final ad = _ads.firstWhere((a) => a.id == adId, orElse: () => throw Exception('Ad not found'));
+    final ad = _ads.firstWhere((a) => a.id == adId,
+        orElse: () => throw Exception('Ad not found'));
 
     final updatedImpressions = impressions ?? analytics.totalImpressions;
     final updatedViews = views ?? analytics.totalViews;
     final updatedValidViews = validViews ?? analytics.validViews;
-    final vtr = updatedImpressions > 0 ? updatedViews / updatedImpressions : 0.0;
+    final vtr =
+        updatedImpressions > 0 ? updatedViews / updatedImpressions : 0.0;
     final avgWatchDuration = watchDuration ?? analytics.averageWatchDuration;
-    final completionRate = avgWatchDuration > 0 && ad.category.durationSeconds > 0
-        ? (avgWatchDuration / ad.category.durationSeconds).clamp(0.0, 1.0)
-        : 0.0;
+    final completionRate =
+        avgWatchDuration > 0 && ad.category.durationSeconds > 0
+            ? (avgWatchDuration / ad.category.durationSeconds).clamp(0.0, 1.0)
+            : 0.0;
     final totalWatchHours = (updatedViews * avgWatchDuration) / 3600.0;
     final avgWatchTimePerView = avgWatchDuration;
     final updatedCoinsConsumed = coinsConsumed ?? analytics.coinsConsumed;
@@ -440,9 +346,9 @@ class AdvertiserService {
 
   // Get ads by status
   List<AdvertiserAd> getAdsByStatus(String advertiserId, AdStatus status) {
-    return _ads.where((a) =>
-      a.advertiserId == advertiserId && a.status == status
-    ).toList();
+    return _ads
+        .where((a) => a.advertiserId == advertiserId && a.status == status)
+        .toList();
   }
 }
 
