@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'self_store_products_page.dart';
+import 'self_store_services_manage_page.dart';
 import 'shared/store_shared_widgets.dart';
 
 class SelfStoreDashboardPage extends StatelessWidget {
@@ -67,8 +69,11 @@ class SelfStoreDashboardPage extends StatelessWidget {
                 child: _QuickActionButton(
                   label: 'Add Service',
                   tone: StoreDashboardTone.teal,
-                  onTap: () => Navigator.of(context)
-                      .pushNamed('/store/publish/add-product'),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const StoreAddServiceFlowScreen(),
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -76,8 +81,11 @@ class SelfStoreDashboardPage extends StatelessWidget {
                 child: _QuickActionButton(
                   label: 'Add Product',
                   tone: StoreDashboardTone.purple,
-                  onTap: () => Navigator.of(context)
-                      .pushNamed('/store/publish/add-product'),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const StoreAddProductFlowScreen(),
+                    ),
+                  ),
                 ),
               ),
             ],

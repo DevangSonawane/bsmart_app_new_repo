@@ -88,7 +88,7 @@ class _SelfStoreServicesManagePageState
             child: _AddServiceButton(
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) => const _AddServiceFlowPage(),
+                  builder: (_) => const StoreAddServiceFlowScreen(),
                 ),
               ),
             ),
@@ -374,14 +374,15 @@ class _AddServiceButton extends StatelessWidget {
   }
 }
 
-class _AddServiceFlowPage extends StatefulWidget {
-  const _AddServiceFlowPage();
+class StoreAddServiceFlowScreen extends StatefulWidget {
+  const StoreAddServiceFlowScreen({super.key});
 
   @override
-  State<_AddServiceFlowPage> createState() => _AddServiceFlowPageState();
+  State<StoreAddServiceFlowScreen> createState() =>
+      _StoreAddServiceFlowScreenState();
 }
 
-class _AddServiceFlowPageState extends State<_AddServiceFlowPage> {
+class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
   int _step = 1;
   String _serviceMethod = 'At customer location';
   String? _category;

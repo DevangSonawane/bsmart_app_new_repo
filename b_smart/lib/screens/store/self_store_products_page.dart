@@ -94,7 +94,7 @@ class _SelfStoreProductsPageState extends State<SelfStoreProductsPage> {
             child: _AddProductButton(
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) => const _AddProductFlowPage(),
+                  builder: (_) => const StoreAddProductFlowScreen(),
                 ),
               ),
             ),
@@ -402,14 +402,15 @@ class _AddProductButton extends StatelessWidget {
   }
 }
 
-class _AddProductFlowPage extends StatefulWidget {
-  const _AddProductFlowPage();
+class StoreAddProductFlowScreen extends StatefulWidget {
+  const StoreAddProductFlowScreen({super.key});
 
   @override
-  State<_AddProductFlowPage> createState() => _AddProductFlowPageState();
+  State<StoreAddProductFlowScreen> createState() =>
+      _StoreAddProductFlowScreenState();
 }
 
-class _AddProductFlowPageState extends State<_AddProductFlowPage> {
+class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
   int _step = 1;
   bool _freeDelivery = false;
   final _productNameController = TextEditingController();
