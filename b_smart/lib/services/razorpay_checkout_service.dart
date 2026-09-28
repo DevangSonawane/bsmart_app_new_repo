@@ -117,9 +117,19 @@ class RazorpayCheckoutService {
     ));
   }
 
+  /// Local test override, supplied at run time — never committed:
+  /// `flutter run --dart-define=RAZORPAY_KEY_ID=rzp_test_...`
+  /// Used only when the backend response omits `key_id`. The backend
+  /// response always wins. The SECRET always stays server-side.
+  static const String _envKeyId = String.fromEnvironment(
+    'RAZORPAY_KEY_ID',
+    defaultValue: '',
+  );
+
   /// Extracts `{keyId, orderId, amountPaise}` from a checkout/create response.
   ///
-  /// Returns null when the backend did not include Razorpay data.
+  /// Returns null when neither the backend nor the local override provides
+  /// a key.
   static ({String keyId, String orderId, int amountPaise})? razorpayOf(
     Map<String, dynamic> response, {
     required double fallbackTotal,
@@ -127,7 +137,8 @@ class RazorpayCheckoutService {
     final raw = response['razorpay'];
     if (raw is! Map) return null;
     final map = raw.map((key, value) => MapEntry(key.toString(), value));
-    final keyId = map['key_id']?.toString().trim() ?? '';
+    var keyId = map['key_id']?.toString().trim() ?? '';
+    if (keyId.isEmpty) keyId = _envKeyId.trim();
     final orderId = map['order_id']?.toString().trim() ?? '';
     if (keyId.isEmpty || orderId.isEmpty) return null;
     var amountPaise = (fallbackTotal * 100).round();
