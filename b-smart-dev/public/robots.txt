@@ -1,0 +1,26 @@
+User-agent: *
+Allow: /
+
+Disallow: /login
+Disallow: /signup
+Disallow: /vendor-signup
+Disallow: /forgot-password
+Disallow: /verify-otp
+Disallow: /auth/
+Disallow: /settings
+Disallow: /edit-profile
+Disallow: /wallet
+Disallow: /gift-cards
+Disallow: /gift-card-orders
+Disallow: /messages
+Disallow: /notifications
+Disallow: /search
+Disallow: /suggestions
+Disallow: /vendor
+Disallow: /vendor-ads
+Disallow: /ads-management
+
+User-agent: Mediapartners-Google
+Allow: /
+
+Sitemap: https://bsmart.social/sitemap.xml

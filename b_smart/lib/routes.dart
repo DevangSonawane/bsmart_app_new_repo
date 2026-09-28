@@ -39,6 +39,7 @@ import 'screens/store/store_home_screen.dart';
 import 'screens/store/publish/store_delivery_publish_screen.dart';
 import 'screens/store/publish/store_price_inventory_screen.dart';
 import 'screens/store/self_store_products_page.dart';
+import 'screens/store/store_role_setup_screen.dart';
 import 'screens/store/store_qr_scanner_screen.dart';
 import 'screens/store/store_search_screen.dart';
 
@@ -115,6 +116,7 @@ final Map<String, WidgetBuilder> appRoutes = {
   '/notifications': (ctx) => const NotificationsScreen(),
   '/store': (ctx) =>
       StoreHomeScreen.fromRouteArgs(ModalRoute.of(ctx)?.settings.arguments),
+  '/store/setup': (ctx) => const StoreRoleSetupScreen(),
   '/store/publish/add-product': (ctx) => const StoreAddProductFlowScreen(),
   '/store/publish/price-inventory': (ctx) => const StorePriceInventoryScreen(),
   '/store/publish/delivery': (ctx) => const StoreDeliveryPublishScreen(),

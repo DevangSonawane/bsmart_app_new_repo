@@ -35,3 +35,4 @@ export 'suggestions_api.dart';
 export 'wallet_api.dart';
 export 'gift_cards_api.dart';
 export 'views_api.dart';
+export 'phase2_store_api.dart';

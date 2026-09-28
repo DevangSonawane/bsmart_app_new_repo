@@ -1,0 +1,419 @@
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useSelector, useDispatch } from 'react-redux';
+import api from '../lib/api';
+import authService from '../services/authService';
+import { login, fetchMe } from '../store/authSlice';
+import { Lock, User, AlertCircle, CheckCircle, Eye, EyeOff } from 'lucide-react';
+import AuthFooter from '../components/AuthFooter';
+import AuthVisualPanel from '../components/AuthVisualPanel';
+
+const OtpLoginModal = ({ email, otp, onChange, onClose, onSubmit, loading, error, message }) => {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#171b2a] p-6 shadow-2xl">
+        <div className="mb-5 text-center">
+          <h3 className="text-xl font-bold text-white">Enter OTP</h3>
+          <p className="mt-2 text-sm text-gray-300">
+            We sent a 6-digit verification code to <span className="font-semibold text-white">{email}</span>.
+          </p>
+        </div>
+        {message && (
+          <div className="mb-3 rounded-xl border border-green-500/20 bg-green-500/10 px-3 py-2 text-sm text-green-300">
+            {message}
+          </div>
+        )}
+        {error && (
+          <div className="mb-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+            {error}
+          </div>
+        )}
+        <input
+          value={otp}
+          onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          placeholder="Enter 6-digit OTP"
+          className="w-full rounded-2xl border border-white/10 bg-[#0f1320] px-4 py-3 text-center font-semibold tracking-[0.35em] text-white outline-none focus:border-[#fa3f5e] focus:ring-2 focus:ring-[#fa3f5e]/20"
+          maxLength={6}
+        />
+        <div className="mt-5 flex gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-2xl border border-white/10 px-4 py-3 font-semibold text-gray-300 transition hover:bg-white/5"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={loading || otp.length < 6}
+            className="flex-1 rounded-2xl bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange px-4 py-3 font-bold text-white transition disabled:opacity-60"
+          >
+            {loading ? 'Verifying...' : 'Verify'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Login = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const dispatch = useDispatch();
+  const { isAuthenticated, error: authError } = useSelector((state) => state.auth);
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState(location.state?.message || '');
+  const [showPassword, setShowPassword] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [pending2FA, setPending2FA] = useState(false);
+  const [twoFAEmail, setTwoFAEmail] = useState('');
+
+  const normalizeLoginError = (raw) => {
+    const text = String(raw || '').toLowerCase();
+    if (text.includes('account_banned') || text.includes('banned') || text.includes('inactive')) {
+      return raw || 'Your account has been banned. Please contact support.'
+    }
+    return raw || 'Login failed'
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/');
+    }
+  }, [isAuthenticated, navigate]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+    setLoading(true);
+
+    try {
+      const resultAction = await dispatch(login({
+        identifier,
+        email: identifier,
+        password,
+        ...(pending2FA ? { otp } : {}),
+      }));
+
+      if (login.fulfilled.match(resultAction)) {
+        if (resultAction.payload?.requires_2fa) {
+          setPending2FA(true);
+          setTwoFAEmail(resultAction.payload?.email || identifier);
+          setMessage(resultAction.payload?.message || 'A verification code has been sent to your email.');
+        } else if (resultAction.payload?.token) {
+          console.log('Login Successful:', resultAction.payload);
+          console.log('User Profile:', resultAction.payload?.user || resultAction.payload);
+          navigate('/');
+        } else {
+          setError('Your account has been banned. Please contact support.');
+        }
+      } else {
+        setError(normalizeLoginError(resultAction.payload));
+      }
+    } catch {
+      setError('An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOtpSubmit = async () => {
+    if (loading || otp.length < 6) return;
+    await handleSubmit({ preventDefault: () => {} });
+  };
+
+  const closeOtpModal = () => {
+    setPending2FA(false);
+    setOtp('');
+    setError('');
+    setMessage('');
+  };
+
+  const handleGoogleLogin = () => {
+    const baseURL = api.defaults.baseURL || 'http://localhost:5000/api';
+    const authUrl = `${baseURL}/auth/google?scope=email%20profile`;
+
+    // Calculate center position for the popup
+    const width = 500;
+    const height = 600;
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
+
+    const popup = window.open(
+      authUrl,
+      'google-login',
+      `width=${width},height=${height},left=${left},top=${top}`
+    );
+
+    const handleMessage = async (event) => {
+      // Verify origin if needed, but for now we accept from self/subdomains
+      if (event.data?.type === 'SOCIAL_AUTH_SUCCESS') {
+        const { token } = event.data;
+        if (token) {
+          authService.setSession(token);
+          setLoading(true);
+
+          try {
+            // Fetch user details since we only got the token
+            await dispatch(fetchMe()).unwrap();
+            navigate('/');
+          } catch (err) {
+            console.error('Failed to fetch user details:', err);
+            const msg =
+              err?.response?.data?.message ||
+              err?.message ||
+              'Authentication successful but failed to load user data';
+            setError(normalizeLoginError(msg));
+          } finally {
+            setLoading(false);
+          }
+        }
+        window.removeEventListener('message', handleMessage);
+      } else if (event.data?.type === 'SOCIAL_AUTH_ERROR') {
+        setError(event.data.error || 'Google authentication failed');
+        window.removeEventListener('message', handleMessage);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    // Clean up listener if popup is closed manually (optional polling)
+    const timer = setInterval(() => {
+      if (popup && popup.closed) {
+        clearInterval(timer);
+        window.removeEventListener('message', handleMessage);
+      }
+    }, 1000);
+  };
+
+  const handleAppleLogin = () => {
+    const baseURL = api.defaults.baseURL || 'http://localhost:5000/api';
+    const authUrl = `${baseURL}/auth/apple`;
+
+    const width = 500;
+    const height = 600;
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
+
+    const popup = window.open(
+      authUrl,
+      'apple-login',
+      `width=${width},height=${height},left=${left},top=${top}`
+    );
+
+    const handleMessage = async (event) => {
+      if (event.data?.type === 'SOCIAL_AUTH_SUCCESS') {
+        const { token } = event.data;
+        if (token) {
+          authService.setSession(token);
+          setLoading(true);
+
+          try {
+            await dispatch(fetchMe()).unwrap();
+            navigate('/');
+          } catch (err) {
+            console.error('Failed to fetch user details:', err);
+            const msg =
+              err?.response?.data?.message ||
+              err?.message ||
+              'Authentication successful but failed to load user data';
+            setError(normalizeLoginError(msg));
+          } finally {
+            setLoading(false);
+          }
+        }
+        window.removeEventListener('message', handleMessage);
+      } else if (event.data?.type === 'SOCIAL_AUTH_ERROR') {
+        setError(event.data.error || 'Apple authentication failed');
+        window.removeEventListener('message', handleMessage);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    const timer = setInterval(() => {
+      if (popup && popup.closed) {
+        clearInterval(timer);
+        window.removeEventListener('message', handleMessage);
+      }
+    }, 1000);
+  };
+
+  return (
+    <div className="min-h-screen flex bg-white dark:bg-black lg:h-screen lg:overflow-hidden">
+      <AuthVisualPanel />
+
+      {/* Right Side - Form */}
+      <div className="w-full lg:w-[40%] lg:h-screen lg:overflow-y-auto flex flex-col justify-center px-6 sm:px-12 xl:px-24 bg-white dark:bg-black">
+        <div className="max-w-md w-full mx-auto">
+          <div className="mb-8">
+            <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Log In</h2>
+            <p className="text-gray-500 dark:text-gray-400">Enter your credentials to access your account.</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Identity</label>
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 dark:text-gray-500 group-focus-within:text-insta-pink transition-colors">
+                  <User size={20} />
+                </div>
+                <input
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  placeholder="Email, Phone, or Username"
+                  className="w-full pl-10 pr-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex justify-between items-center ml-1">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+                <Link to="/forgot-password" className="text-xs font-medium text-insta-pink hover:text-insta-purple transition-colors">Forgot password?</Link>
+              </div>
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 dark:text-gray-500 group-focus-within:text-insta-pink transition-colors">
+                  <Lock size={20} />
+                </div>
+                <input
+                type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full pl-10 pr-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-insta-pink/20 focus:border-insta-pink transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 dark:text-white"
+                  required
+                />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+              </div>
+            </div>
+
+            {message && (
+              <div className="p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-800 text-green-600 dark:text-green-400 text-sm flex items-center">
+                <CheckCircle className="w-4 h-4 mr-2 flex-shrink-0" />
+                {message}
+              </div>
+            )}
+
+            {(error || authError) && (
+              <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 text-red-600 dark:text-red-400 text-sm flex items-center">
+                <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />
+                {error || authError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange text-white py-3.5 rounded-xl font-bold shadow-lg shadow-insta-pink/30 hover:shadow-xl hover:shadow-insta-pink/40 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-70 disabled:hover:scale-100 disabled:shadow-none"
+            >
+              {loading ? (
+                <span className="flex items-center justify-center">
+                  <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  {pending2FA ? 'Verifying OTP...' : 'Signing in...'}
+                </span>
+              ) : 'Sign In'}
+            </button>
+          </form>
+
+          <div className="relative my-8">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-200 dark:border-gray-800"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-4 bg-white dark:bg-black text-gray-500 dark:text-gray-400 font-medium">Or continue with</span>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={handleGoogleLogin}
+              type="button"
+              aria-label="Continue with Google"
+              className="flex-1 flex items-center justify-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 py-3.5 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-500 transition-all shadow-sm hover:shadow"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  fill="#4285F4"
+                />
+                <path
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  fill="#34A853"
+                />
+                <path
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                  fill="#FBBC05"
+                />
+                <path
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                  fill="#EA4335"
+                />
+              </svg>
+            </button>
+
+            <button
+              onClick={handleAppleLogin}
+              type="button"
+              aria-label="Continue with Apple"
+              className="flex-1 flex items-center justify-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-white py-3.5 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-500 transition-all shadow-sm hover:shadow"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M16.365 1.43c0 1.14-.493 2.27-1.177 3.08-.744.9-1.99 1.57-2.987 1.57-.12 0-.23-.02-.3-.03-.01-.06-.04-.22-.04-.39 0-1.15.572-2.27 1.206-2.98.804-.94 2.142-1.64 3.248-1.68.03.13.05.28.05.43zm4.565 15.71c-.03.07-.463 1.58-1.518 3.12-.945 1.34-1.94 2.71-3.43 2.71-1.517 0-1.9-.88-3.63-.88-1.698 0-2.302.91-3.63.91-1.377 0-2.35-1.25-3.36-2.66-1.463-2.06-2.65-5.28-2.65-8.31 0-4.98 3.29-7.61 6.55-7.61 1.61 0 2.977.99 3.97.99.973 0 2.44-1.05 4.24-1.05.756 0 3.51.07 5.28 2.66-.15.09-3.14 1.83-3.14 5.61 0 4.42 3.88 5.98 3.918 5.99z" />
+              </svg>
+            </button>
+          </div>
+
+        <div className="text-center mt-8 space-y-2">
+            <p className="text-gray-600 dark:text-gray-400">
+              Don't have an account?{' '}
+              <Link to="/signup" className="text-insta-pink font-semibold hover:text-insta-purple transition-colors">
+                Sign up
+              </Link>
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Are you a business founder?{' '}
+              <Link
+                to="/vendor-signup"
+                className="font-semibold text-insta-pink hover:text-insta-purple transition-colors"
+              >
+                Sign up as vendor
+              </Link>
+            </p>
+          </div>
+
+          <AuthFooter />
+        </div>
+      </div>
+      {pending2FA && (
+        <OtpLoginModal
+          email={twoFAEmail || identifier}
+          otp={otp}
+          onChange={setOtp}
+          onClose={closeOtpModal}
+          onSubmit={handleOtpSubmit}
+          loading={loading}
+          error={error}
+          message={message}
+        />
+      )}
+    </div>
+  );
+};
+
+export default Login;
