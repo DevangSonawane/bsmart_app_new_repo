@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -30,6 +32,15 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
   void initState() {
     super.initState();
     _ownerFuture = _loadOwner();
+    StoreMockState.instance.addListener(_handleStoreChanged);
+    unawaited(StoreMockState.instance.refreshMarketplace());
+    unawaited(StoreMockState.instance.refreshCart());
+  }
+
+  @override
+  void dispose() {
+    StoreMockState.instance.removeListener(_handleStoreChanged);
+    super.dispose();
   }
 
   @override
@@ -38,6 +49,10 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
     if (oldWidget.ownerUserId != widget.ownerUserId) {
       _ownerFuture = _loadOwner();
     }
+  }
+
+  void _handleStoreChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<_VisitorStoreOwner?> _loadOwner() async {
@@ -92,6 +107,7 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final store = StoreMockState.instance;
     return SliverList.list(
       children: [
         const _VisitorStoreTopBar(),
@@ -108,13 +124,46 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
           selectedFilter: _selectedFilter,
           onSelected: (filter) => setState(() => _selectedFilter = filter),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
-          child: _StoreItemsContent(
-            filter: _selectedFilter,
-            ownerUserId: widget.ownerUserId,
+        if (store.catalogLoading && StoreMockState.catalog.isEmpty)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(10, 28, 10, 0),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (StoreMockState.catalog.isEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 18, 10, 0),
+            child: store.lastError == null
+                ? const StoreEmptyState(
+                    icon: LucideIcons.store,
+                    title: 'No listings yet',
+                    body:
+                        'Products and services published by influencers will appear here.',
+                  )
+                : Column(
+                    children: [
+                      StoreEmptyState(
+                        icon: LucideIcons.cloudOff,
+                        title: "Couldn't load marketplace",
+                        body: '${store.lastError}',
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            StoreMockState.instance.refreshMarketplace(),
+                        icon: const Icon(LucideIcons.refreshCw, size: 16),
+                        label: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+            child: _StoreItemsContent(
+              filter: _selectedFilter,
+              ownerUserId: widget.ownerUserId,
+            ),
           ),
-        ),
       ],
     );
   }
@@ -520,10 +569,11 @@ class _StoreItemsContent extends StatelessWidget {
         _VisitorProductList(ownerUserId: ownerUserId, products: store.products),
       _VisitorStoreFilter.all => _StoreItemsGrid(
           children: [
-            _ServiceFeatureCard(
-              ownerUserId: ownerUserId,
-              service: store.services.first,
-            ),
+            if (store.services.isNotEmpty)
+              _ServiceFeatureCard(
+                ownerUserId: ownerUserId,
+                service: store.services.first,
+              ),
             for (final item in StoreMockState.catalog.skip(1).take(7))
               item.type == StoreMockItemType.service
                   ? _ServiceFeatureCard(ownerUserId: ownerUserId, service: item)
@@ -558,6 +608,27 @@ class _StoreItemsGrid extends StatelessWidget {
   }
 }
 
+class _CatalogImage extends StatelessWidget {
+  final StoreMockCatalogItem item;
+  final double height;
+
+  const _CatalogImage({
+    required this.item,
+    required this.height,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StoreItemImage(
+      imageUrl: item.imageUrl,
+      icon: item.icon,
+      width: double.infinity,
+      height: height,
+      debugLabel: 'visitor-store-catalog',
+    );
+  }
+}
+
 class _VisitorServiceList extends StatelessWidget {
   final String? ownerUserId;
   final List<StoreMockCatalogItem> services;
@@ -569,6 +640,13 @@ class _VisitorServiceList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (services.isEmpty) {
+      return const StoreEmptyState(
+        icon: LucideIcons.briefcaseBusiness,
+        title: 'No services yet',
+        body: 'Services published by influencers will appear here.',
+      );
+    }
     return Column(
       children: [
         for (var i = 0; i < services.length; i++) ...[
@@ -602,11 +680,7 @@ class _VisitorServiceCard extends StatelessWidget {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: Image.asset(
-                    service.imageAsset,
-                    fit: BoxFit.cover,
-                    cacheWidth: 420,
-                  ),
+                  child: _CatalogImage(item: service, height: 158),
                 ),
                 Positioned(
                   top: 8,
@@ -834,13 +908,7 @@ class _ServiceFeatureCard extends StatelessWidget {
         children: [
           Stack(
             children: [
-              Image.asset(
-                service.imageAsset,
-                width: double.infinity,
-                height: 160,
-                fit: BoxFit.cover,
-                cacheWidth: 360,
-              ),
+              _CatalogImage(item: service, height: 160),
               Positioned(
                 top: 10,
                 left: 10,
@@ -1010,13 +1078,7 @@ class _ProductCard extends StatelessWidget {
           children: [
             Stack(
               children: [
-                Image.asset(
-                  item.imageAsset,
-                  width: double.infinity,
-                  height: 108,
-                  fit: BoxFit.cover,
-                  cacheWidth: 360,
-                ),
+                _CatalogImage(item: item, height: 108),
                 Positioned(
                   top: 8,
                   right: 8,
@@ -1126,6 +1188,13 @@ class _VisitorProductList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (products.isEmpty) {
+      return const StoreEmptyState(
+        icon: LucideIcons.package,
+        title: 'No products yet',
+        body: 'Products published by influencers will appear here.',
+      );
+    }
     return Stack(
       children: [
         _VisitorProductGrid(
@@ -1215,13 +1284,7 @@ class _VisitorProductGridCard extends StatelessWidget {
           children: [
             Stack(
               children: [
-                Image.asset(
-                  item.imageAsset,
-                  width: double.infinity,
-                  height: 132,
-                  fit: BoxFit.cover,
-                  cacheWidth: 360,
-                ),
+                _CatalogImage(item: item, height: 132),
                 Positioned(
                   top: 8,
                   right: 8,

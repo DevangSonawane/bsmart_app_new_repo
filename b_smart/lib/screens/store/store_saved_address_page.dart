@@ -2,36 +2,64 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'shared/store_shared_widgets.dart';
+import 'store_address_book.dart';
 import 'store_theme.dart';
 
+/// Manage mode (default): add/edit/delete/default.
+/// Select mode (`selectMode: true`): picking returns the [ShipAddress] via
+/// `Navigator.pop`, used by product checkout and service booking.
 class StoreSavedAddressPage extends StatefulWidget {
-  const StoreSavedAddressPage({super.key});
+  final bool selectMode;
+
+  const StoreSavedAddressPage({super.key, this.selectMode = false});
 
   @override
   State<StoreSavedAddressPage> createState() => _StoreSavedAddressPageState();
 }
 
 class _StoreSavedAddressPageState extends State<StoreSavedAddressPage> {
-  int _selectedIndex = 0;
+  @override
+  void initState() {
+    super.initState();
+    StoreAddressBook.instance.ensureLoaded();
+  }
 
-  static const _addresses = [
-    _SavedAddressData(
-      type: 'Home',
-      name: 'Alex Morgan',
-      address: '24 Market Street, San Diego, CA 92101',
-      phone: '+1 619 555 0148',
-      icon: LucideIcons.house,
-      isDefault: true,
-    ),
-    _SavedAddressData(
-      type: 'Work',
-      name: 'Alex Morgan',
-      address: '460 Harbor Avenue, San Diego, CA 92101',
-      phone: '+1 619 555 0148',
-      icon: LucideIcons.briefcaseBusiness,
-      isDefault: false,
-    ),
-  ];
+  Future<void> _openForm({ShipAddress? initial}) async {
+    final result = await showAddressFormDialog(context, initial: initial);
+    if (result == null || !mounted) return;
+    final book = StoreAddressBook.instance;
+    if (initial == null) {
+      await book.add(result);
+    } else {
+      await book.update(initial.id, result);
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content:
+              Text(initial == null ? 'Address added.' : 'Address updated.')),
+    );
+  }
+
+  Future<void> _confirmDelete(ShipAddress address) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: const Text('Delete address?'),
+        content: Text('Remove "${address.label}" (${address.summaryLine})?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(d).pop(false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.of(d).pop(true),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    await StoreAddressBook.instance.remove(address.id);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,45 +69,78 @@ class _StoreSavedAddressPageState extends State<StoreSavedAddressPage> {
         backgroundColor: BStoreColors.background,
         body: SafeArea(
           bottom: false,
-          child: Column(
-            children: [
-              Expanded(
-                child: ListView(
-                  physics: const BouncingScrollPhysics(),
-                  padding: EdgeInsets.fromLTRB(
-                    BStoreSpacing.screenX,
-                    8,
-                    BStoreSpacing.screenX,
-                    MediaQuery.of(context).padding.bottom + 104,
-                  ),
-                  children: [
-                    const _AddressHeader(),
-                    const SizedBox(height: 14),
-                    const _MapPreview(),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'Saved addresses',
-                      style: TextStyle(
-                        color: BStoreColors.textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
+          child: AnimatedBuilder(
+            animation: StoreAddressBook.instance,
+            builder: (context, _) {
+              final book = StoreAddressBook.instance;
+              final addresses = book.addresses;
+              return Column(
+                children: [
+                  Expanded(
+                    child: ListView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(
+                        BStoreSpacing.screenX,
+                        8,
+                        BStoreSpacing.screenX,
+                        MediaQuery.of(context).padding.bottom + 104,
                       ),
+                      children: [
+                        _AddressHeader(
+                            title: widget.selectMode
+                                ? 'Select address'
+                                : 'Select address'),
+                        const SizedBox(height: 14),
+                        const _MapPreview(),
+                        const SizedBox(height: 20),
+                        const Text(
+                          'Saved addresses',
+                          style: TextStyle(
+                            color: BStoreColors.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        for (final address in addresses) ...[
+                          _SavedAddressCard(
+                            address: address,
+                            selected: book.selected.id == address.id,
+                            onTap: () {
+                              book.select(address.id);
+                              if (widget.selectMode) {
+                                Navigator.of(context).pop(address);
+                              }
+                            },
+                            onEdit: () => _openForm(initial: address),
+                            onSetDefault: address.isDefault
+                                ? null
+                                : () => book.setDefault(address.id),
+                            onDelete: addresses.length <= 1
+                                ? null
+                                : () => _confirmDelete(address),
+                          ),
+                          const SizedBox(height: 9),
+                        ],
+                        _AddAddressButton(onTap: () => _openForm()),
+                      ],
                     ),
-                    const SizedBox(height: 10),
-                    for (var i = 0; i < _addresses.length; i++) ...[
-                      _SavedAddressCard(
-                        address: _addresses[i],
-                        selected: _selectedIndex == i,
-                        onTap: () => setState(() => _selectedIndex = i),
-                      ),
-                      const SizedBox(height: 9),
-                    ],
-                    const _AddAddressButton(),
-                  ],
-                ),
-              ),
-              const _DeliverHereButton(),
-            ],
+                  ),
+                  _DeliverHereButton(
+                    label: widget.selectMode
+                        ? 'Deliver here'
+                        : 'Done',
+                    onPressed: () {
+                      if (widget.selectMode) {
+                        Navigator.of(context).pop(book.selected);
+                      } else {
+                        Navigator.of(context).maybePop();
+                      }
+                    },
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -87,26 +148,10 @@ class _StoreSavedAddressPageState extends State<StoreSavedAddressPage> {
   }
 }
 
-class _SavedAddressData {
-  final String type;
-  final String name;
-  final String address;
-  final String phone;
-  final IconData icon;
-  final bool isDefault;
-
-  const _SavedAddressData({
-    required this.type,
-    required this.name,
-    required this.address,
-    required this.phone,
-    required this.icon,
-    required this.isDefault,
-  });
-}
-
 class _AddressHeader extends StatelessWidget {
-  const _AddressHeader();
+  final String title;
+
+  const _AddressHeader({required this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -125,14 +170,14 @@ class _AddressHeader extends StatelessWidget {
               constraints: const BoxConstraints.tightFor(width: 34, height: 34),
             ),
           ),
-          const Column(
+          Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              StoreBsmartWordmark(),
-              SizedBox(height: 14),
+              const StoreBsmartWordmark(),
+              const SizedBox(height: 14),
               Text(
-                'Select address',
-                style: TextStyle(
+                title,
+                style: const TextStyle(
                   color: BStoreColors.textPrimary,
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
@@ -304,14 +349,20 @@ class _MapPin extends StatelessWidget {
 }
 
 class _SavedAddressCard extends StatelessWidget {
-  final _SavedAddressData address;
+  final ShipAddress address;
   final bool selected;
   final VoidCallback onTap;
+  final VoidCallback onEdit;
+  final VoidCallback? onSetDefault;
+  final VoidCallback? onDelete;
 
   const _SavedAddressCard({
     required this.address,
     required this.selected,
     required this.onTap,
+    required this.onEdit,
+    required this.onSetDefault,
+    required this.onDelete,
   });
 
   @override
@@ -332,11 +383,12 @@ class _SavedAddressCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(address.icon, color: BStoreColors.primary, size: 23),
+                      const Icon(LucideIcons.mapPin,
+                          color: BStoreColors.primary, size: 23),
                       const SizedBox(width: 9),
                       Flexible(
                         child: Text(
-                          address.type,
+                          address.label,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -365,7 +417,7 @@ class _SavedAddressCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    address.address,
+                    address.summaryLine,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -389,20 +441,42 @@ class _SavedAddressCard extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 10),
-            Container(width: 1, height: 74, color: BStoreColors.divider),
-            const SizedBox(width: 8),
-            TextButton.icon(
-              onPressed: () {},
-              icon: const Icon(LucideIcons.pencil, size: 18),
-              label: const Text('Edit'),
-              style: TextButton.styleFrom(
-                foregroundColor: BStoreColors.primary,
-                textStyle: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
+            const SizedBox(width: 6),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton.icon(
+                  onPressed: onEdit,
+                  icon: const Icon(LucideIcons.pencil, size: 18),
+                  label: const Text('Edit'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: BStoreColors.primary,
+                    textStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
-              ),
+                PopupMenuButton<String>(
+                  icon: const Icon(LucideIcons.ellipsisVertical, size: 18),
+                  onSelected: (value) {
+                    if (value == 'default') onSetDefault?.call();
+                    if (value == 'delete') onDelete?.call();
+                  },
+                  itemBuilder: (context) => [
+                    if (onSetDefault != null)
+                      const PopupMenuItem(
+                        value: 'default',
+                        child: Text('Set as default'),
+                      ),
+                    if (onDelete != null)
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Delete'),
+                      ),
+                  ],
+                ),
+              ],
             ),
           ],
         ),
@@ -464,14 +538,16 @@ class _DefaultBadge extends StatelessWidget {
 }
 
 class _AddAddressButton extends StatelessWidget {
-  const _AddAddressButton();
+  final VoidCallback onTap;
+
+  const _AddAddressButton({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () {},
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: const CustomPaint(
           painter: _DashedBorderPainter(),
@@ -533,7 +609,10 @@ class _DashedBorderPainter extends CustomPainter {
 }
 
 class _DeliverHereButton extends StatelessWidget {
-  const _DeliverHereButton();
+  final String label;
+  final VoidCallback onPressed;
+
+  const _DeliverHereButton({required this.label, required this.onPressed});
 
   @override
   Widget build(BuildContext context) {
@@ -549,12 +628,242 @@ class _DeliverHereButton extends StatelessWidget {
         width: double.infinity,
         height: 50,
         child: FilledButton(
-          onPressed: () => Navigator.of(context).maybePop(),
+          onPressed: onPressed,
           style: BStoreButtons.filled(radius: 10),
-          child: const Text(
-            'Deliver here',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Store-themed popup dialog for adding/editing an address.
+///
+/// Returns the saved [ShipAddress], or null when dismissed.
+Future<ShipAddress?> showAddressFormDialog(
+  BuildContext context, {
+  ShipAddress? initial,
+}) {
+  return showDialog<ShipAddress>(
+    context: context,
+    builder: (dialogContext) => Theme(
+      data: BStoreTheme.data(dialogContext),
+      child: Dialog(
+        backgroundColor: BStoreColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+        child: _AddressFormSheet(initial: initial),
+      ),
+    ),
+  );
+}
+
+class _AddressFormSheet extends StatefulWidget {
+  final ShipAddress? initial;
+
+  const _AddressFormSheet({required this.initial});
+
+  @override
+  State<_AddressFormSheet> createState() => _AddressFormSheetState();
+}
+
+class _AddressFormSheetState extends State<_AddressFormSheet> {
+  late final TextEditingController _label;
+  late final TextEditingController _name;
+  late final TextEditingController _phone;
+  late final TextEditingController _line1;
+  late final TextEditingController _city;
+  late final TextEditingController _state;
+  late final TextEditingController _pincode;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initial;
+    _label = TextEditingController(text: initial?.label ?? 'Home');
+    _name = TextEditingController(text: initial?.name ?? '');
+    _phone = TextEditingController(text: initial?.phone ?? '');
+    _line1 = TextEditingController(text: initial?.line1 ?? '');
+    _city = TextEditingController(text: initial?.city ?? '');
+    _state = TextEditingController(text: initial?.state ?? '');
+    _pincode = TextEditingController(text: initial?.pincode ?? '');
+  }
+
+  @override
+  void dispose() {
+    _label.dispose();
+    _name.dispose();
+    _phone.dispose();
+    _line1.dispose();
+    _city.dispose();
+    _state.dispose();
+    _pincode.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final name = _name.text.trim();
+    final phone = _phone.text.trim();
+    final line1 = _line1.text.trim();
+    final city = _city.text.trim();
+    final pincode = _pincode.text.trim();
+    if (name.isEmpty ||
+        phone.isEmpty ||
+        line1.isEmpty ||
+        city.isEmpty ||
+        pincode.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Fill name, phone, address, city and pincode.'),
+        ),
+      );
+      return;
+    }
+    Navigator.of(context).pop(
+      ShipAddress(
+        id: widget.initial?.id ?? '',
+        label: _label.text.trim().isEmpty ? 'Home' : _label.text.trim(),
+        name: name,
+        phone: phone,
+        line1: line1,
+        city: city,
+        state: _state.text.trim(),
+        pincode: pincode,
+        isDefault: widget.initial?.isDefault ?? false,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.initial == null ? 'Add address' : 'Edit address',
+                    style: const TextStyle(
+                      color: BStoreColors.textPrimary,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: const Icon(LucideIcons.x, size: 20),
+                  color: BStoreColors.textSecondary,
+                  tooltip: 'Close',
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _AddressTextField(controller: _label, label: 'Label (Home / Work)'),
+            const SizedBox(height: 10),
+            _AddressTextField(controller: _name, label: 'Full name'),
+            const SizedBox(height: 10),
+            _AddressTextField(
+              controller: _phone,
+              label: 'Phone',
+              keyboardType: TextInputType.phone,
+            ),
+            const SizedBox(height: 10),
+            _AddressTextField(controller: _line1, label: 'Address line'),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _AddressTextField(controller: _city, label: 'City'),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _AddressTextField(controller: _state, label: 'State'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _AddressTextField(
+              controller: _pincode,
+              label: 'Pincode',
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    style: BStoreButtons.outlined(),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: _save,
+                    style: BStoreButtons.filled(),
+                    child: Text(widget.initial == null
+                        ? 'Save address'
+                        : 'Update address'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AddressTextField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final TextInputType? keyboardType;
+
+  const _AddressTextField({
+    required this.controller,
+    required this.label,
+    this.keyboardType,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Pinned light styling: the store has no dark mode.
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      style: const TextStyle(
+        color: BStoreColors.textPrimary,
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: BStoreColors.textMuted),
+        hintStyle: const TextStyle(color: BStoreColors.textMuted),
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: BStoreColors.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: BStoreColors.primary),
         ),
       ),
     );

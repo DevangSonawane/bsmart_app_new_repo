@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../services/razorpay_checkout_service.dart';
 import 'shared/store_shared_widgets.dart';
+import 'store_address_book.dart';
 import 'store_models.dart';
+import 'store_order_tracking_page.dart';
+import 'store_saved_address_page.dart';
 import 'store_theme.dart';
 
 class VisitorProductPaymentPage extends StatefulWidget {
@@ -21,8 +25,27 @@ class VisitorProductPaymentPage extends StatefulWidget {
 }
 
 class _VisitorProductPaymentPageState extends State<VisitorProductPaymentPage> {
-  String _selectedMethod = 'visa';
+  String _selectedMethod = 'wallet';
   bool _useDeliveryAddress = true;
+
+  @override
+  void initState() {
+    super.initState();
+    StoreAddressBook.instance.ensureLoaded();
+  }
+
+  ShipAddress get _address => StoreAddressBook.instance.selected;
+
+  Future<void> _pickAddress() async {
+    final picked = await Navigator.of(context).push<ShipAddress>(
+      MaterialPageRoute<ShipAddress>(
+        builder: (_) => const StoreSavedAddressPage(selectMode: true),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    StoreAddressBook.instance.select(picked.id);
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,33 +81,34 @@ class _VisitorProductPaymentPageState extends State<VisitorProductPaymentPage> {
                     ),
                     const SizedBox(height: 9),
                     _PaymentMethodCard(
-                      selected: _selectedMethod == 'visa',
-                      icon: const _VisaMark(),
-                      title: 'Visa .... 4821',
-                      subtitle: 'Expires 08/29',
-                      trailing: const _SelectedPill(),
-                      onTap: () => setState(() => _selectedMethod = 'visa'),
-                    ),
-                    const SizedBox(height: 8),
-                    _PaymentMethodCard(
-                      selected: _selectedMethod == 'card',
-                      icon: const Icon(LucideIcons.creditCard, size: 28),
-                      title: 'Add new card',
-                      onTap: () => setState(() => _selectedMethod = 'card'),
-                    ),
-                    const SizedBox(height: 8),
-                    _PaymentMethodCard(
                       selected: _selectedMethod == 'wallet',
                       icon: const Icon(LucideIcons.wallet, size: 28),
-                      title: 'Digital wallet',
+                      title: 'Wallet / bCoins',
+                      subtitle: '1 coin = ₹1 · deducted instantly',
+                      trailing: _selectedMethod == 'wallet'
+                          ? const _SelectedPill()
+                          : null,
                       onTap: () => setState(() => _selectedMethod = 'wallet'),
                     ),
                     const SizedBox(height: 8),
                     _PaymentMethodCard(
-                      selected: _selectedMethod == 'bcoins',
-                      icon: const _BCoinsMark(),
-                      title: 'Pay with bCoins',
-                      onTap: () => setState(() => _selectedMethod = 'bcoins'),
+                      selected: _selectedMethod == 'razorpay',
+                      icon: const Icon(LucideIcons.creditCard, size: 28),
+                      title: 'Razorpay',
+                      subtitle: 'UPI · cards · netbanking',
+                      trailing: _selectedMethod == 'razorpay'
+                          ? const _SelectedPill()
+                          : null,
+                      onTap: () =>
+                          setState(() => _selectedMethod = 'razorpay'),
+                    ),
+                    const SizedBox(height: 10),
+                    AnimatedBuilder(
+                      animation: StoreAddressBook.instance,
+                      builder: (context, _) => _DeliveryAddressCard(
+                        address: _address,
+                        onChange: _pickAddress,
+                      ),
                     ),
                     const SizedBox(height: 10),
                     _BillingAddressCard(
@@ -98,9 +122,16 @@ class _VisitorProductPaymentPageState extends State<VisitorProductPaymentPage> {
                   ],
                 ),
               ),
-              _PayButton(
-                amount: widget.amount,
-                bCoinsSavings: widget.bCoinsSavings,
+              AnimatedBuilder(
+                animation: StoreAddressBook.instance,
+                builder: (context, _) => _PayButton(
+                  amount: widget.amount,
+                  bCoinsSavings: widget.bCoinsSavings,
+                  paymentMethod: _selectedMethod,
+                  shippingAddress: _address.toShippingJson(),
+                  addressLabel:
+                      '${_address.name}\n${_address.summaryLine}\nIndia',
+                ),
               ),
             ],
           ),
@@ -326,49 +357,6 @@ class _IconTile extends StatelessWidget {
   }
 }
 
-class _VisaMark extends StatelessWidget {
-  const _VisaMark();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Text(
-      'VISA',
-      style: TextStyle(
-        color: BStoreColors.visaBlue,
-        fontSize: 15,
-        fontWeight: FontWeight.w900,
-        fontStyle: FontStyle.italic,
-      ),
-    );
-  }
-}
-
-class _BCoinsMark extends StatelessWidget {
-  const _BCoinsMark();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 28,
-      height: 28,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: BStoreColors.accentPurple, width: 1.4),
-      ),
-      child: const Center(
-        child: Text(
-          'b',
-          style: TextStyle(
-            color: BStoreColors.accentPurple,
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _SelectedPill extends StatelessWidget {
   const _SelectedPill();
 
@@ -387,6 +375,76 @@ class _SelectedPill extends StatelessWidget {
           fontSize: 11,
           fontWeight: FontWeight.w900,
         ),
+      ),
+    );
+  }
+}
+
+class _DeliveryAddressCard extends StatelessWidget {
+  final ShipAddress address;
+  final VoidCallback onChange;
+
+  const _DeliveryAddressCard({
+    required this.address,
+    required this.onChange,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 54),
+      padding: const EdgeInsets.fromLTRB(10, 10, 4, 10),
+      decoration: storeSoftCardDecoration(radius: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: BStoreColors.surfaceTint,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              LucideIcons.mapPin,
+              color: BStoreColors.primary,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${address.label} · ${address.name}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: BStoreColors.textPrimary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  address.summaryLine,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: BStoreColors.textSecondary,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: onChange,
+            child: const Text('Change'),
+          ),
+        ],
       ),
     );
   }
@@ -484,14 +542,140 @@ class _SecurePaymentNote extends StatelessWidget {
   }
 }
 
-class _PayButton extends StatelessWidget {
+class _PayButton extends StatefulWidget {
   final String amount;
   final double bCoinsSavings;
+  final String paymentMethod;
+  final Map<String, String> shippingAddress;
+  final String addressLabel;
 
   const _PayButton({
     required this.amount,
     required this.bCoinsSavings,
+    this.paymentMethod = 'wallet',
+    required this.shippingAddress,
+    required this.addressLabel,
   });
+
+  @override
+  State<_PayButton> createState() => _PayButtonState();
+}
+
+class _PayButtonState extends State<_PayButton> {
+  bool _submitting = false;
+  final RazorpayCheckoutService _razorpay = RazorpayCheckoutService();
+
+  @override
+  void dispose() {
+    _razorpay.dispose();
+    super.dispose();
+  }
+
+  StoreMockOrder _orderFrom(
+    Map<String, dynamic> response,
+    List<StoreMockCartLine> productLines,
+  ) {
+    final serverOrder = response['order'];
+    final serverMap = serverOrder is Map
+        ? Map<String, dynamic>.from(serverOrder)
+        : response;
+    final serverId = (serverMap['id'] ??
+            serverMap['_id'] ??
+            serverMap['order_id'])
+        ?.toString();
+    return StoreMockOrder(
+      id: (serverId == null || serverId.isEmpty)
+          ? 'BS${DateTime.now().millisecondsSinceEpoch}'
+          : serverId,
+      customerName: 'You',
+      avatarColor: const Color(0xFFE5F5F3),
+      status: StoreMockOrderStatus.newOrder,
+      lines: productLines,
+      paidAmount: _amountValue(widget.amount),
+      bCoinsSavings: widget.bCoinsSavings,
+      address: widget.addressLabel,
+    );
+  }
+
+  void _goSuccess(StoreMockOrder order, String methodLabel) {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => VisitorProductPurchaseSuccessPage(
+          amount: widget.amount,
+          order: order,
+          paymentMethodLabel: methodLabel,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _payWithRazorpay(
+    List<StoreMockCartLine> productLines,
+    Map<String, String> address,
+  ) async {
+    // Creates the backend order first (stays pending until verified).
+    final response = await StoreMockState.instance.checkoutWithRazorpay(
+      shippingAddress: address,
+    );
+    if (!mounted) return;
+    final order = _orderFrom(response, productLines);
+    final razorpay = RazorpayCheckoutService.razorpayOf(
+      response,
+      fallbackTotal: _amountValue(widget.amount),
+    );
+    if (razorpay == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Razorpay is not configured on the server (missing key_id). '
+            'Pay with wallet instead.',
+          ),
+        ),
+      );
+      if (mounted) setState(() => _submitting = false);
+      return;
+    }
+    _razorpay.open(
+      keyId: razorpay.keyId,
+      orderId: razorpay.orderId,
+      amountPaise: razorpay.amountPaise,
+      description: 'B-Smart order ${order.id}',
+      onSuccess: (success) async {
+        try {
+          await StoreMockState.instance.verifyOrderPayment(
+            orderId: order.id,
+            razorpayOrderId: success.orderId,
+            razorpayPaymentId: success.paymentId,
+            razorpaySignature: success.signature,
+          );
+          if (!mounted) return;
+          _goSuccess(order, 'Razorpay');
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Payment verification failed: $e')),
+          );
+        } finally {
+          if (mounted) setState(() => _submitting = false);
+        }
+      },
+      onFailure: (failure) {
+        if (!mounted) return;
+        setState(() => _submitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              failure.dismissed
+                  ? 'Payment cancelled. Order ${order.id} is pending — retry from tracking.'
+                  : 'Razorpay: ${failure.message} Order ${order.id} stays pending.',
+            ),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -507,27 +691,65 @@ class _PayButton extends StatelessWidget {
         height: 46,
         width: double.infinity,
         child: FilledButton.icon(
-          onPressed: () {
-            if (StoreMockState.instance.cartLines.isEmpty) {
-              Navigator.of(context).maybePop();
-              return;
-            }
-            final order = StoreMockState.instance.placeOrder(
-              paidAmount: _amountValue(amount),
-              bCoinsSavings: bCoinsSavings,
-            );
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute<void>(
-                builder: (_) => VisitorProductPurchaseSuccessPage(
-                  amount: amount,
-                  order: order,
-                ),
-              ),
-            );
-          },
-          icon: const Icon(LucideIcons.lockKeyhole, size: 18),
+          onPressed: _submitting
+              ? null
+              : () async {
+                  if (StoreMockState.instance.cartLines.isEmpty) {
+                    Navigator.of(context).maybePop();
+                    return;
+                  }
+                  final lines = List<StoreMockCartLine>.from(
+                    StoreMockState.instance.cartLines,
+                  );
+                  // Services have no cart per spec: only products go through
+                  // POST /api/orders/checkout.
+                  final productLines = lines
+                      .where((l) => l.item.type == StoreMockItemType.product)
+                      .toList();
+                  if (productLines.isEmpty) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                            'Services are booked directly, not via product checkout.'),
+                      ),
+                    );
+                    return;
+                  }
+                  setState(() => _submitting = true);
+                  try {
+                    final address = widget.shippingAddress;
+                    if (widget.paymentMethod == 'razorpay') {
+                      await _payWithRazorpay(productLines, address);
+                      return;
+                    }
+                    final response =
+                        await StoreMockState.instance.checkoutWithWallet(
+                      shippingAddress: address,
+                    );
+                    if (!context.mounted) return;
+                    _goSuccess(
+                      _orderFrom(response, productLines),
+                      'Wallet',
+                    );
+                  } catch (e) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Checkout failed: $e')),
+                    );
+                  } finally {
+                    if (mounted) setState(() => _submitting = false);
+                  }
+                },
+          icon: _submitting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(LucideIcons.lockKeyhole, size: 18),
           label: Text(
-            'Confirm and pay $amount',
+            _submitting ? 'Confirming...' : 'Confirm and pay ${widget.amount}',
             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
           ),
           style: BStoreButtons.filled(radius: 9),
@@ -544,11 +766,13 @@ class _PayButton extends StatelessWidget {
 class VisitorProductPurchaseSuccessPage extends StatelessWidget {
   final String amount;
   final StoreMockOrder order;
+  final String paymentMethodLabel;
 
   const VisitorProductPurchaseSuccessPage({
     super.key,
     required this.amount,
     required this.order,
+    this.paymentMethodLabel = 'Wallet',
   });
 
   @override
@@ -608,8 +832,9 @@ class VisitorProductPurchaseSuccessPage extends StatelessWidget {
                   children: [
                     _SuccessRow(label: 'Amount paid', value: amount),
                     const SizedBox(height: 10),
-                    const _SuccessRow(
-                        label: 'Payment method', value: 'Visa 4821'),
+                    _SuccessRow(
+                        label: 'Payment method',
+                        value: paymentMethodLabel),
                     const SizedBox(height: 10),
                     _SuccessRow(
                       label: _hasService(order) ? 'Fulfillment' : 'Delivery',
@@ -650,7 +875,15 @@ class VisitorProductPurchaseSuccessPage extends StatelessWidget {
               SizedBox(
                 height: 46,
                 child: OutlinedButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    StoreMockState.instance.refreshBuyerOrders();
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            const StoreOrderTrackingListPage(),
+                      ),
+                    );
+                  },
                   style: BStoreButtons.outlined(),
                   child: const Text(
                     'View order',

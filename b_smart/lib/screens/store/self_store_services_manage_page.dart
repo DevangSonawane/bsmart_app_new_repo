@@ -1,6 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../api/phase2_store_api.dart';
+import '../../utils/url_helper.dart';
+import 'self_store_availability_page.dart';
+import 'shared/store_image_editor.dart';
+import 'store_models.dart';
+import 'store_role_setup_screen.dart';
+import 'store_theme.dart';
 import 'shared/store_shared_widgets.dart';
 
 class SelfStoreServicesManageScreen extends StatelessWidget {
@@ -15,7 +24,8 @@ class SelfStoreServicesManageScreen extends StatelessWidget {
         child: CustomScrollView(
           physics: const BouncingScrollPhysics(),
           slivers: [
-            const SelfStoreServicesManagePage(),
+            const StoreRoleGateSliver(
+                child: SelfStoreServicesManagePage()),
             SliverToBoxAdapter(
               child:
                   SizedBox(height: MediaQuery.of(context).padding.bottom + 18),
@@ -38,6 +48,45 @@ class SelfStoreServicesManagePage extends StatefulWidget {
 class _SelfStoreServicesManagePageState
     extends State<SelfStoreServicesManagePage> {
   int _selectedTab = 0;
+  late Future<List<Map<String, dynamic>>> _servicesFuture;
+  late Future<List<Map<String, dynamic>>> _bookingsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _servicesFuture = Phase2StoreApi().myServices();
+    _bookingsFuture =
+        Phase2StoreApi().sellerServiceBookings().catchError((_) => const <Map<String, dynamic>>[]);
+  }
+
+  void _refreshServices() {
+    setState(() {
+      _servicesFuture = Phase2StoreApi().myServices();
+      _bookingsFuture = Phase2StoreApi()
+          .sellerServiceBookings()
+          .catchError((_) => const <Map<String, dynamic>>[]);
+    });
+  }
+
+  static int _bookingsFor(
+      String serviceId, List<Map<String, dynamic>> bookings) {
+    if (serviceId.isEmpty) return 0;
+    var count = 0;
+    for (final booking in bookings) {
+      final service = booking['service'];
+      String? id;
+      if (service is Map) {
+        id = (service['id'] ?? service['_id'])?.toString();
+      }
+      id ??= booking['service_id']?.toString();
+      if (id == serviceId) {
+        final status =
+            booking['status']?.toString().toLowerCase() ?? '';
+        if (status != 'cancelled' && status != 'canceled') count++;
+      }
+    }
+    return count;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -64,33 +113,70 @@ class _SelfStoreServicesManagePageState
           ),
         ),
         const SizedBox(height: 12),
-        const _ManageServiceCard(
-          imageAsset: 'assets/bSmart_Store/mockimages/clothes_clean_test.jpg',
-          title: 'Home Cleaning',
-          price: 'From \$40',
-        ),
-        const SizedBox(height: 10),
-        const _ManageServiceCard(
-          imageAsset: 'assets/bSmart_Store/mockimages/electronics.jpg',
-          title: 'Business Consulting',
-          price: '\$60 / hour',
-        ),
-        const SizedBox(height: 10),
-        const _ManageServiceCard(
-          imageAsset: 'assets/bSmart_Store/mockimages/vegetables.jpg',
-          title: 'Yoga Coaching',
-          price: '\$35 / session',
+        FutureBuilder<List<Map<String, dynamic>>>(
+          future: _servicesFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Padding(
+                padding: EdgeInsets.fromLTRB(18, 24, 18, 0),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final services = (snapshot.data ?? const []).where((service) {
+              final visible = service['visible_to_customers'];
+              return _selectedTab == 0 ? visible != false : visible == false;
+            }).toList();
+            if (services.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.fromLTRB(18, 24, 18, 0),
+                child: StoreEmptyState(
+                  icon: LucideIcons.briefcaseBusiness,
+                  title: 'No services here',
+                  body: 'Create a service to start accepting bookings.',
+                ),
+              );
+            }
+            return Column(
+              children: [
+                for (var i = 0; i < services.length; i++) ...[
+                  FutureBuilder<List<Map<String, dynamic>>>(
+                    future: _bookingsFuture,
+                    builder: (context, bookingSnapshot) {
+                      final bookings = bookingSnapshot.data ?? const [];
+                      final serviceId = _serviceText(
+                        services[i],
+                        const ['id', '_id'],
+                      );
+                      return _ManageServiceCard.fromApi(
+                        services[i],
+                        onChanged: _refreshServices,
+                        bookingsCount:
+                            _bookingsFor(serviceId, bookings),
+                      );
+                    },
+                  ),
+                  if (i != services.length - 1) const SizedBox(height: 10),
+                ],
+              ],
+            );
+          },
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
           child: Align(
             alignment: Alignment.centerRight,
             child: _AddServiceButton(
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const StoreAddServiceFlowScreen(),
-                ),
-              ),
+              onTap: () async {
+                if (!await StoreRoleGate.ensureInfluencer(context)) return;
+                if (!context.mounted) return;
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => StoreAddServiceFlowScreen(
+                      onPublished: _refreshServices,
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ),
@@ -182,18 +268,54 @@ class _ServiceTabs extends StatelessWidget {
       ],
     );
   }
+
 }
 
+
 class _ManageServiceCard extends StatelessWidget {
-  final String imageAsset;
+  final String imageUrl;
   final String title;
   final String price;
+  final String serviceId;
+  final Map<String, dynamic> raw;
+  final VoidCallback? onChanged;
+  final int bookingsCount;
 
   const _ManageServiceCard({
-    required this.imageAsset,
+    this.imageUrl = '',
     required this.title,
     required this.price,
+    this.serviceId = '',
+    this.raw = const {},
+    this.onChanged,
+    this.bookingsCount = 0,
   });
+
+  factory _ManageServiceCard.fromApi(
+    Map<String, dynamic> service, {
+    VoidCallback? onChanged,
+    int bookingsCount = 0,
+  }) {
+    final price = _serviceNumber(service, const ['price']);
+    final rateType = _serviceText(service, const ['rate_type']);
+    final suffix = switch (rateType) {
+      'per_hour' => ' / hour',
+      'per_session' => ' / session',
+      'starting_from' => ' onwards',
+      _ => '',
+    };
+    return _ManageServiceCard(
+      imageUrl: _serviceImageUrl(service),
+      title:
+          _serviceText(service, const ['name', 'title'], fallback: 'Service'),
+      price:
+          '₹${price.toStringAsFixed(price == price.roundToDouble() ? 0 : 2)}$suffix',
+      serviceId: _serviceText(service, const ['id', '_id']),
+      raw: service,
+      onChanged: onChanged,
+      bookingsCount: bookingsCount,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -205,12 +327,12 @@ class _ManageServiceCard extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: Row(
           children: [
-            Image.asset(
-              imageAsset,
+            StoreItemImage(
+              imageUrl: imageUrl,
+              icon: LucideIcons.briefcaseBusiness,
               width: 124,
               height: 146,
-              fit: BoxFit.cover,
-              cacheWidth: 330,
+              debugLabel: 'self-store-service',
             ),
             Expanded(
               child: Padding(
@@ -241,17 +363,19 @@ class _ManageServiceCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Row(
+                    Row(
                       children: [
-                        Icon(
+                        const Icon(
                           LucideIcons.calendarDays,
                           color: Color(0xFF078D92),
                           size: 13,
                         ),
-                        SizedBox(width: 5),
+                        const SizedBox(width: 5),
                         Text(
-                          '12 bookings',
-                          style: TextStyle(
+                          bookingsCount == 0
+                              ? 'No bookings yet'
+                              : '$bookingsCount ${bookingsCount == 1 ? 'booking' : 'bookings'}',
+                          style: const TextStyle(
                             color: Color(0xFF29304D),
                             fontSize: 11.5,
                             height: 1.15,
@@ -266,7 +390,9 @@ class _ManageServiceCard extends StatelessWidget {
                         const _VisibleBadge(),
                         const Spacer(),
                         TextButton.icon(
-                          onPressed: () {},
+                          onPressed: serviceId.isEmpty
+                              ? null
+                              : () => _showEditServiceSheet(context),
                           icon: const Icon(LucideIcons.pencil, size: 13),
                           label: const Text('Edit'),
                           style: TextButton.styleFrom(
@@ -282,7 +408,9 @@ class _ManageServiceCard extends StatelessWidget {
                           ),
                         ),
                         IconButton(
-                          onPressed: () {},
+                          onPressed: serviceId.isEmpty
+                              ? null
+                              : () => _confirmDeleteService(context),
                           icon: const Icon(LucideIcons.ellipsisVertical,
                               size: 17),
                           color: const Color(0xFF060D35),
@@ -301,6 +429,147 @@ class _ManageServiceCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _showEditServiceSheet(BuildContext context) async {
+    final priceCtrl = TextEditingController(
+      text: _serviceNumber(raw, const ['price']).toStringAsFixed(0),
+    );
+    bool visible = raw['visible_to_customers'] != false;
+    List<Map<String, dynamic>> images =
+        StoreImageEditor.entriesOf(raw);
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      builder: (sheetContext) => Theme(
+        data: BStoreTheme.data(sheetContext),
+        child: StatefulBuilder(
+        builder: (sheetContext, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            18,
+            18,
+            18,
+            MediaQuery.of(sheetContext).viewInsets.bottom + 18,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: priceCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                    labelText: 'Price (₹)', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 10),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Visible to customers'),
+                value: visible,
+                onChanged: (v) => setSheetState(() => visible = v),
+              ),
+              StoreImageEditor(
+                initial: images,
+                minCount: 0,
+                onChanged: (next) => images = next,
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final updated = await Navigator.of(context).push<bool>(
+                    MaterialPageRoute<bool>(
+                      builder: (_) => SelfStoreAvailabilityScreen(
+                        serviceId: serviceId,
+                        serviceName: title,
+                        initialAvailability: raw['weekly_availability'] is Map
+                            ? Map<String, dynamic>.from(
+                                raw['weekly_availability'] as Map)
+                            : const {},
+                      ),
+                    ),
+                  );
+                  if (updated == true) {
+                    if (!context.mounted) return;
+                    Navigator.of(sheetContext).pop('saved-externally');
+                  }
+                },
+                icon: const Icon(LucideIcons.calendarDays, size: 18),
+                label: const Text('Edit weekly availability'),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.of(sheetContext).pop('save'),
+                  child: const Text('Save'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        ),
+      ),
+    );
+    if (!context.mounted) return;
+    if (action == 'saved-externally') {
+      await StoreMockState.instance.refreshMarketplace();
+      onChanged?.call();
+      return;
+    }
+    if (action != 'save') return;
+    try {
+      final price = double.tryParse(priceCtrl.text.trim());
+      await Phase2StoreApi().updateService(serviceId, {
+        if (price != null && price > 0) 'price': price,
+        'visible_to_customers': visible,
+        'images': images,
+      });
+      await StoreMockState.instance.refreshMarketplace();
+      onChanged?.call();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Service updated.')));
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Update failed: $e')));
+    }
+  }
+
+  Future<void> _confirmDeleteService(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: const Text('Delete service?'),
+        content: Text('Remove "$title" from your store?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(d).pop(false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.of(d).pop(true),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (confirm != true || !context.mounted) return;
+    try {
+      await Phase2StoreApi().deleteService(serviceId);
+      await StoreMockState.instance.refreshMarketplace();
+      onChanged?.call();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Service deleted.')));
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+    }
   }
 }
 
@@ -375,7 +644,9 @@ class _AddServiceButton extends StatelessWidget {
 }
 
 class StoreAddServiceFlowScreen extends StatefulWidget {
-  const StoreAddServiceFlowScreen({super.key});
+  final VoidCallback? onPublished;
+
+  const StoreAddServiceFlowScreen({super.key, this.onPublished});
 
   @override
   State<StoreAddServiceFlowScreen> createState() =>
@@ -384,6 +655,7 @@ class StoreAddServiceFlowScreen extends StatefulWidget {
 
 class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
   int _step = 1;
+  bool _publishing = false;
   String _serviceMethod = 'At customer location';
   String? _category;
   String _duration = '1 hour';
@@ -437,7 +709,8 @@ class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
             _FlowFooter(
               step: _step,
               onContinue: () => setState(() => _step = 2),
-              onPublish: () => Navigator.of(context).pop(),
+              publishing: _publishing,
+              onPublish: _publishService,
             ),
           ],
         ),
@@ -531,6 +804,60 @@ class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
             setState(() => _advanceNotice = value ?? _advanceNotice),
       ),
     ];
+  }
+
+  Future<void> _publishService() async {
+    final name = _serviceNameController.text.trim();
+    final description = _descriptionController.text.trim();
+    final category = _category?.trim();
+    final price = _serviceNumber(
+      {'price': _amountController.text},
+      const ['price'],
+    );
+    if (name.isEmpty ||
+        description.isEmpty ||
+        category == null ||
+        category.isEmpty ||
+        price <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Add service name, category, description and price.'),
+        ),
+      );
+      return;
+    }
+    setState(() => _publishing = true);
+    try {
+      await Phase2StoreApi().createService({
+        'images': const [],
+        'name': name,
+        'category': category,
+        'provider': 'B-Smart Store',
+        'short_description': description,
+        'key_highlights': const ['Published from B-Smart Store'],
+        'price': price,
+        'rate_type': _rateTypeFor(_rateUnit),
+        'duration': _duration,
+        'subservices': const [],
+        'service_method': _methodFor(_serviceMethod),
+        'weekly_availability': _defaultWeeklyAvailability(),
+        'visible_to_customers': true,
+      });
+      await StoreMockState.instance.refreshMarketplace();
+      widget.onPublished?.call();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Service published.')),
+      );
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Publish failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _publishing = false);
+    }
   }
 }
 
@@ -1077,11 +1404,13 @@ class _FlowFooter extends StatelessWidget {
   final int step;
   final VoidCallback onContinue;
   final VoidCallback onPublish;
+  final bool publishing;
 
   const _FlowFooter({
     required this.step,
     required this.onContinue,
     required this.onPublish,
+    this.publishing = false,
   });
 
   @override
@@ -1138,7 +1467,7 @@ class _FlowFooter extends StatelessWidget {
             child: SizedBox(
               height: 50,
               child: FilledButton(
-                onPressed: onPublish,
+                onPressed: publishing ? null : onPublish,
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFF078D92),
                   foregroundColor: Colors.white,
@@ -1146,13 +1475,20 @@ class _FlowFooter extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                child: const FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    'Publish Service',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
-                  ),
-                ),
+                child: publishing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          'Publish Service',
+                          style: TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w900),
+                        ),
+                      ),
               ),
             ),
           ),
@@ -1160,4 +1496,74 @@ class _FlowFooter extends StatelessWidget {
       ),
     );
   }
+}
+
+double _serviceNumber(Map<String, dynamic> json, List<String> keys) {
+  for (final key in keys) {
+    final value = json[key];
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      final parsed = double.tryParse(value.replaceAll(RegExp(r'[^0-9.]'), ''));
+      if (parsed != null) return parsed;
+    }
+  }
+  return 0;
+}
+
+String _serviceText(
+  Map<String, dynamic> json,
+  List<String> keys, {
+  String fallback = '',
+}) {
+  for (final key in keys) {
+    final value = json[key]?.toString().trim();
+    if (value != null && value.isNotEmpty && value != 'null') return value;
+  }
+  return fallback;
+}
+
+String _serviceImageUrl(Map<String, dynamic> json) {
+  final images = json['images'];
+  dynamic first;
+  if (images is List && images.isNotEmpty) first = images.first;
+  if (first is Map) {
+    return UrlHelper.absoluteUrl(_serviceText(
+      first.map((key, value) => MapEntry(key.toString(), value)),
+      const ['url', 'fileName', 'filename', 'path', 'src'],
+    ));
+  }
+  if (first is String) return UrlHelper.absoluteUrl(first);
+  return '';
+}
+
+String _rateTypeFor(String rateUnit) {
+  return switch (rateUnit) {
+    'per hour' => 'per_hour',
+    'per session' => 'per_session',
+    'fixed' => 'fixed',
+    _ => 'starting_from',
+  };
+}
+
+String _methodFor(String method) {
+  return switch (method) {
+    'Online' => 'online',
+    'At my location' => 'at_my_location',
+    _ => 'at_customer_location',
+  };
+}
+
+Map<String, List<Map<String, String>>> _defaultWeeklyAvailability() {
+  const available = [
+    {'start': '09:00', 'end': '17:00'},
+  ];
+  return const {
+    'monday': available,
+    'tuesday': available,
+    'wednesday': available,
+    'thursday': available,
+    'friday': available,
+    'saturday': [],
+    'sunday': [],
+  };
 }

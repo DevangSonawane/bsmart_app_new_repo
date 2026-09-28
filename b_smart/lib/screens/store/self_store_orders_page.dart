@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../utils/url_helper.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_models.dart';
 
@@ -20,10 +21,146 @@ typedef _SelfOrderProduct = StoreMockCartLine;
 class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
   _OrderManagerPage _page = _OrderManagerPage.list;
   _SelfOrderStatus _selectedStatus = StoreMockOrderStatus.newOrder;
-  _SelfOrder _selectedOrder = StoreMockState.instance.orders.first;
+  _SelfOrder? _selectedLiveOrder;
+  String? _selectedLiveId;
+  bool _updating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      StoreMockState.instance.refreshSellerOrders();
+    });
+  }
+
+  List<_SelfOrder> get _liveOrders =>
+      StoreMockState.instance.sellerOrders.map(_mockFromApi).toList();
+
+  _SelfOrder? get _selectedOrder => _selectedLiveOrder;
+
+  static _SelfOrder _mockFromApi(Map<String, dynamic> m) {
+    final id = StoreMockState.orderIdOf(m).isEmpty
+        ? 'order'
+        : StoreMockState.orderIdOf(m);
+    final statusStr = StoreMockState.statusOf(m);
+    final status = switch (statusStr) {
+      'processing' => StoreMockOrderStatus.processing,
+      'shipped' => StoreMockOrderStatus.shipped,
+      'delivered' || 'completed' => StoreMockOrderStatus.completed,
+      _ => StoreMockOrderStatus.newOrder,
+    };
+    final ship = m['shipping_address'];
+    final customer = ship is Map
+        ? (ship['name']?.toString() ?? 'Customer')
+        : (m['buyer_name']?.toString() ?? 'Customer');
+    final address = ship is Map
+        ? [
+            ship['name'],
+            ship['address_line1'],
+            '${ship['city'] ?? ''}, ${ship['state'] ?? ''} ${ship['pincode'] ?? ''}'
+          ]
+            .where((e) => (e?.toString().trim().isNotEmpty ?? false))
+            .join('\n')
+        : '';
+    final amount = StoreMockState.amountOf(m);
+    final rawItems = m['items'];
+    final lines = <StoreMockCartLine>[];
+    if (rawItems is List) {
+      for (final r in rawItems.whereType<Map>()) {
+        final map = r.map((k, v) => MapEntry(k.toString(), v));
+        final prod = map['product'];
+        final pm = prod is Map
+            ? prod.map((k, v) => MapEntry(k.toString(), v))
+            : map;
+        final title = (pm['name'] ?? pm['title'] ?? 'Item').toString();
+        final price = StoreMockState.amountOf(pm);
+        final qty = (map['quantity'] is num)
+            ? (map['quantity'] as num).toInt()
+            : int.tryParse('${map['quantity'] ?? 1}') ?? 1;
+        lines.add(StoreMockCartLine(
+          item: StoreMockCatalogItem(
+            id: (pm['id'] ?? pm['_id'] ?? title).toString(),
+            type: StoreMockItemType.product,
+            title: title,
+            category: (pm['category'] ?? 'Product').toString(),
+            description: '',
+            imageUrl: _orderImageOf(pm),
+            icon: LucideIcons.package,
+            price: price,
+            duration: '2-3 days',
+            rating: 'New',
+            reviews: '0',
+            raw: Map<String, dynamic>.from(pm),
+          ),
+          quantity: qty.clamp(1, 99),
+        ));
+      }
+    }
+    return StoreMockOrder(
+      id: id,
+      customerName: customer,
+      avatarColor: const Color(0xFFEAD8CC),
+      status: status,
+      lines: lines,
+      paidAmount: amount,
+      bCoinsSavings: 0,
+      address: address.isEmpty ? customer : address,
+    );
+  }
+
+  static String _orderImageOf(Map<String, dynamic> pm) {
+    final images = pm['images'];
+    if (images is List && images.isNotEmpty) {
+      final first = images.first;
+      if (first is Map) {
+        for (final key in ['url', 'fileName', 'filename', 'path', 'src']) {
+          final value = first[key]?.toString().trim() ?? '';
+          if (value.isNotEmpty) return UrlHelper.absoluteUrl(value);
+        }
+      } else if (first is String && first.trim().isNotEmpty) {
+        return UrlHelper.absoluteUrl(first.trim());
+      }
+    }
+    return '';
+  }
+
+  String _nextStatusFor(_SelfOrder order) {
+    return switch (order.status) {
+      StoreMockOrderStatus.newOrder => 'processing',
+      StoreMockOrderStatus.processing => 'shipped',
+      StoreMockOrderStatus.shipped => 'delivered',
+      StoreMockOrderStatus.completed => 'delivered',
+    };
+  }
+
+  Future<void> _advanceSelected() async {
+    final id = _selectedLiveId;
+    final order = _selectedOrder;
+    if (id == null || id.isEmpty || order == null) return;
+    setState(() => _updating = true);
+    try {
+      await StoreMockState.instance
+          .advanceOrderStatus(id, _nextStatusFor(order));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Order status updated.')),
+      );
+      setState(() => _page = _OrderManagerPage.list);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Status update failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_page != _OrderManagerPage.list && _selectedOrder == null) {
+      _page = _OrderManagerPage.list;
+    }
     return switch (_page) {
       _OrderManagerPage.list => _buildListPage(),
       _OrderManagerPage.details => _buildDetailsPage(),
@@ -32,53 +169,103 @@ class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
   }
 
   Widget _buildListPage() {
-    final filteredOrders = StoreMockState.instance.orders
-        .where((order) => order.status == _selectedStatus)
-        .toList();
-    return SliverList.list(
-      children: [
-        const _OrdersTopBar(showBack: false, title: 'Orders'),
-        _OrderStatusTabs(
-          selectedStatus: _selectedStatus,
-          onSelected: (status) => setState(() => _selectedStatus = status),
-        ),
-        const SizedBox(height: 8),
-        for (final order in filteredOrders)
-          _OrderSummaryCard(
-            order: order,
-            onViewOrder: () => setState(() {
-              _selectedOrder = order;
-              _page = _OrderManagerPage.details;
-            }),
-          ),
-        if (filteredOrders.isEmpty)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(18, 24, 18, 0),
-            child: StoreEmptyState(
-              icon: LucideIcons.shoppingBag,
-              title: 'No orders here',
-              body: 'Orders for this status will appear here.',
+    return AnimatedBuilder(
+      animation: StoreMockState.instance,
+      builder: (context, _) {
+        final liveOrders = _liveOrders;
+        final filteredOrders = liveOrders
+            .where((order) => order.status == _selectedStatus)
+            .toList();
+        final loading = StoreMockState.instance.ordersLoading;
+        final error =
+            !loading && liveOrders.isEmpty
+                ? StoreMockState.instance.lastError
+                : null;
+        return SliverList.list(
+          children: [
+            const _OrdersTopBar(showBack: false, title: 'Orders'),
+            _OrderStatusTabs(
+              selectedStatus: _selectedStatus,
+              onSelected: (status) => setState(() => _selectedStatus = status),
             ),
-          ),
-      ],
+            if (loading)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(18, 16, 18, 0),
+                child: LinearProgressIndicator(),
+              ),
+            const SizedBox(height: 8),
+            for (final order in filteredOrders)
+              _OrderSummaryCard(
+                order: order,
+                onViewOrder: () => setState(() {
+                  _selectedLiveOrder = order;
+                  _selectedLiveId = _liveIdFor(order.id);
+                  _page = _OrderManagerPage.details;
+                }),
+              ),
+            if (filteredOrders.isEmpty && !loading)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 24, 18, 0),
+                child: error == null
+                    ? const StoreEmptyState(
+                        icon: LucideIcons.shoppingBag,
+                        title: 'No orders here',
+                        body: 'Orders for this status will appear here.',
+                      )
+                    : StoreEmptyState(
+                        icon: LucideIcons.cloudOff,
+                        title: "Couldn't load orders",
+                        body: '$error',
+                      ),
+              ),
+            if (error != null && !loading)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+                child: OutlinedButton.icon(
+                  onPressed: () => StoreMockState.instance
+                      .refreshSellerOrders(),
+                  icon: const Icon(LucideIcons.refreshCw, size: 16),
+                  label: const Text('Retry'),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
+  String? _liveIdFor(String displayId) {
+    for (final m in StoreMockState.instance.sellerOrders) {
+      if (StoreMockState.orderIdOf(m) == displayId) {
+        return StoreMockState.orderIdOf(m);
+      }
+    }
+    return displayId;
+  }
+
   Widget _buildDetailsPage() {
+    final order = _selectedOrder;
+    if (order == null) return _buildListPage();
     return SliverList.list(
       children: [
         _OrdersTopBar(
           showBack: true,
           title: 'Order details',
-          subtitle: 'Order #${_selectedOrder.id}',
+          subtitle: 'Order #${order.id}',
           onBack: () => setState(() => _page = _OrderManagerPage.list),
         ),
-        _OrderDetailsCard(order: _selectedOrder),
+        _OrderDetailsCard(order: order),
         Padding(
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
           child: _TealActionButton(
-            label: 'Start processing',
-            onTap: () => setState(() => _page = _OrderManagerPage.fulfill),
+            label: _updating
+                ? 'Updating...'
+                : order.status == StoreMockOrderStatus.newOrder
+                    ? 'Start processing'
+                    : order.status == StoreMockOrderStatus.processing
+                        ? 'Mark as shipped'
+                        : 'Mark as delivered',
+            onTap: _updating ? () {} : _advanceSelected,
           ),
         ),
       ],
@@ -86,12 +273,14 @@ class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
   }
 
   Widget _buildFulfillPage() {
+    final order = _selectedOrder;
+    if (order == null) return _buildListPage();
     return SliverList.list(
       children: [
         _OrdersTopBar(
           showBack: true,
           title: 'Fulfill order',
-          subtitle: 'Order #${_selectedOrder.id}',
+          subtitle: 'Order #${order.id}',
           onBack: () => setState(() => _page = _OrderManagerPage.details),
         ),
         const _FulfillOrderCard(),
@@ -356,7 +545,11 @@ class _OrderSummaryCard extends StatelessWidget {
                 children: [
                   const SizedBox(width: 72),
                   for (final line in order.lines.take(3)) ...[
-                    StoreProductThumb(asset: line.item.imageAsset, size: 58),
+                    StoreProductThumb(
+                      imageUrl: line.item.imageUrl,
+                      icon: line.item.icon,
+                      size: 58,
+                    ),
                     const SizedBox(width: 8),
                   ],
                 ],
@@ -505,7 +698,11 @@ class _OrderProductRow extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: Row(
         children: [
-          StoreProductThumb(asset: product.item.imageAsset, size: 74),
+          StoreProductThumb(
+            imageUrl: product.item.imageUrl,
+            icon: product.item.icon,
+            size: 74,
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Text(

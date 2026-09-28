@@ -115,7 +115,7 @@ class _VisitorStoreCartPageState extends State<VisitorStoreCartPage> {
 
   double get _subtotal => StoreMockState.instance.subtotal;
 
-  String _money(double amount) => '\$${amount.toStringAsFixed(2)}';
+  String _money(double amount) => '₹${amount.toStringAsFixed(2)}';
 
   void _handleCartChanged() {
     final subtotal = StoreMockState.instance.subtotal;
@@ -198,9 +198,33 @@ class _VisitorStoreCartPageState extends State<VisitorStoreCartPage> {
                   savings: _bCoinsResult?.savings ?? 0,
                   total: _money(_total),
                 ),
+                if (hasServices)
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(10, 10, 10, 0),
+                    child: Text(
+                      'Services are booked directly with a date/time slot — only products go through checkout.',
+                      style: TextStyle(
+                        color: BStoreColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
                 _CheckoutButton(
                   amount: _money(_total),
                   bCoinsSavings: _bCoinsResult?.savings ?? 0,
+                ),
+                TextButton(
+                  onPressed: () async {
+                    try {
+                      await StoreMockState.instance.clearCartLive();
+                    } catch (e) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Clear cart failed: $e')),
+                      );
+                    }
+                  },
+                  child: const Text('Clear cart'),
                 ),
                 if (widget.showContinueShopping)
                   _ContinueShoppingButton(
@@ -505,15 +529,13 @@ class _CartItemCard extends StatelessWidget {
           children: [
             Stack(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(9),
-                  child: Image.asset(
-                    line.item.imageAsset,
-                    width: 116,
-                    height: 106,
-                    fit: BoxFit.cover,
-                    cacheWidth: 360,
-                  ),
+                StoreItemImage(
+                  imageUrl: line.item.imageUrl,
+                  icon: line.item.icon,
+                  width: 116,
+                  height: 106,
+                  borderRadius: 9,
+                  debugLabel: 'store-cart-item',
                 ),
                 const Positioned(
                   top: 0,
@@ -566,8 +588,9 @@ class _CartItemCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${StoreMockState.instance.money(line.item.price)}'
-                    '${line.quantity > 1 ? ' x ${line.quantity}' : ''}',
+                    '${StoreMockState.instance.money(line.unitPrice)}'
+                    '${line.quantity > 1 ? ' x ${line.quantity}' : ''}'
+                    '${line.variantLabel.isEmpty ? '' : ' · ${line.variantLabel}'}',
                     style: const TextStyle(
                       color: BStoreColors.primary,
                       fontSize: 15,
@@ -582,10 +605,12 @@ class _CartItemCard extends StatelessWidget {
                         onMinus: () => StoreMockState.instance.updateQuantity(
                           line.item.id,
                           line.quantity - 1,
+                          variant: line.variant,
                         ),
                         onPlus: () => StoreMockState.instance.updateQuantity(
                           line.item.id,
                           line.quantity + 1,
+                          variant: line.variant,
                         ),
                       ),
                       const Spacer(),
@@ -593,8 +618,10 @@ class _CartItemCard extends StatelessWidget {
                         dimension: 30,
                         child: InkWell(
                           borderRadius: BorderRadius.circular(8),
-                          onTap: () => StoreMockState.instance
-                              .removeFromCart(line.item.id),
+                          onTap: () => StoreMockState.instance.removeFromCart(
+                            line.item.id,
+                            variant: line.variant,
+                          ),
                           child: const Icon(
                             LucideIcons.trash2,
                             size: 19,
@@ -841,7 +868,7 @@ class _CartTotalsCard extends StatelessWidget {
               const SizedBox(height: 10),
               _TotalRow(
                 label: 'bCoins savings',
-                value: '-\$${savings.toStringAsFixed(2)}',
+                value: '-₹${savings.toStringAsFixed(2)}',
                 valueColor: BStoreColors.primary,
               ),
             ],

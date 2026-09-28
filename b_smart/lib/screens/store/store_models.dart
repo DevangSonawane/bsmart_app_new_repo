@@ -1,5 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+
+import '../../api/phase2_store_api.dart';
+import '../../utils/url_helper.dart';
 
 class StoreCategory {
   final String label;
@@ -27,12 +32,13 @@ class StoreMockCatalogItem {
   final String title;
   final String category;
   final String description;
-  final String imageAsset;
+  final String imageUrl;
   final IconData icon;
   final double price;
   final String duration;
   final String rating;
   final String reviews;
+  final Map<String, dynamic> raw;
 
   const StoreMockCatalogItem({
     required this.id,
@@ -40,17 +46,18 @@ class StoreMockCatalogItem {
     required this.title,
     required this.category,
     required this.description,
-    required this.imageAsset,
+    this.imageUrl = '',
     required this.icon,
     required this.price,
     required this.duration,
     required this.rating,
     required this.reviews,
+    this.raw = const {},
   });
 
   String get priceLabel {
     final whole = price == price.roundToDouble();
-    return '\$${whole ? price.toStringAsFixed(0) : price.toStringAsFixed(2)}';
+    return '₹${whole ? price.toStringAsFixed(0) : price.toStringAsFixed(2)}';
   }
 }
 
@@ -58,22 +65,56 @@ class StoreMockCartLine {
   final StoreMockCatalogItem item;
   final int quantity;
   final String? schedule;
+  final Map<String, dynamic> variant;
 
   const StoreMockCartLine({
     required this.item,
     required this.quantity,
     this.schedule,
+    this.variant = const {},
   });
 
-  StoreMockCartLine copyWith({int? quantity, String? schedule}) {
+  StoreMockCartLine copyWith({
+    int? quantity,
+    String? schedule,
+    Map<String, dynamic>? variant,
+  }) {
     return StoreMockCartLine(
       item: item,
       quantity: quantity ?? this.quantity,
       schedule: schedule ?? this.schedule,
+      variant: variant ?? this.variant,
     );
   }
 
-  double get total => item.price * quantity;
+  /// Stable key identifying a variant choice (color/size), '' when none.
+  String get variantKey {
+    final color = variant['color']?.toString().trim() ?? '';
+    final size = variant['size']?.toString().trim() ?? '';
+    if (color.isEmpty && size.isEmpty) return '';
+    return '$color|$size';
+  }
+
+  String get variantLabel {
+    final parts = [
+      variant['color']?.toString().trim() ?? '',
+      variant['size']?.toString().trim() ?? '',
+    ].where((e) => e.isNotEmpty).toList();
+    return parts.join(' · ');
+  }
+
+  /// Variant-specific price wins when the backend provides one.
+  double get unitPrice {
+    final raw = variant['price'];
+    if (raw is num && raw > 0) return raw.toDouble();
+    if (raw is String) {
+      final parsed = double.tryParse(raw);
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    return item.price;
+  }
+
+  double get total => unitPrice * quantity;
 }
 
 class StoreMockOrder {
@@ -116,214 +157,93 @@ class StoreMockState extends ChangeNotifier {
   StoreMockState._();
 
   static final StoreMockState instance = StoreMockState._();
+  static List<StoreMockCatalogItem> get catalog => instance._catalog;
 
-  static const List<StoreMockCatalogItem> catalog = [
-    StoreMockCatalogItem(
-      id: 'svc-home-cleaning',
-      type: StoreMockItemType.service,
-      title: 'Home Cleaning',
-      category: 'Home Services',
-      description: 'Thorough and reliable cleaning for a fresh, healthy home.',
-      imageAsset: 'assets/bSmart_Store/mockimages/clothes.jpg',
-      icon: LucideIcons.house,
-      price: 40,
-      duration: '2-3 hrs',
-      rating: '4.8',
-      reviews: '64',
-    ),
-    StoreMockCatalogItem(
-      id: 'prd-cleaning-kit',
-      type: StoreMockItemType.product,
-      title: 'Eco Cleaning Kit',
-      category: 'Home & Living',
-      description:
-          'Reusable, plant-friendly cleaning essentials for a naturally fresh home.',
-      imageAsset: 'assets/bSmart_Store/mockimages/vegetables.jpg',
-      icon: LucideIcons.package,
-      price: 24.99,
-      duration: '2-3 days',
-      rating: '4.8',
-      reviews: '64',
-    ),
-    StoreMockCatalogItem(
-      id: 'prd-aroma-diffuser',
-      type: StoreMockItemType.product,
-      title: 'Aroma Diffuser',
-      category: 'Wellness',
-      description:
-          'Quiet ultrasonic diffuser with soft lighting for workspaces and bedrooms.',
-      imageAsset: 'assets/bSmart_Store/mockimages/electronics.jpg',
-      icon: LucideIcons.sparkles,
-      price: 32,
-      duration: '2-3 days',
-      rating: '4.7',
-      reviews: '38',
-    ),
-    StoreMockCatalogItem(
-      id: 'prd-handmade-notebook',
-      type: StoreMockItemType.product,
-      title: 'Handmade Notebook',
-      category: 'Stationery',
-      description:
-          'Textured cover notebook with smooth pages for planning, notes, and sketches.',
-      imageAsset: 'assets/bSmart_Store/mockimages/clothes_cutout_grid.png',
-      icon: LucideIcons.notebookPen,
-      price: 15,
-      duration: '2-3 days',
-      rating: '4.9',
-      reviews: '91',
-    ),
-    StoreMockCatalogItem(
-      id: 'prd-mobile-stand',
-      type: StoreMockItemType.product,
-      title: 'Foldable Mobile Stand',
-      category: 'Electronics',
-      description:
-          'Compact desk stand with an adjustable angle for video calls and streaming.',
-      imageAsset: 'assets/bSmart_Store/mobilephone/shopping.webp',
-      icon: LucideIcons.smartphone,
-      price: 18.5,
-      duration: '2-3 days',
-      rating: '4.6',
-      reviews: '44',
-    ),
-    StoreMockCatalogItem(
-      id: 'prd-fresh-market-box',
-      type: StoreMockItemType.product,
-      title: 'Fresh Market Box',
-      category: 'Groceries',
-      description:
-          'A curated weekly basket with greens, seasonal vegetables, and herbs.',
-      imageAsset: 'assets/bSmart_Store/mockimages/vegetables_cutout_grid.png',
-      icon: LucideIcons.leaf,
-      price: 29,
-      duration: '1-2 days',
-      rating: '4.9',
-      reviews: '76',
-    ),
-    StoreMockCatalogItem(
-      id: 'svc-business-consulting',
-      type: StoreMockItemType.service,
-      title: 'Business Consulting',
-      category: 'Services',
-      description: 'Expert advice to help your business grow and succeed.',
-      imageAsset: 'assets/bSmart_Store/mockimages/electronics.jpg',
-      icon: LucideIcons.briefcaseBusiness,
-      price: 60,
-      duration: '60 min',
-      rating: '4.9',
-      reviews: '52',
-    ),
-    StoreMockCatalogItem(
-      id: 'svc-yoga-coaching',
-      type: StoreMockItemType.service,
-      title: 'Yoga Coaching',
-      category: 'Wellness',
-      description: 'Personalized sessions to improve your mind and body.',
-      imageAsset: 'assets/bSmart_Store/mockimages/vegetables.jpg',
-      icon: LucideIcons.flower2,
-      price: 35,
-      duration: '45 min',
-      rating: '4.9',
-      reviews: '48',
-    ),
-    StoreMockCatalogItem(
-      id: 'svc-phone-setup',
-      type: StoreMockItemType.service,
-      title: 'Phone Setup Help',
-      category: 'Tech Services',
-      description:
-          'One-on-one setup for backups, app transfers, privacy, and accessibility.',
-      imageAsset: 'assets/bSmart_Store/mobilephone/download.webp',
-      icon: LucideIcons.settings,
-      price: 25,
-      duration: '45 min',
-      rating: '4.7',
-      reviews: '33',
-    ),
-  ];
+  final List<StoreMockCartLine> _cartLines = [];
 
-  final List<StoreMockCartLine> _cartLines = [
-    StoreMockCartLine(item: catalog[1], quantity: 1),
-    StoreMockCartLine(item: catalog[3], quantity: 1),
-  ];
+  final Phase2StoreApi _api = Phase2StoreApi();
 
-  final List<StoreMockOrder> _orders = [
-    StoreMockOrder(
-      id: 'BS10482',
-      customerName: 'Emily Carter',
-      avatarColor: const Color(0xFFEAD8CC),
-      status: StoreMockOrderStatus.newOrder,
-      paidAmount: 39.99,
-      bCoinsSavings: 4,
-      address:
-          'Emily Carter\n123 Greenway St.\nPortland, OR 97201\nUnited States',
-      lines: [
-        StoreMockCartLine(item: catalog[1], quantity: 1),
-        StoreMockCartLine(item: catalog[3], quantity: 1),
-      ],
-    ),
-    StoreMockOrder(
-      id: 'BS10481',
-      customerName: 'Ryan Kim',
-      avatarColor: const Color(0xFFD9E8F2),
-      status: StoreMockOrderStatus.newOrder,
-      paidAmount: 32,
-      bCoinsSavings: 0,
-      address: 'Ryan Kim\n45 Market Street\nSeattle, WA 98101\nUnited States',
-      lines: [StoreMockCartLine(item: catalog[2], quantity: 1)],
-    ),
-    StoreMockOrder(
-      id: 'BS10479',
-      customerName: 'Sophie Williams',
-      avatarColor: const Color(0xFFEBD8C8),
-      status: StoreMockOrderStatus.processing,
-      paidAmount: 75,
-      bCoinsSavings: 0,
-      address:
-          'Sophie Williams\n88 Lake Avenue\nAustin, TX 78701\nUnited States',
-      lines: [
-        StoreMockCartLine(item: catalog[7], quantity: 1, schedule: 'Today'),
-        StoreMockCartLine(item: catalog[4], quantity: 1),
-      ],
-    ),
-  ];
+  // ── Live Phase-2 lists (replaces mock orders/bookings in UI) ──
+  List<Map<String, dynamic>> buyerOrders = const [];
+  List<Map<String, dynamic>> sellerOrders = const [];
+  List<Map<String, dynamic>> buyerBookings = const [];
+  List<Map<String, dynamic>> sellerBookings = const [];
+  bool ordersLoading = false;
+  bool bookingsLoading = false;
+  List<StoreMockCatalogItem> _catalog = [];
+  bool _catalogLoading = false;
+  bool _cartLoading = false;
+  Object? _lastError;
+
+  bool get catalogLoading => _catalogLoading;
+  bool get cartLoading => _cartLoading;
+  Object? get lastError => _lastError;
 
   List<StoreMockCatalogItem> get products =>
-      catalog.where((item) => item.type == StoreMockItemType.product).toList();
+      _catalog.where((item) => item.type == StoreMockItemType.product).toList();
 
   List<StoreMockCatalogItem> get services =>
-      catalog.where((item) => item.type == StoreMockItemType.service).toList();
+      _catalog.where((item) => item.type == StoreMockItemType.service).toList();
 
   List<StoreMockCartLine> get cartLines => List.unmodifiable(_cartLines);
-
-  List<StoreMockOrder> get orders => List.unmodifiable(_orders);
 
   int get cartCount => _cartLines.fold(0, (sum, line) => sum + line.quantity);
 
   double get subtotal => _cartLines.fold(0.0, (sum, line) => sum + line.total);
 
-  StoreMockCatalogItem itemById(String id) {
-    return catalog.firstWhere((item) => item.id == id);
+  int quantityFor(String id) {
+    return _cartLines
+        .where((line) => line.item.id == id)
+        .fold(0, (sum, line) => sum + line.quantity);
   }
 
-  int quantityFor(String id) {
-    final index = _cartLines.indexWhere((line) => line.item.id == id);
+  int quantityForVariant(
+    StoreMockCatalogItem item,
+    Map<String, dynamic>? variant,
+  ) {
+    final key = _variantKey(variant);
+    final index = _cartLines.indexWhere(
+      (line) => line.item.id == item.id && line.variantKey == key,
+    );
     return index == -1 ? 0 : _cartLines[index].quantity;
+  }
+
+  static String _variantKey(Map<String, dynamic>? variant) {
+    if (variant == null || variant.isEmpty) return '';
+    final color = variant['color']?.toString().trim() ?? '';
+    final size = variant['size']?.toString().trim() ?? '';
+    if (color.isEmpty && size.isEmpty) return '';
+    return '$color|$size';
+  }
+
+  static Map<String, dynamic> _cleanVariant(Map<String, dynamic>? variant) {
+    if (variant == null || variant.isEmpty) return const {};
+    final cleaned = <String, dynamic>{};
+    for (final key in ['color', 'size']) {
+      final value = variant[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) cleaned[key] = value;
+    }
+    return cleaned;
   }
 
   void addToCart(
     StoreMockCatalogItem item, {
     int quantity = 1,
     String? schedule,
+    Map<String, dynamic>? variant,
   }) {
-    final index = _cartLines.indexWhere((line) => line.item.id == item.id);
+    final cleanVariant = _cleanVariant(variant);
+    final key = _variantKey(cleanVariant);
+    final index = _cartLines.indexWhere(
+      (line) => line.item.id == item.id && line.variantKey == key,
+    );
     if (index == -1) {
       _cartLines.add(
         StoreMockCartLine(
           item: item,
           quantity: quantity.clamp(1, 99),
           schedule: schedule,
+          variant: cleanVariant,
         ),
       );
     } else {
@@ -334,14 +254,24 @@ class StoreMockState extends ChangeNotifier {
       );
     }
     notifyListeners();
+    if (item.type == StoreMockItemType.product) {
+      unawaited(_syncAddCartItem(
+          item.id, quantity.clamp(1, 99),
+          variant: cleanVariant));
+    }
   }
 
   void setCartQuantity(
     StoreMockCatalogItem item,
     int quantity, {
     String? schedule,
+    Map<String, dynamic>? variant,
   }) {
-    final index = _cartLines.indexWhere((line) => line.item.id == item.id);
+    final cleanVariant = _cleanVariant(variant);
+    final key = _variantKey(cleanVariant);
+    final index = _cartLines.indexWhere(
+      (line) => line.item.id == item.id && line.variantKey == key,
+    );
     if (quantity <= 0) {
       if (index != -1) {
         _cartLines.removeAt(index);
@@ -356,6 +286,7 @@ class StoreMockState extends ChangeNotifier {
           item: item,
           quantity: quantity.clamp(1, 99),
           schedule: schedule,
+          variant: cleanVariant,
         ),
       );
     } else {
@@ -365,10 +296,18 @@ class StoreMockState extends ChangeNotifier {
       );
     }
     notifyListeners();
+    if (item.type == StoreMockItemType.product) {
+      unawaited(_syncUpdateCartItem(item.id, quantity.clamp(0, 99),
+          variant: cleanVariant));
+    }
   }
 
-  void updateQuantity(String itemId, int quantity) {
-    final index = _cartLines.indexWhere((line) => line.item.id == itemId);
+  void updateQuantity(String itemId, int quantity,
+      {Map<String, dynamic>? variant}) {
+    final key = _variantKey(_cleanVariant(variant));
+    final index = _cartLines.indexWhere(
+      (line) => line.item.id == itemId && line.variantKey == key,
+    );
     if (index == -1) return;
     if (quantity <= 0) {
       _cartLines.removeAt(index);
@@ -378,32 +317,448 @@ class StoreMockState extends ChangeNotifier {
       );
     }
     notifyListeners();
+    unawaited(_syncUpdateCartItem(itemId, quantity.clamp(0, 99),
+        variant: _cleanVariant(variant)));
   }
 
-  void removeFromCart(String itemId) {
-    _cartLines.removeWhere((line) => line.item.id == itemId);
+  void removeFromCart(String itemId, {Map<String, dynamic>? variant}) {
+    if (variant == null) {
+      _cartLines.removeWhere((line) => line.item.id == itemId);
+    } else {
+      final key = _variantKey(_cleanVariant(variant));
+      _cartLines.removeWhere(
+        (line) => line.item.id == itemId && line.variantKey == key,
+      );
+    }
     notifyListeners();
+    unawaited(_syncRemoveCartItem(itemId));
   }
 
-  StoreMockOrder placeOrder({
-    required double paidAmount,
-    required double bCoinsSavings,
-  }) {
-    final order = StoreMockOrder(
-      id: 'BS${2048 + _orders.length}',
-      customerName: 'You',
-      avatarColor: const Color(0xFFE5F5F3),
-      status: StoreMockOrderStatus.newOrder,
-      lines: List<StoreMockCartLine>.from(_cartLines),
-      paidAmount: paidAmount,
-      bCoinsSavings: bCoinsSavings,
-      address: 'You\n24 Market Street\nSan Francisco, CA 94103\nUnited States',
+  String money(double amount) => '₹${amount.toStringAsFixed(2)}';
+
+  /// Loads the live marketplace. On success the catalog reflects the
+  /// server exactly (possibly empty); on failure the previous content
+  /// stays and [lastError] is set for retry UI.
+  Future<void> refreshMarketplace({String? query, String? category}) async {
+    if (_catalogLoading) return;
+    _catalogLoading = true;
+    _lastError = null;
+    notifyListeners();
+    try {
+      final results = await Future.wait([
+        _api.listProducts(query: query, category: category),
+        _api.listServices(query: query, category: category),
+      ]);
+      final products = results[0].map(_productFromApi);
+      final services = results[1].map(_serviceFromApi);
+      _catalog = <StoreMockCatalogItem>[...products, ...services]
+          .where((item) => item.id.trim().isNotEmpty)
+          .toList();
+      _lastError = null;
+    } catch (e) {
+      _lastError = e;
+    } finally {
+      _catalogLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshCart() async {
+    if (_cartLoading) return;
+    _cartLoading = true;
+    _lastError = null;
+    notifyListeners();
+    try {
+      final data = await _api.getCart();
+      final items = _cartItemsFromApi(data);
+      if (items != null) {
+        _cartLines
+          ..clear()
+          ..addAll(items);
+      }
+    } catch (e) {
+      _lastError = e;
+    } finally {
+      _cartLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>> checkoutWithWallet({
+    required Map<String, dynamic> shippingAddress,
+  }) async {
+    final response = await _api.checkoutOrder(
+      paymentMethod: 'wallet',
+      shippingAddress: shippingAddress,
     );
-    _orders.insert(0, order);
     _cartLines.clear();
     notifyListeners();
-    return order;
+    unawaited(refreshBuyerOrders());
+    return response;
   }
 
-  String money(double amount) => '\$${amount.toStringAsFixed(2)}';
+  /// Razorpay branch: creates a backend Razorpay order (order stays pending).
+  /// Caller must open Razorpay Checkout with `response['razorpay']`
+  /// then call [verifyOrderPayment].
+  Future<Map<String, dynamic>> checkoutWithRazorpay({
+    required Map<String, dynamic> shippingAddress,
+  }) async {
+    final response = await _api.checkoutOrder(
+      paymentMethod: 'razorpay',
+      shippingAddress: shippingAddress,
+    );
+    notifyListeners();
+    return response;
+  }
+
+  Future<Map<String, dynamic>> verifyOrderPayment({
+    required String orderId,
+    required String razorpayOrderId,
+    required String razorpayPaymentId,
+    required String razorpaySignature,
+  }) async {
+    final response = await _api.verifyOrderPayment(
+      orderId: orderId,
+      razorpayOrderId: razorpayOrderId,
+      razorpayPaymentId: razorpayPaymentId,
+      razorpaySignature: razorpaySignature,
+    );
+    _cartLines.clear();
+    notifyListeners();
+    unawaited(refreshBuyerOrders());
+    return response;
+  }
+
+  Future<void> clearCartLive() async {
+    try {
+      await _api.clearCart();
+    } finally {
+      _cartLines.clear();
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshBuyerOrders() async {
+    if (ordersLoading) return;
+    ordersLoading = true;
+    notifyListeners();
+    try {
+      buyerOrders = await _api.myOrders();
+      _lastError = null;
+    } catch (e) {
+      _lastError = e;
+    } finally {
+      ordersLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshSellerOrders() async {
+    if (ordersLoading) return;
+    ordersLoading = true;
+    notifyListeners();
+    try {
+      sellerOrders = await _api.sellerOrders();
+      _lastError = null;
+    } catch (e) {
+      _lastError = e;
+    } finally {
+      ordersLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>> cancelBuyerOrder(String orderId) async {
+    final res = await _api.cancelOrder(orderId);
+    unawaited(refreshBuyerOrders());
+    return res;
+  }
+
+  Future<Map<String, dynamic>> advanceOrderStatus(
+      String orderId, String status) async {
+    final res =
+        await _api.updateOrderStatus(orderId: orderId, status: status);
+    unawaited(refreshSellerOrders());
+    return res;
+  }
+
+  // ── Service bookings (direct booking, no cart per spec) ──
+  Future<Map<String, dynamic>> createBooking(
+      Map<String, dynamic> body) async {
+    final res = await _api.createServiceBooking(body: body);
+    unawaited(refreshBuyerBookings());
+    return res;
+  }
+
+  Future<Map<String, dynamic>> verifyBookingPayment({
+    required String bookingId,
+    required String razorpayOrderId,
+    required String razorpayPaymentId,
+    required String razorpaySignature,
+  }) async {
+    final res = await _api.verifyServiceBookingPayment(
+      bookingId: bookingId,
+      razorpayOrderId: razorpayOrderId,
+      razorpayPaymentId: razorpayPaymentId,
+      razorpaySignature: razorpaySignature,
+    );
+    unawaited(refreshBuyerBookings());
+    return res;
+  }
+
+  Future<void> refreshBuyerBookings() async {
+    if (bookingsLoading) return;
+    bookingsLoading = true;
+    notifyListeners();
+    try {
+      buyerBookings = await _api.myServiceBookings();
+      _lastError = null;
+    } catch (e) {
+      _lastError = e;
+    } finally {
+      bookingsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshSellerBookings() async {
+    if (bookingsLoading) return;
+    bookingsLoading = true;
+    notifyListeners();
+    try {
+      sellerBookings = await _api.sellerServiceBookings();
+      _lastError = null;
+    } catch (e) {
+      _lastError = e;
+    } finally {
+      bookingsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>> cancelBuyerBooking(String bookingId) async {
+    final res = await _api.cancelServiceBooking(bookingId);
+    unawaited(refreshBuyerBookings());
+    return res;
+  }
+
+  Future<Map<String, dynamic>> advanceBookingStatus(
+      String bookingId, String status) async {
+    final res = await _api.updateServiceBookingStatus(
+        bookingId: bookingId, status: status);
+    unawaited(refreshSellerBookings());
+    return res;
+  }
+
+  // ── Shared helpers for order/booking UIs ──
+  static String orderIdOf(Map<String, dynamic> m) =>
+      _text(m, const ['id', '_id', 'order_id']);
+  static String bookingIdOf(Map<String, dynamic> m) =>
+      _text(m, const ['id', '_id', 'booking_id']);
+  static String statusOf(Map<String, dynamic> m) =>
+      _text(m, const ['status', 'order_status', 'booking_status'],
+          fallback: 'pending')
+          .toLowerCase();
+  static double amountOf(Map<String, dynamic> m) =>
+      _number(m, const ['total_amount', 'amount', 'total', 'price', 'paid_amount']);
+
+  Future<void> _syncAddCartItem(String productId, int quantity,
+      {Map<String, dynamic>? variant}) async {
+    try {
+      await _api.addCartItem(
+          productId: productId, quantity: quantity, variant: variant);
+      await refreshCart();
+    } catch (e) {
+      _lastError = e;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _syncUpdateCartItem(String productId, int quantity,
+      {Map<String, dynamic>? variant}) async {
+    try {
+      await _api.updateCartItem(
+          productId: productId, quantity: quantity, variant: variant);
+      await refreshCart();
+    } catch (e) {
+      _lastError = e;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _syncRemoveCartItem(String productId) async {
+    try {
+      await _api.removeCartItem(productId);
+      await refreshCart();
+    } catch (e) {
+      _lastError = e;
+      notifyListeners();
+    }
+  }
+
+  static StoreMockCatalogItem _productFromApi(Map<String, dynamic> json) {
+    final id = _id(json);
+    final category = _text(json, const ['category'], fallback: 'Product');
+    return StoreMockCatalogItem(
+      id: id,
+      type: StoreMockItemType.product,
+      title: _text(json, const ['name', 'title'], fallback: 'Product'),
+      category: category,
+      description: _text(
+        json,
+        const ['short_description', 'description', 'subtitle'],
+      ),
+      imageUrl: _firstImage(json),
+      icon: _iconForCategory(category),
+      price: _number(json, const ['selling_price', 'price', 'amount']),
+      duration: _text(json, const ['dispatch_time'], fallback: '2-3 days'),
+      rating: _text(json, const ['rating'], fallback: 'New'),
+      reviews: _text(json, const ['reviews', 'review_count'], fallback: '0'),
+      raw: json,
+    );
+  }
+
+  static StoreMockCatalogItem _serviceFromApi(Map<String, dynamic> json) {
+    final category = _text(json, const ['category'], fallback: 'Service');
+    return StoreMockCatalogItem(
+      id: _id(json),
+      type: StoreMockItemType.service,
+      title: _text(json, const ['name', 'title'], fallback: 'Service'),
+      category: category,
+      description: _text(
+        json,
+        const ['short_description', 'description', 'subtitle'],
+      ),
+      imageUrl: _firstImage(json),
+      icon: _iconForCategory(category),
+      price: _number(json, const ['price', 'selling_price', 'amount']),
+      duration: _text(json, const ['duration'], fallback: '1 hour'),
+      rating: _text(json, const ['rating'], fallback: 'New'),
+      reviews: _text(json, const ['reviews', 'review_count'], fallback: '0'),
+      raw: json,
+    );
+  }
+
+  List<StoreMockCartLine>? _cartItemsFromApi(Map<String, dynamic> data) {
+    final rawItems = data['items'] ?? data['cart_items'] ?? data['products'];
+    if (rawItems is! List) return null;
+    return rawItems.whereType<Map>().map((raw) {
+      final map = raw.map((key, value) => MapEntry(key.toString(), value));
+      final productJson = (map['product'] is Map)
+          ? (map['product'] as Map)
+              .map((key, value) => MapEntry(key.toString(), value))
+          : map;
+      final product = _productFromApi(productJson);
+      final variantJson = map['variant'];
+      final variant = variantJson is Map
+          ? _cleanVariant(
+              variantJson.map((key, value) => MapEntry(key.toString(), value)))
+          : const <String, dynamic>{};
+      return StoreMockCartLine(
+        item: product,
+        quantity: _number(map, const ['quantity', 'qty']).round().clamp(1, 99),
+        variant: variant,
+      );
+    }).toList();
+  }
+
+  /// Public parsing helpers so search/detail screens can reuse the same
+  /// product/service mapping as the marketplace.
+  static StoreMockCatalogItem productFromApi(Map<String, dynamic> json) =>
+      _productFromApi(json);
+
+  static StoreMockCatalogItem serviceFromApi(Map<String, dynamic> json) =>
+      _serviceFromApi(json);
+
+  /// Variant options from a product payload, each with
+  /// `color`, `size`, `price`, `stock` strings (may be empty).
+  static List<Map<String, String>> variantsOf(
+      StoreMockCatalogItem item) {
+    final raw = item.raw['variants'];
+    if (raw is! List) return const [];
+    final out = <Map<String, String>>[];
+    for (final entry in raw) {
+      if (entry is! Map) continue;
+      final map = entry.map((key, value) => MapEntry(key.toString(), value));
+      final color = map['color']?.toString().trim() ?? '';
+      final size = map['size']?.toString().trim() ?? '';
+      if (color.isEmpty && size.isEmpty) continue;
+      out.add({
+        'color': color,
+        'size': size,
+        'price': map['price']?.toString().trim() ?? '',
+        'stock': (map['stock_quantity'] ?? map['stock'])
+                ?.toString()
+                .trim() ??
+            '',
+      });
+    }
+    return out;
+  }
+
+  static Set<String> colorsOf(StoreMockCatalogItem item) => variantsOf(item)
+      .map((v) => v['color'] ?? '')
+      .where((e) => e.isNotEmpty)
+      .toSet();
+
+  static Set<String> sizesOf(StoreMockCatalogItem item) => variantsOf(item)
+      .map((v) => v['size'] ?? '')
+      .where((e) => e.isNotEmpty)
+      .toSet();
+
+  static String _id(Map<String, dynamic> json) {
+    return _text(json, const ['id', '_id', 'product_id', 'service_id']);
+  }
+
+  static String _text(
+    Map<String, dynamic> json,
+    List<String> keys, {
+    String fallback = '',
+  }) {
+    for (final key in keys) {
+      final value = json[key];
+      final text = value?.toString().trim();
+      if (text != null && text.isNotEmpty && text != 'null') return text;
+    }
+    return fallback;
+  }
+
+  static double _number(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value is num) return value.toDouble();
+      if (value is String) {
+        final parsed = double.tryParse(value);
+        if (parsed != null) return parsed;
+      }
+    }
+    return 0;
+  }
+
+  static String _firstImage(Map<String, dynamic> json) {
+    final images = json['images'];
+    dynamic first;
+    if (images is List && images.isNotEmpty) first = images.first;
+    if (first is Map) {
+      final value = _text(
+          first.map((key, value) => MapEntry(key.toString(), value)),
+          const ['url', 'fileName', 'filename', 'path', 'src']);
+      return UrlHelper.absoluteUrl(value);
+    }
+    if (first is String) return UrlHelper.absoluteUrl(first);
+    return '';
+  }
+
+  static IconData _iconForCategory(String category) {
+    final lower = category.toLowerCase();
+    if (lower.contains('service') || lower.contains('consult')) {
+      return LucideIcons.briefcaseBusiness;
+    }
+    if (lower.contains('home')) return LucideIcons.house;
+    if (lower.contains('well')) return LucideIcons.sparkles;
+    if (lower.contains('elect') || lower.contains('mobile')) {
+      return LucideIcons.smartphone;
+    }
+    return LucideIcons.package;
+  }
 }

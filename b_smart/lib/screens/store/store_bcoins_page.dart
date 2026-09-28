@@ -28,7 +28,7 @@ class StoreBCoinsPage extends StatefulWidget {
 
   const StoreBCoinsPage({
     super.key,
-    this.orderTotal = 39.99,
+    this.orderTotal = 0,
     this.initialCoins = 0,
     this.checkoutMode = false,
   });
@@ -38,8 +38,8 @@ class StoreBCoinsPage extends StatefulWidget {
 }
 
 class _StoreBCoinsPageState extends State<StoreBCoinsPage> {
-  static const double _coinValue = 0.01;
-  static const int _coinStep = 50;
+  static const double _coinValue = 1.0; // Phase 2 md: 1 coin = Rs.1
+  static const int _coinStep = 10;
   static const int _defaultApplyCoins = 500;
 
   late final Future<int> _balanceFuture;
@@ -60,7 +60,7 @@ class _StoreBCoinsPageState extends State<StoreBCoinsPage> {
 
   double _savingsFor(int coins) => coins * _coinValue;
 
-  String _money(double amount) => '\$${amount.toStringAsFixed(2)}';
+  String _money(double amount) => '₹${amount.toStringAsFixed(2)}';
 
   String _coins(int amount) {
     final text = amount.toString();
@@ -401,22 +401,43 @@ class _ApplyCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: BStoreColors.primary,
-              inactiveTrackColor: BStoreColors.border,
-              thumbColor: Colors.white,
-              overlayColor: BStoreColors.primary.withValues(alpha: 0.12),
-              trackHeight: 5,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+          if (maxCoins <= 0)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF4EEFF),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Text(
+                'No bCoins available right now. Earn bCoins from rewards and come back to apply them here.',
+                style: TextStyle(
+                  color: Color(0xFF684AC8),
+                  fontSize: 12.5,
+                  height: 1.4,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          else
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: BStoreColors.primary,
+                inactiveTrackColor: BStoreColors.border,
+                thumbColor: Colors.white,
+                overlayColor:
+                    BStoreColors.primary.withValues(alpha: 0.12),
+                trackHeight: 5,
+                thumbShape:
+                    const RoundSliderThumbShape(enabledThumbRadius: 10),
+              ),
+              child: Slider(
+                min: 0,
+                max: sliderMax,
+                value: coins.clamp(0, maxCoins).toDouble(),
+                onChanged: onSliderChanged,
+              ),
             ),
-            child: Slider(
-              min: 0,
-              max: sliderMax,
-              value: coins.clamp(0, maxCoins).toDouble(),
-              onChanged: onSliderChanged,
-            ),
-          ),
           Center(
             child: TextButton(
               onPressed: onUseMaximum,

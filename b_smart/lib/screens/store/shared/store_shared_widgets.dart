@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../widgets/safe_network_image.dart';
 import '../store_theme.dart';
 
 class StoreBsmartWordmark extends StatelessWidget {
@@ -366,13 +367,63 @@ class StoreSearchStrip extends StatelessWidget {
   }
 }
 
+/// Listing image: server image when present, otherwise a neutral
+/// category placeholder. Never renders bundled mock photos.
+class StoreItemImage extends StatelessWidget {
+  final String imageUrl;
+  final IconData icon;
+  final double? width;
+  final double? height;
+  final BoxFit fit;
+  final double borderRadius;
+  final String debugLabel;
+
+  const StoreItemImage({
+    super.key,
+    required this.imageUrl,
+    required this.icon,
+    this.width,
+    this.height,
+    this.fit = BoxFit.cover,
+    this.borderRadius = 0,
+    this.debugLabel = 'store-item-image',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final placeholder = Container(
+      width: width,
+      height: height,
+      color: BStoreColors.surfaceTint,
+      alignment: Alignment.center,
+      child: Icon(icon, color: BStoreColors.primary, size: 30),
+    );
+    if (imageUrl.trim().isEmpty) return placeholder;
+    final image = SafeNetworkImage(
+      url: imageUrl,
+      width: width ?? double.infinity,
+      height: height ?? double.infinity,
+      fit: fit,
+      debugLabel: debugLabel,
+      errorWidget: Icon(icon, color: BStoreColors.primary, size: 30),
+    );
+    if (borderRadius <= 0) return image;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: image,
+    );
+  }
+}
+
 class StoreProductThumb extends StatelessWidget {
-  final String asset;
+  final String imageUrl;
+  final IconData icon;
   final double size;
 
   const StoreProductThumb({
     super.key,
-    required this.asset,
+    required this.imageUrl,
+    this.icon = LucideIcons.package,
     required this.size,
   });
 
@@ -380,18 +431,12 @@ class StoreProductThumb extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(7),
-      child: Image.asset(
-        asset,
+      child: StoreItemImage(
+        imageUrl: imageUrl,
+        icon: icon,
         width: size,
         height: size,
-        fit: BoxFit.cover,
-        cacheWidth: 180,
-        errorBuilder: (_, __, ___) => Container(
-          width: size,
-          height: size,
-          color: const Color(0xFFEAF5FF),
-          child: const Icon(LucideIcons.image, color: BStoreColors.primary),
-        ),
+        debugLabel: 'store-product-thumb',
       ),
     );
   }

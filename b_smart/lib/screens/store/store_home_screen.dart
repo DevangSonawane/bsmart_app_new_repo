@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../api/phase2_store_api.dart';
 import '../../services/auth/auth_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'self_store_dashboard_page.dart';
+import 'self_store_bookings_page.dart';
 import 'self_store_orders_page.dart';
 import 'self_store_products_page.dart';
-import 'self_store_service_page.dart';
 import 'self_store_services_manage_page.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_bcoins_page.dart';
 import 'store_order_tracking_page.dart';
+import 'store_role_setup_screen.dart';
+import 'store_role_switch_sheet.dart';
 import 'store_theme.dart';
 import 'store_saved_address_page.dart';
 import 'visitor_store_cart_page.dart';
@@ -210,10 +213,12 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
 
   Widget _buildSection(_StoreNavSection section) {
     return switch (section) {
-      _StoreNavSection.dashboard => const SelfStoreDashboardPage(),
-      _StoreNavSection.orders => const SelfStoreOrdersPage(),
+      _StoreNavSection.dashboard =>
+        const StoreRoleGateSliver(child: SelfStoreDashboardPage()),
+      _StoreNavSection.orders =>
+        const StoreRoleGateSliver(child: SelfStoreOrdersPage()),
       _StoreNavSection.service => widget.isSelfStore
-          ? const SelfStoreServicePage()
+          ? const StoreRoleGateSliver(child: SelfStoreBookingsPage())
           : const _VisitorServiceSection(),
       _StoreNavSection.inbox => const _InboxSection(),
       _StoreNavSection.network => const _NetworkSection(),
@@ -422,11 +427,14 @@ class _SelfStoreHubSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
+        const _StoreRoleCard(),
+        const SizedBox(height: 12),
         _SelfStoreHubCard(
           icon: LucideIcons.package,
           title: 'My Products',
           subtitle: 'Manage products, stock, drafts, and publishing.',
-          count: '3 active',
+          countFuture: _HubCounts.products(),
+          countSuffix: 'active',
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => const SelfStoreProductsScreen(),
@@ -438,14 +446,166 @@ class _SelfStoreHubSection extends StatelessWidget {
           icon: LucideIcons.briefcaseBusiness,
           title: 'My Services',
           subtitle: 'Manage service listings, requests, and availability.',
-          count: '3 published',
+          countFuture: _HubCounts.services(),
+          countSuffix: 'published',
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => const SelfStoreServicesManageScreen(),
             ),
           ),
         ),
+        const SizedBox(height: 12),
+        _SelfStoreHubCard(
+          icon: LucideIcons.calendarCheck,
+          title: 'Service bookings',
+          subtitle: 'Confirm incoming bookings and track progress.',
+          countFuture: _HubCounts.bookings(),
+          countSuffix: 'new',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const SelfStoreBookingsScreen(),
+            ),
+          ),
+        ),
       ],
+    );
+  }
+}
+
+/// Self-store role manager (member ↔ influencer).
+///
+/// Lives on the My Store home next to the creator tooling: one tap to
+/// switch back to Member, or open the influencer setup form.
+class _StoreRoleCard extends StatefulWidget {
+  const _StoreRoleCard();
+
+  @override
+  State<_StoreRoleCard> createState() => _StoreRoleCardState();
+}
+
+class _StoreRoleCardState extends State<_StoreRoleCard> {
+  late Future<String> _roleFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _roleFuture = _loadRole();
+  }
+
+  static Future<String> _loadRole() async {
+    try {
+      final user = await AuthService().fetchCurrentUser();
+      return (user?.role ?? '').trim().toLowerCase();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Future<void> _openSwitcher() async {
+    await showStoreRoleSwitchSheet(context);
+    if (!mounted) return;
+    setState(() => _roleFuture = _loadRole());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<String>(
+      future: _roleFuture,
+      builder: (context, snapshot) {
+        final role = snapshot.data ?? '';
+        final isInfluencer = role == 'influencer';
+        final label = role.isEmpty
+            ? 'Unknown'
+            : role[0].toUpperCase() + role.substring(1);
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _openSwitcher,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
+                decoration: storeSoftCardDecoration(radius: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: isInfluencer
+                            ? const Color(0xFFE5F5F3)
+                            : const Color(0xFFF1F4F8),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        isInfluencer
+                            ? LucideIcons.store
+                            : LucideIcons.userRound,
+                        color: isInfluencer
+                            ? BStoreColors.primary
+                            : BStoreColors.textPrimary,
+                        size: 26,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Store role',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: BStoreColors.textPrimary,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                label,
+                                style: const TextStyle(
+                                  color: BStoreColors.primary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 7),
+                          const Text(
+                            'Switch between Member and Influencer.',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: BStoreColors.textSecondary,
+                              fontSize: 12.5,
+                              height: 1.3,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Icon(
+                      LucideIcons.chevronRight,
+                      color: BStoreColors.primary,
+                      size: 22,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -480,14 +640,16 @@ class _SelfStoreHubCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
-  final String count;
+  final Future<int> countFuture;
+  final String countSuffix;
   final VoidCallback onTap;
 
   const _SelfStoreHubCard({
     required this.icon,
     required this.title,
     required this.subtitle,
-    required this.count,
+    required this.countFuture,
+    required this.countSuffix,
     required this.onTap,
   });
 
@@ -534,13 +696,21 @@ class _SelfStoreHubCard extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Text(
-                            count,
-                            style: const TextStyle(
-                              color: BStoreColors.primary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w900,
-                            ),
+                          FutureBuilder<int>(
+                            future: countFuture,
+                            builder: (context, snapshot) {
+                              final text = snapshot.hasData
+                                  ? '${snapshot.data} $countSuffix'
+                                  : '…';
+                              return Text(
+                                text,
+                                style: const TextStyle(
+                                  color: BStoreColors.primary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              );
+                            },
                           ),
                         ],
                       ),
@@ -574,8 +744,54 @@ class _SelfStoreHubCard extends StatelessWidget {
   }
 }
 
-class _VisitorProductSection extends StatelessWidget {
-  const _VisitorProductSection();
+/// Live counters for the My Store hub cards (replaces hardcoded counts).
+class _HubCounts {
+  const _HubCounts._();
+
+  static Future<int> products() async {
+    try {
+      final items = await Phase2StoreApi().myProducts();
+      return items.where((p) {
+        final status =
+            p['status']?.toString().toLowerCase() ?? 'active';
+        final stock = p['stock_quantity'];
+        final qty = stock is num
+            ? stock.toInt()
+            : int.tryParse('$stock') ?? 1;
+        return status != 'draft' && qty > 0;
+      }).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  static Future<int> services() async {
+    try {
+      final items = await Phase2StoreApi().myServices();
+      return items
+          .where((s) => s['visible_to_customers'] != false)
+          .length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  static Future<int> bookings() async {
+    try {
+      final items = await Phase2StoreApi().sellerServiceBookings();
+      return items.where((b) {
+        final status = b['status']?.toString().toLowerCase() ?? '';
+        return status == 'pending' ||
+            status == 'confirmed' ||
+            status == 'paid';
+      }).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+}
+
+class _VisitorProductSection extends StatelessWidget {  const _VisitorProductSection();
 
   @override
   Widget build(BuildContext context) {
@@ -710,8 +926,14 @@ class _ProfileSectionState extends State<_ProfileSection> {
         const SizedBox(height: 12),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: _StoreProfileMenu(
+          child:             _StoreProfileMenu(
             items: [
+              _StoreProfileMenuItem(
+                icon: LucideIcons.repeat,
+                title: 'Store role',
+                subtitle: 'Switch Member / Influencer',
+                onTap: () => showStoreRoleSwitchSheet(context),
+              ),
               _StoreProfileMenuItem(
                 icon: LucideIcons.usersRound,
                 title: 'Network',

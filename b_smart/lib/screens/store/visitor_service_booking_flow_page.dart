@@ -3,13 +3,15 @@ import 'package:intl/intl.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api/api_client.dart';
+import '../../services/razorpay_checkout_service.dart';
 import '../../services/supabase_service.dart';
+import '../../services/wallet_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
-import 'store_home_screen.dart';
+import 'store_address_book.dart';
 import 'store_models.dart';
-import 'visitor_store_cart_page.dart';
+import 'store_saved_address_page.dart';
 
 class VisitorServiceBookingFlowPage extends StatefulWidget {
   final String? ownerUserId;
@@ -21,7 +23,7 @@ class VisitorServiceBookingFlowPage extends StatefulWidget {
     required this.item,
   });
 
-  String get imageAsset => item.imageAsset;
+  String get imageUrl => item.imageUrl;
   String get title => item.title;
   String get duration => item.duration;
   String get price => item.priceLabel;
@@ -40,6 +42,18 @@ class _VisitorServiceBookingFlowPageState
   String _selectedTime = '10:00 AM';
   String _selectedDuration = '2-3 hrs';
   bool _useBCoins = false;
+  String _paymentMethod = 'wallet';
+  bool _submitting = false;
+  String? _bookingId;
+  String? _bookingError;
+  final RazorpayCheckoutService _razorpay = RazorpayCheckoutService();
+  final Set<String> _selectedSubservices = {};
+
+  @override
+  void dispose() {
+    _razorpay.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -47,6 +61,8 @@ class _VisitorServiceBookingFlowPageState
     _selectedDate = _dateOnly(DateTime.now());
     _dateWindowStart = _selectedDate;
     _providerFuture = _loadProvider();
+    StoreAddressBook.instance.ensureLoaded();
+    _selectedSubservices.addAll(_defaultSubservices());
   }
 
   List<_BookingDate> get _visibleDates {
@@ -89,39 +105,329 @@ class _VisitorServiceBookingFlowPageState
       _selectedDate = selected;
       _dateWindowStart = selected;
     });
+    _ensureTimeInSlots();
   }
 
-  void _handleFooterTap() {
+  /// Weekday windows from the service payload (`weekly_availability`).
+  /// Empty weekday array = Unavailable (matches seller UI + server 400s).
+  static const _weekdayKeys = [
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+    'sunday',
+  ];
+
+  bool get _hasAvailabilityData =>
+      widget.item.raw['weekly_availability'] is Map;
+
+  List<(int, int)> _windowsFor(DateTime date) {
+    final raw = widget.item.raw['weekly_availability'];
+    if (raw is! Map) return const [];
+    final day = raw[_weekdayKeys[date.weekday - 1]];
+    if (day is! List) return const [];
+    final out = <(int, int)>[];
+    for (final entry in day) {
+      if (entry is! Map) continue;
+      final map = Map<String, dynamic>.from(entry);
+      final start = _parseHm(map['start']?.toString() ?? '');
+      final end = _parseHm(map['end']?.toString() ?? '');
+      if (start == null || end == null) continue;
+      if (end <= start) continue;
+      out.add((start, end));
+    }
+    return out;
+  }
+
+  /// "09:00" → minutes since midnight, null when malformed.
+  static int? _parseHm(String value) {
+    final parts = value.trim().split(':');
+    if (parts.length != 2) return null;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return null;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+    return hour * 60 + minute;
+  }
+
+  static String _label24(int minutes) {
+    final hour = minutes ~/ 60;
+    final minute = minutes % 60;
+    final suffix = hour >= 12 ? 'PM' : 'AM';
+    final twelve = hour % 12 == 0 ? 12 : hour % 12;
+    return '$twelve:${minute.toString().padLeft(2, '0')} $suffix';
+  }
+
+  /// Hourly start slots inside the day's windows. Null = no availability
+  /// data on the service (legacy fixed grids apply).
+  List<String>? _slotLabelsFor(DateTime date) {
+    if (!_hasAvailabilityData) return null;
+    final slots = <String>[];
+    for (final (start, end) in _windowsFor(date)) {
+      var cursor = start;
+      while (cursor + 60 <= end) {
+        slots.add(_label24(cursor));
+        cursor += 60;
+      }
+    }
+    return slots;
+  }
+
+  bool get _selectedDayUnavailable {
+    final slots = _slotLabelsFor(_selectedDate);
+    return slots != null && slots.isEmpty;
+  }
+
+  List<String> get _morningSlots {
+    final slots = _slotLabelsFor(_selectedDate);
+    if (slots == null) return const ['10:00 AM', '11:00 AM', '12:00 PM'];
+    return slots.where((s) => !_isAfternoon(s)).toList();
+  }
+
+  List<String> get _afternoonSlots {
+    final slots = _slotLabelsFor(_selectedDate);
+    if (slots == null) return const ['1:00 PM', '2:00 PM', '3:00 PM'];
+    return slots.where(_isAfternoon).toList();
+  }
+
+  static bool _isAfternoon(String label) {
+    final match =
+        RegExp(r'(\d{1,2}):(\d{2})\s*([AP]M)', caseSensitive: false)
+            .firstMatch(label.trim());
+    if (match == null) return false;
+    var hour = int.tryParse(match.group(1) ?? '12') ?? 12;
+    final suffix = (match.group(3) ?? 'AM').toUpperCase();
+    if (suffix == 'PM' && hour < 12) hour += 12;
+    if (suffix == 'AM' && hour == 12) hour = 0;
+    return hour >= 12;
+  }
+
+  void _ensureTimeInSlots() {
+    final slots = _slotLabelsFor(_selectedDate);
+    if (slots == null || slots.isEmpty) return;
+    if (!slots.contains(_selectedTime)) {
+      setState(() => _selectedTime = slots.first);
+    }
+  }
+
+  Future<void> _handleFooterTap() async {
     if (_step == 0) {
+      if (_selectedDayUnavailable) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Provider is unavailable on this day. Pick another date.'),
+          ),
+        );
+        return;
+      }
+      _ensureTimeInSlots();
       setState(() => _step += 1);
       return;
     }
+    if (_step == 1) {
+      setState(() => _step += 1);
+      return;
+    }
+    // Step 2: create the booking directly (services have no cart per spec).
+    if (_submitting) return;
+    setState(() {
+      _submitting = true;
+      _bookingError = null;
+    });
+    try {
+      final slot = _timeSlot24h(_selectedTime);
+      final bookingDate =
+          DateFormat('yyyy-MM-dd').format(_selectedDate);
+      final response =
+          await StoreMockState.instance.createBooking({
+        'service_id': widget.item.raw['id'] ??
+            widget.item.raw['_id'] ??
+            widget.item.id,
+        'booking_date': bookingDate,
+        'time_slot': slot,
+        if (_selectedSubservices.isNotEmpty)
+          'selected_subservices': [
+            for (final name in _selectedSubservices) {'name': name}
+          ],
+        'customer_address': _address.toCustomerJson(),
+        'payment_method': _paymentMethod,
+      });
+      final id = _bookingIdFrom(response);
+      if (!mounted) return;
+      if (_paymentMethod == 'razorpay') {
+        await _payBookingWithRazorpay(response, id);
+        return;
+      }
+      setState(() {
+        _bookingId = id.isEmpty ? null : id;
+        _step = 3;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _bookingError = _friendlyBookingError(e));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_bookingError ?? 'Booking failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
 
-    final schedule =
-        '${_selectedBookingDate.heading}, $_selectedTime • $_selectedDuration';
-    StoreMockState.instance.addToCart(widget.item, schedule: schedule);
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => VisitorStoreCartScreen(
-          ownerUserId: widget.ownerUserId,
-          showContinueShopping: true,
-          onBack: _goToStoreHome,
-          onContinueShopping: _goToStoreHome,
-        ),
-      ),
+  /// Opens Razorpay Checkout for a booking created with payment_method
+  /// razorpay (stays pending until verified), then verifies and completes.
+  Future<void> _payBookingWithRazorpay(
+    Map<String, dynamic> response,
+    String bookingId,
+  ) async {
+    final razorpay = RazorpayCheckoutService.razorpayOf(
+      response,
+      fallbackTotal: widget.item.price,
+    );
+    if (razorpay == null) {
+      if (!mounted) return;
+      setState(() {
+        _bookingError =
+            'Razorpay is not configured on the server. Pay with wallet instead.';
+        _submitting = false;
+      });
+      return;
+    }
+    // Keep _submitting true while the native sheet is open; callbacks below
+    // finish the flow (verify on success, pending notice on failure).
+    _razorpay.open(
+      keyId: razorpay.keyId,
+      orderId: razorpay.orderId,
+      amountPaise: razorpay.amountPaise,
+      description: 'B-Smart booking $bookingId',
+      onSuccess: (success) async {
+        try {
+          await StoreMockState.instance.verifyBookingPayment(
+            bookingId: bookingId,
+            razorpayOrderId: success.orderId,
+            razorpayPaymentId: success.paymentId,
+            razorpaySignature: success.signature,
+          );
+          if (!mounted) return;
+          setState(() {
+            _bookingId = bookingId;
+            _step = 3;
+          });
+        } catch (e) {
+          if (!mounted) return;
+          setState(() => _bookingError = 'Payment verification failed: $e');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Payment verification failed: $e')),
+          );
+        } finally {
+          if (mounted) setState(() => _submitting = false);
+        }
+      },
+      onFailure: (failure) {
+        if (!mounted) return;
+        setState(() => _submitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              failure.dismissed
+                  ? 'Payment cancelled. Booking $bookingId is pending — retry from My bookings.'
+                  : 'Razorpay: ${failure.message} Booking $bookingId stays pending.',
+            ),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      },
     );
   }
 
-  void _goToStoreHome(BuildContext context) {
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(
-        builder: (_) => StoreHomeScreen(
-          isSelfStore: false,
-          ownerUserId: widget.ownerUserId,
-        ),
+  /// Converts "10:00 AM" to {"start": "10:00", "end": "12:00"} (2h default).
+  static Map<String, String> _timeSlot24h(String label) {
+    final match =
+        RegExp(r'(\d{1,2}):(\d{2})\s*([AP]M)', caseSensitive: false)
+            .firstMatch(label.trim());
+    var hour = 10;
+    var minute = 0;
+    if (match != null) {
+      hour = int.tryParse(match.group(1) ?? '10') ?? 10;
+      minute = int.tryParse(match.group(2) ?? '0') ?? 0;
+      final suffix = (match.group(3) ?? 'AM').toUpperCase();
+      if (suffix == 'PM' && hour < 12) hour += 12;
+      if (suffix == 'AM' && hour == 12) hour = 0;
+    }
+    final endHour = (hour + 2) % 24;
+    String fmt(int h, int m) =>
+        '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+    return {'start': fmt(hour, minute), 'end': fmt(endHour, minute)};
+  }
+
+  /// All subservices offered by the service, each with name/price strings.
+  List<Map<String, String>> get _allSubservices {
+    final raw = widget.item.raw['subservices'];
+    if (raw is! List) return const [];
+    final out = <Map<String, String>>[];
+    for (final entry in raw) {
+      if (entry is! Map) continue;
+      final map = Map<String, dynamic>.from(entry);
+      final name = map['name']?.toString().trim() ?? '';
+      if (name.isEmpty) continue;
+      out.add({
+        'name': name,
+        'price': map['price']?.toString().trim() ?? '',
+        'hours': (map['hours'] ?? map['duration'])?.toString().trim() ?? '',
+      });
+    }
+    return out;
+  }
+
+  /// Default selection: first subservice (preserves previous auto behavior).
+  Set<String> _defaultSubservices() {
+    final all = _allSubservices;
+    if (all.isEmpty) return {};
+    return {all.first['name'] ?? ''}..remove('');
+  }
+
+  ShipAddress get _address => StoreAddressBook.instance.selected;
+
+  Future<void> _pickAddress() async {
+    final picked = await Navigator.of(context).push<ShipAddress>(
+      MaterialPageRoute<ShipAddress>(
+        builder: (_) => const StoreSavedAddressPage(selectMode: true),
       ),
-      (_) => false,
     );
+    if (picked == null || !mounted) return;
+    StoreAddressBook.instance.select(picked.id);
+    setState(() {});
+  }
+
+  static String _bookingIdFrom(Map<String, dynamic> response) {
+    for (final key in ['id', '_id', 'booking_id']) {
+      final v = response[key]?.toString().trim();
+      if (v != null && v.isNotEmpty) return v;
+    }
+    for (final key in ['booking', 'data', 'item']) {
+      final nested = response[key];
+      if (nested is Map) {
+        for (final k in ['id', '_id', 'booking_id']) {
+          final v = nested[k]?.toString().trim();
+          if (v != null && v.isNotEmpty) return v;
+        }
+      }
+    }
+    return '';
+  }
+
+  static String _friendlyBookingError(Object e) {
+    final text = e.toString();
+    if (text.contains('409') || text.toLowerCase().contains('overlap')) {
+      return 'This slot is already booked. Please pick another time.';
+    }
+    if (text.toLowerCase().contains('availability') ||
+        text.toLowerCase().contains('slot')) {
+      return 'Selected time is outside provider availability. Try another slot.';
+    }
+    return 'Booking failed: $e';
   }
 
   Future<_BookingProvider?> _loadProvider() async {
@@ -185,7 +491,9 @@ class _VisitorServiceBookingFlowPageState
           backgroundColor: const Color(0xFFFFFEFC),
           body: SafeArea(
             top: false,
-            child: Column(
+            child: AnimatedBuilder(
+              animation: StoreAddressBook.instance,
+              builder: (context, _) => Column(
               children: [
                 Expanded(
                   child: ListView(
@@ -221,8 +529,13 @@ class _VisitorServiceBookingFlowPageState
                               selectedDate: _selectedDate,
                               selectedTime: _selectedTime,
                               selectedDuration: _selectedDuration,
+                              morningTimes: _morningSlots,
+                              afternoonTimes: _afternoonSlots,
+                              dayUnavailable: _selectedDayUnavailable,
+                              serviceAddress: _address.summaryLine,
                               onDateSelected: (date) {
                                 setState(() => _selectedDate = date);
+                                _ensureTimeInSlots();
                               },
                               onCalendarTap: _pickDate,
                               onTimeSelected: (time) {
@@ -232,6 +545,7 @@ class _VisitorServiceBookingFlowPageState
                                 if (value == null) return;
                                 setState(() => _selectedDuration = value);
                               },
+                              onAddressTap: _pickAddress,
                             ),
                           1 => _ReviewRequestStep(
                               key: const ValueKey('review'),
@@ -240,6 +554,19 @@ class _VisitorServiceBookingFlowPageState
                               selectedDate: _selectedBookingDate,
                               selectedTime: _selectedTime,
                               selectedDuration: _selectedDuration,
+                              addressLine: _address.summaryLine,
+                              onAddressTap: _pickAddress,
+                              subservices: _allSubservices,
+                              selectedSubservices: _selectedSubservices,
+                              onSubserviceToggled: (name, selected) {
+                                setState(() {
+                                  if (selected) {
+                                    _selectedSubservices.add(name);
+                                  } else {
+                                    _selectedSubservices.remove(name);
+                                  }
+                                });
+                              },
                               useBCoins: _useBCoins,
                               onUseBCoinsChanged: (value) {
                                 setState(() => _useBCoins = value);
@@ -248,10 +575,16 @@ class _VisitorServiceBookingFlowPageState
                           2 => _PaymentStep(
                               key: const ValueKey('payment'),
                               amount: widget.price,
+                              selectedMethod: _paymentMethod,
+                              submitting: _submitting,
+                              error: _bookingError,
+                              onMethodChanged: (v) =>
+                                  setState(() => _paymentMethod = v),
                             ),
                           _ => _RequestSentStep(
                               key: const ValueKey('sent'),
                               providerName: provider?.name ?? 'the provider',
+                              bookingId: _bookingId,
                             ),
                         },
                       ),
@@ -260,15 +593,20 @@ class _VisitorServiceBookingFlowPageState
                 ),
                 if (_step < 3)
                   _BookingFooterButton(
-                    label: switch (_step) {
-                      0 => 'Continue',
-                      1 => 'Add to cart',
-                      _ => 'Pay ${widget.price}',
-                    },
+                    label: _submitting
+                        ? 'Booking...'
+                        : switch (_step) {
+                            0 => 'Continue',
+                            1 => 'Continue to payment',
+                            _ => _paymentMethod == 'razorpay'
+                                ? 'Pay ${widget.price} with Razorpay'
+                                : 'Pay ${widget.price}',
+                          },
                     icon: _step == 2 ? LucideIcons.lockKeyhole : null,
-                    onPressed: _handleFooterTap,
+                    onPressed: _submitting ? () {} : _handleFooterTap,
                   ),
               ],
+              ),
             ),
           ),
         );
@@ -354,10 +692,15 @@ class _SelectAvailabilityStep extends StatelessWidget {
   final DateTime selectedDate;
   final String selectedTime;
   final String selectedDuration;
+  final List<String> morningTimes;
+  final List<String> afternoonTimes;
+  final bool dayUnavailable;
+  final String serviceAddress;
   final ValueChanged<DateTime> onDateSelected;
   final VoidCallback onCalendarTap;
   final ValueChanged<String> onTimeSelected;
   final ValueChanged<String?> onDurationChanged;
+  final VoidCallback onAddressTap;
 
   const _SelectAvailabilityStep({
     super.key,
@@ -365,10 +708,15 @@ class _SelectAvailabilityStep extends StatelessWidget {
     required this.selectedDate,
     required this.selectedTime,
     required this.selectedDuration,
+    required this.morningTimes,
+    required this.afternoonTimes,
+    required this.dayUnavailable,
+    required this.serviceAddress,
     required this.onDateSelected,
     required this.onCalendarTap,
     required this.onTimeSelected,
     required this.onDurationChanged,
+    required this.onAddressTap,
   });
 
   @override
@@ -404,22 +752,45 @@ class _SelectAvailabilityStep extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        const _SlotHeading('Morning'),
-        const SizedBox(height: 10),
-        _TimeGrid(
-          times: const ['10:00 AM', '11:00 AM', '12:00 PM'],
-          selectedTime: selectedTime,
-          onTimeSelected: onTimeSelected,
-        ),
-        const SizedBox(height: 18),
-        const _SlotHeading('Afternoon'),
-        const SizedBox(height: 10),
-        _TimeGrid(
-          times: const ['1:00 PM', '2:00 PM', '3:00 PM'],
-          selectedTime: selectedTime,
-          onTimeSelected: onTimeSelected,
-        ),
-        const SizedBox(height: 18),
+        if (dayUnavailable) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFDECEA),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Text(
+              'Provider is unavailable on this day. Please pick another date.',
+              style: TextStyle(
+                color: Color(0xFFB3261E),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+        if (morningTimes.isNotEmpty) ...[
+          const _SlotHeading('Morning'),
+          const SizedBox(height: 10),
+          _TimeGrid(
+            times: morningTimes,
+            selectedTime: selectedTime,
+            onTimeSelected: onTimeSelected,
+          ),
+          const SizedBox(height: 18),
+        ],
+        if (afternoonTimes.isNotEmpty) ...[
+          const _SlotHeading('Afternoon'),
+          const SizedBox(height: 10),
+          _TimeGrid(
+            times: afternoonTimes,
+            selectedTime: selectedTime,
+            onTimeSelected: onTimeSelected,
+          ),
+          const SizedBox(height: 18),
+        ],
         _BookingSelectTile(
           icon: LucideIcons.clock3,
           child: DropdownButtonHideUnderline(
@@ -437,19 +808,25 @@ class _SelectAvailabilityStep extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        const _BookingSelectTile(
-          icon: LucideIcons.mapPin,
-          trailing: LucideIcons.chevronRight,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Service address'),
-              SizedBox(height: 2),
-              Text(
-                '24 Market Street',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-            ],
+        InkWell(
+          onTap: onAddressTap,
+          borderRadius: BorderRadius.circular(10),
+          child: _BookingSelectTile(
+            icon: LucideIcons.mapPin,
+            trailing: LucideIcons.chevronRight,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Service address'),
+                const SizedBox(height: 2),
+                Text(
+                  serviceAddress.isEmpty ? 'Select address' : serviceAddress,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -701,12 +1078,83 @@ class _BookingSelectTile extends StatelessWidget {
   }
 }
 
+class _SubservicePicker extends StatelessWidget {
+  final List<Map<String, String>> subservices;
+  final Set<String> selected;
+  final void Function(String name, bool selected) onToggled;
+
+  const _SubservicePicker({
+    required this.subservices,
+    required this.selected,
+    required this.onToggled,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Choose subservices',
+            style: TextStyle(
+              color: Color(0xFF060D35),
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          for (final sub in subservices)
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: Text(
+                sub['name'] ?? '',
+                style: const TextStyle(
+                  color: Color(0xFF29304D),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              subtitle: ((sub['price'] ?? '').isNotEmpty ||
+                      (sub['hours'] ?? '').isNotEmpty)
+                  ? Text(
+                      [
+                        if ((sub['price'] ?? '').isNotEmpty)
+                          '₹${sub['price']}',
+                        if ((sub['hours'] ?? '').isNotEmpty)
+                          '${sub['hours']}h',
+                      ].join(' · '),
+                      style: const TextStyle(
+                        color: Color(0xFF6E748B),
+                        fontSize: 11.5,
+                      ),
+                    )
+                  : null,
+              value: selected.contains(sub['name']),
+              activeColor: const Color(0xFF078D92),
+              onChanged: (value) =>
+                  onToggled(sub['name'] ?? '', value ?? false),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ReviewRequestStep extends StatelessWidget {
   final VisitorServiceBookingFlowPage service;
   final _BookingProvider? provider;
   final _BookingDate selectedDate;
   final String selectedTime;
   final String selectedDuration;
+  final String addressLine;
+  final VoidCallback onAddressTap;
+  final List<Map<String, String>> subservices;
+  final Set<String> selectedSubservices;
+  final void Function(String name, bool selected) onSubserviceToggled;
   final bool useBCoins;
   final ValueChanged<bool> onUseBCoinsChanged;
 
@@ -717,6 +1165,11 @@ class _ReviewRequestStep extends StatelessWidget {
     required this.selectedDate,
     required this.selectedTime,
     required this.selectedDuration,
+    required this.addressLine,
+    required this.onAddressTap,
+    required this.subservices,
+    required this.selectedSubservices,
+    required this.onSubserviceToggled,
     required this.useBCoins,
     required this.onUseBCoinsChanged,
   });
@@ -766,13 +1219,26 @@ class _ReviewRequestStep extends StatelessWidget {
                       text: selectedDuration,
                     ),
                     const SizedBox(height: 10),
-                    const _ReviewInfoRow(
-                      icon: LucideIcons.mapPin,
-                      text: '24 Market Street',
+                    InkWell(
+                      onTap: onAddressTap,
+                      child: _ReviewInfoRow(
+                        icon: LucideIcons.mapPin,
+                        text: addressLine.isEmpty
+                            ? 'Select address'
+                            : addressLine,
+                      ),
                     ),
                   ],
                 ),
               ),
+              if (subservices.isNotEmpty) ...[
+                const _ReviewDivider(),
+                _SubservicePicker(
+                  subservices: subservices,
+                  selected: selectedSubservices,
+                  onToggled: onSubserviceToggled,
+                ),
+              ],
               const _ReviewDivider(),
               const _ReviewActionRow(
                 icon: LucideIcons.penLine,
@@ -858,15 +1324,13 @@ class _ReviewServiceSummary extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: Image.asset(
-            service.imageAsset,
-            width: 92,
-            height: 92,
-            fit: BoxFit.cover,
-            cacheWidth: 260,
-          ),
+        StoreItemImage(
+          imageUrl: service.imageUrl,
+          icon: LucideIcons.briefcaseBusiness,
+          width: 92,
+          height: 92,
+          borderRadius: 10,
+          debugLabel: 'service-booking-review',
         ),
         const SizedBox(width: 14),
         Expanded(
@@ -1035,7 +1499,7 @@ class _ReviewActionRow extends StatelessWidget {
   }
 }
 
-class _ReviewBCoinsRow extends StatelessWidget {
+class _ReviewBCoinsRow extends StatefulWidget {
   final bool value;
   final ValueChanged<bool> onChanged;
 
@@ -1043,6 +1507,27 @@ class _ReviewBCoinsRow extends StatelessWidget {
     required this.value,
     required this.onChanged,
   });
+
+  @override
+  State<_ReviewBCoinsRow> createState() => _ReviewBCoinsRowState();
+}
+
+class _ReviewBCoinsRowState extends State<_ReviewBCoinsRow> {
+  late final Future<int> _balanceFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _balanceFuture = _loadBalance();
+  }
+
+  static Future<int> _loadBalance() async {
+    try {
+      return await WalletService().getCoinBalance();
+    } catch (_) {
+      return 0;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1066,20 +1551,23 @@ class _ReviewBCoinsRow extends StatelessWidget {
                 ),
               ),
             ),
-            const Text(
-              'You have 120 bCoins',
-              style: TextStyle(
-                color: Color(0xFF29304D),
-                fontSize: 10.5,
-                fontWeight: FontWeight.w600,
+            FutureBuilder<int>(
+              future: _balanceFuture,
+              builder: (context, snapshot) => Text(
+                'You have ${snapshot.data ?? 0} bCoins',
+                style: const TextStyle(
+                  color: Color(0xFF29304D),
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
             Transform.scale(
               scale: 0.75,
               child: Switch(
-                value: value,
+                value: widget.value,
                 activeThumbColor: const Color(0xFF078D92),
-                onChanged: onChanged,
+                onChanged: widget.onChanged,
               ),
             ),
           ],
@@ -1121,7 +1609,7 @@ class _ReviewPaymentRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return const _ReviewActionRow(
       icon: LucideIcons.creditCard,
-      title: 'Visa  •••• 4821',
+      title: 'Wallet or Razorpay at next step',
     );
   }
 }
@@ -1141,19 +1629,30 @@ class _ReviewDivider extends StatelessWidget {
 
 class _PaymentStep extends StatefulWidget {
   final String amount;
+  final String selectedMethod;
+  final bool submitting;
+  final String? error;
+  final ValueChanged<String> onMethodChanged;
 
-  const _PaymentStep({super.key, required this.amount});
+  const _PaymentStep({
+    super.key,
+    required this.amount,
+    this.selectedMethod = 'wallet',
+    this.submitting = false,
+    this.error,
+    required this.onMethodChanged,
+  });
 
   @override
   State<_PaymentStep> createState() => _PaymentStepState();
 }
 
 class _PaymentStepState extends State<_PaymentStep> {
-  int _selectedMethod = 0;
   bool _useDeliveryAddress = true;
 
   @override
   Widget build(BuildContext context) {
+    final method = widget.selectedMethod;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1169,50 +1668,39 @@ class _PaymentStepState extends State<_PaymentStep> {
         ),
         const SizedBox(height: 9),
         _PaymentMethodTile(
-          selected: _selectedMethod == 0,
-          title: 'Visa •••• 4821',
-          subtitle: 'Expires 08/29',
-          badge: 'Selected',
-          iconChild: const Text(
-            'VISA',
-            style: TextStyle(
-              color: Color(0xFF2445B8),
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-          onTap: () => setState(() => _selectedMethod = 0),
-        ),
-        const SizedBox(height: 8),
-        _PaymentMethodTile(
-          selected: _selectedMethod == 1,
-          title: 'Add new card',
-          iconChild: const Icon(
-            LucideIcons.creditCard,
-            color: Color(0xFF060D35),
-            size: 26,
-          ),
-          onTap: () => setState(() => _selectedMethod = 1),
-        ),
-        const SizedBox(height: 8),
-        _PaymentMethodTile(
-          selected: _selectedMethod == 2,
-          title: 'Digital wallet',
+          selected: method == 'wallet',
+          title: 'Wallet / bCoins',
+          subtitle: '1 coin = ₹1 · deducted instantly',
+          badge: method == 'wallet' ? 'Selected' : null,
           iconChild: const Icon(
             LucideIcons.wallet,
             color: Color(0xFF060D35),
             size: 26,
           ),
-          onTap: () => setState(() => _selectedMethod = 2),
+          onTap: () => widget.onMethodChanged('wallet'),
         ),
         const SizedBox(height: 8),
         _PaymentMethodTile(
-          selected: _selectedMethod == 3,
-          title: 'Pay with bCoins',
-          iconChild: const _BCoinBadge(),
-          onTap: () => setState(() => _selectedMethod = 3),
+          selected: method == 'razorpay',
+          title: 'Razorpay',
+          subtitle: 'UPI · cards · netbanking',
+          badge: method == 'razorpay' ? 'Selected' : null,
+          iconChild: const Icon(
+            LucideIcons.creditCard,
+            color: Color(0xFF060D35),
+            size: 26,
+          ),
+          onTap: () => widget.onMethodChanged('razorpay'),
         ),
+        if (widget.error != null) ...[
+          const SizedBox(height: 10),
+          Text(widget.error!,
+              style: const TextStyle(color: Colors.red, fontSize: 12)),
+        ],
+        if (widget.submitting) ...[
+          const SizedBox(height: 10),
+          const LinearProgressIndicator(),
+        ],
         const SizedBox(height: 10),
         _BillingAddressTile(
           value: _useDeliveryAddress,
@@ -1402,39 +1890,6 @@ class _RadioMark extends StatelessWidget {
   }
 }
 
-class _BCoinBadge extends StatelessWidget {
-  const _BCoinBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 28,
-      height: 28,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        border: Border.all(color: const Color(0xFF684AC8), width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: const Text(
-        'b',
-        style: TextStyle(
-          color: Color(0xFF684AC8),
-          fontSize: 18,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-}
-
 class _BillingAddressTile extends StatelessWidget {
   final bool value;
   final ValueChanged<bool> onChanged;
@@ -1529,8 +1984,10 @@ class _SecurePaymentNote extends StatelessWidget {
 
 class _RequestSentStep extends StatelessWidget {
   final String providerName;
+  final String? bookingId;
 
-  const _RequestSentStep({super.key, required this.providerName});
+  const _RequestSentStep(
+      {super.key, required this.providerName, this.bookingId});
 
   @override
   Widget build(BuildContext context) {
@@ -1559,9 +2016,11 @@ class _RequestSentStep extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 7),
-        const Text(
-          'Request #SV2048',
-          style: TextStyle(
+        Text(
+          bookingId == null || bookingId!.isEmpty
+              ? 'Request received'
+              : 'Request #${bookingId!}',
+          style: const TextStyle(
             color: Color(0xFF684AC8),
             fontSize: 13.5,
             fontWeight: FontWeight.w900,
@@ -1607,12 +2066,23 @@ class _RequestSentStep extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         _WideActionButton(
-            label: 'View booking', filled: true, onPressed: () {}),
+            label: 'View bookings',
+            filled: true,
+            onPressed: () {
+              StoreMockState.instance.refreshBuyerBookings();
+              Navigator.of(context).popUntil((route) => route.isFirst);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text('Booking confirmed. See My bookings.')),
+              );
+            }),
         const SizedBox(height: 10),
         _WideActionButton(
-          label: 'Message $providerName',
+          label: 'Back to store',
           filled: false,
-          onPressed: () {},
+          onPressed: () => Navigator.of(context).popUntil(
+            (route) => route.isFirst,
+          ),
         ),
       ],
     );

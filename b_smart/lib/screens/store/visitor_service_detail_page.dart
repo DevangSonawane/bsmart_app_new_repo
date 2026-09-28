@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api/api_client.dart';
+import '../../api/phase2_store_api.dart';
 import '../../services/supabase_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
@@ -19,7 +20,7 @@ class VisitorServiceDetailPage extends StatefulWidget {
     required this.item,
   });
 
-  String get imageAsset => item.imageAsset;
+  String get imageUrl => item.imageUrl;
   String get category => item.category;
   String get title => item.title;
   String get description => item.description;
@@ -36,11 +37,28 @@ class VisitorServiceDetailPage extends StatefulWidget {
 
 class _VisitorServiceDetailPageState extends State<VisitorServiceDetailPage> {
   late Future<_ProviderInfo?> _providerFuture;
+  StoreMockCatalogItem? _freshItem;
 
   @override
   void initState() {
     super.initState();
     _providerFuture = _loadProvider();
+    _refreshDetail();
+  }
+
+  /// Refetches the service by id so detail is never stale.
+  /// Seed/offline items keep the passed-in data on any failure.
+  Future<void> _refreshDetail() async {
+    final id = widget.item.id.trim();
+    if (!RegExp(r'^[0-9a-fA-F]{24}$').hasMatch(id)) return;
+    try {
+      final data = await Phase2StoreApi().getService(id);
+      if (!mounted || data.isEmpty) return;
+      setState(
+          () => _freshItem = StoreMockState.serviceFromApi(data));
+    } catch (_) {
+      // Keep the listed data; browse/search already show server content.
+    }
   }
 
   Future<_ProviderInfo?> _loadProvider() async {
@@ -96,6 +114,13 @@ class _VisitorServiceDetailPageState extends State<VisitorServiceDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Refreshed view when the live fetch completes; getters stay identical.
+    final view = _freshItem == null
+        ? widget
+        : VisitorServiceDetailPage(
+            ownerUserId: widget.ownerUserId,
+            item: _freshItem!,
+          );
     return Scaffold(
       backgroundColor: const Color(0xFFFFFEFC),
       body: SafeArea(
@@ -113,7 +138,7 @@ class _VisitorServiceDetailPageState extends State<VisitorServiceDetailPage> {
                 children: [
                   const _DetailHeader(),
                   const SizedBox(height: 12),
-                  _HeroSummaryCard(widget: widget),
+                  _HeroSummaryCard(widget: view),
                   const SizedBox(height: 12),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -121,7 +146,7 @@ class _VisitorServiceDetailPageState extends State<VisitorServiceDetailPage> {
                       const Expanded(child: _IncludedCard()),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: _MethodCard(icon: widget.methodIcon),
+                        child: _MethodCard(icon: view.methodIcon),
                       ),
                     ],
                   ),
@@ -137,13 +162,17 @@ class _VisitorServiceDetailPageState extends State<VisitorServiceDetailPage> {
                     },
                   ),
                   const SizedBox(height: 12),
-                  _ReviewCard(imageAsset: widget.imageAsset),
+                  _ReviewCard(
+                    imageUrl: view.imageUrl,
+                    rating: view.rating,
+                    reviews: view.reviews,
+                  ),
                   const SizedBox(height: 12),
                   const _PolicyRow(),
                 ],
               ),
             ),
-            _AvailabilityButton(service: widget),
+            _AvailabilityButton(service: view),
           ],
         ),
       ),
@@ -224,12 +253,12 @@ class _HeroSummaryCard extends StatelessWidget {
           Stack(
             alignment: Alignment.bottomCenter,
             children: [
-              Image.asset(
-                widget.imageAsset,
+              StoreItemImage(
+                imageUrl: widget.imageUrl,
+                icon: LucideIcons.briefcaseBusiness,
                 width: double.infinity,
                 height: 178,
-                fit: BoxFit.cover,
-                cacheWidth: 720,
+                debugLabel: 'store-service-detail',
               ),
               const Padding(
                 padding: EdgeInsets.only(bottom: 12),
@@ -660,9 +689,15 @@ class _ProviderAvatar extends StatelessWidget {
 }
 
 class _ReviewCard extends StatelessWidget {
-  final String imageAsset;
+  final String imageUrl;
+  final String rating;
+  final String reviews;
 
-  const _ReviewCard({required this.imageAsset});
+  const _ReviewCard({
+    required this.imageUrl,
+    required this.rating,
+    required this.reviews,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -672,11 +707,11 @@ class _ReviewCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Recent reviews',
                   style: TextStyle(
                     color: Color(0xFF060D35),
@@ -684,24 +719,17 @@ class _ReviewCard extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                SizedBox(height: 8),
-                _Metric(icon: LucideIcons.star, text: '4.8', bold: true),
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
+                _Metric(icon: LucideIcons.star, text: rating, bold: true),
+                const SizedBox(height: 8),
                 Text(
-                  'Alex did an amazing job! My home has never felt so clean and fresh.',
-                  style: TextStyle(
+                  reviews == '0' || reviews.toLowerCase() == 'new'
+                      ? 'No reviews yet. Be the first to book and rate this service.'
+                      : 'Based on $reviews customer ${reviews == '1' ? 'review' : 'reviews'}.',
+                  style: const TextStyle(
                     color: Color(0xFF29304D),
                     fontSize: 12,
                     height: 1.35,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                SizedBox(height: 7),
-                Text(
-                  '- Sarah J.',
-                  style: TextStyle(
-                    color: Color(0xFF6E748B),
-                    fontSize: 11.5,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -709,15 +737,13 @@ class _ReviewCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Image.asset(
-              imageAsset,
-              width: 82,
-              height: 82,
-              fit: BoxFit.cover,
-              cacheWidth: 260,
-            ),
+          StoreItemImage(
+            imageUrl: imageUrl,
+            icon: LucideIcons.briefcaseBusiness,
+            width: 82,
+            height: 82,
+            borderRadius: 10,
+            debugLabel: 'service-detail-review',
           ),
         ],
       ),

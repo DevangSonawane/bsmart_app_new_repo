@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/vendors_api.dart';
@@ -2164,13 +2165,15 @@ class _KeyValue extends StatelessWidget {
 class _SocialButton extends StatelessWidget {
   final String label;
   final String url;
-  final IconData icon;
+  final IconData? icon;
+  final FaIconData? faIcon;
   final Color tint;
 
   const _SocialButton({
     required this.label,
     required this.url,
-    required this.icon,
+    this.icon,
+    this.faIcon,
     required this.tint,
   });
 
@@ -2203,7 +2206,10 @@ class _SocialButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: fg),
+            if (faIcon != null)
+              FaIcon(faIcon, size: 16, color: fg)
+            else
+              Icon(icon, size: 16, color: fg),
             const SizedBox(width: 8),
             Text(
               label,
@@ -2553,25 +2559,25 @@ class _ContactTabReact extends StatelessWidget {
                 _SocialButton(
                   label: 'Instagram',
                   url: instagram,
-                  icon: LucideIcons.instagram,
+                  faIcon: FontAwesomeIcons.instagram,
                   tint: const Color(0xFFEC4899),
                 ),
                 _SocialButton(
                   label: 'Facebook',
                   url: facebook,
-                  icon: LucideIcons.facebook,
+                  faIcon: FontAwesomeIcons.facebook,
                   tint: const Color(0xFF2563EB),
                 ),
                 _SocialButton(
                   label: 'LinkedIn',
                   url: linkedin,
-                  icon: LucideIcons.linkedin,
+                  faIcon: FontAwesomeIcons.linkedin,
                   tint: const Color(0xFF0EA5E9),
                 ),
                 _SocialButton(
                   label: 'Twitter',
                   url: twitter,
-                  icon: LucideIcons.twitter,
+                  faIcon: FontAwesomeIcons.twitter,
                   tint: const Color(0xFF1D9BF0),
                 ),
               ],

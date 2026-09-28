@@ -5,9 +5,14 @@ class BStoreTheme {
 
   static ThemeData data(BuildContext context) {
     final base = Theme.of(context);
+    // The store design system is light-only (navy text on white/cream).
+    // Force a light scheme so bottom sheets, dialogs, menus and inputs stay
+    // readable even when the app runs in system dark mode.
     return base.copyWith(
+      brightness: Brightness.light,
       scaffoldBackgroundColor: BStoreColors.background,
       colorScheme: base.colorScheme.copyWith(
+        brightness: Brightness.light,
         primary: BStoreColors.primary,
         secondary: BStoreColors.accentPurple,
         surface: BStoreColors.surface,

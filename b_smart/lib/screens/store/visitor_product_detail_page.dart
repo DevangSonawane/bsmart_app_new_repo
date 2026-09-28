@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api/api_client.dart';
+import '../../api/phase2_store_api.dart';
 import '../../services/supabase_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
@@ -18,7 +19,7 @@ class VisitorProductDetailData {
     required this.item,
   });
 
-  String get imageAsset => item.imageAsset;
+  String get imageUrl => item.imageUrl;
   String get title => item.title;
   String get price => item.priceLabel;
   String get rating => item.rating;
@@ -44,18 +45,66 @@ class VisitorProductDetailPage extends StatefulWidget {
 
 class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
   late Future<_ProductOwner?> _ownerFuture;
+  late StoreMockCatalogItem _item;
   int _quantity = 1;
+  String? _selectedColor;
+  String? _selectedSize;
+
+  static final _serverIdPattern = RegExp(r'^[0-9a-fA-F]{24}$');
+
+  List<Map<String, String>> get _variants =>
+      StoreMockState.variantsOf(_item);
+
+  Set<String> get _colors => StoreMockState.colorsOf(_item);
+
+  Set<String> get _sizes => StoreMockState.sizesOf(_item);
+
+  Map<String, dynamic> get _selectedVariant {
+    final variant = <String, dynamic>{};
+    if (_selectedColor != null) variant['color'] = _selectedColor;
+    if (_selectedSize != null) variant['size'] = _selectedSize;
+    return variant;
+  }
+
+  int? get _stockQuantity {
+    if (!_item.raw.containsKey('stock_quantity')) return null;
+    final raw = _item.raw['stock_quantity'];
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw) ?? 0;
+    return 0;
+  }
+
+  String get _displayPrice {    if (_variants.isNotEmpty) {
+      for (final v in _variants) {
+        final matchesColor =
+            _selectedColor == null || v['color'] == _selectedColor;
+        final matchesSize =
+            _selectedSize == null || v['size'] == _selectedSize;
+        if (matchesColor && matchesSize) {
+          final parsed = double.tryParse(v['price'] ?? '');
+          if (parsed != null && parsed > 0) {
+            return '₹${parsed == parsed.roundToDouble() ? parsed.toStringAsFixed(0) : parsed.toStringAsFixed(2)}';
+          }
+        }
+      }
+    }
+    return _item.priceLabel;
+  }
 
   @override
   void initState() {
     super.initState();
+    _item = widget.product.item;
     _ownerFuture = _loadOwner();
-    final cartQuantity =
-        StoreMockState.instance.quantityFor(widget.product.item.id);
-    if (cartQuantity > 0) {
-      _quantity = cartQuantity;
+    _selectDefaultVariant();
+    _quantity = StoreMockState.instance
+        .quantityForVariant(_item, _selectedVariant)
+        .clamp(1, 99);
+    if (StoreMockState.instance.quantityFor(_item.id) == 0) {
+      _quantity = 1;
     }
     StoreMockState.instance.addListener(_syncQuantityFromCart);
+    _refreshDetail();
   }
 
   @override
@@ -64,9 +113,54 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
     super.dispose();
   }
 
+  void _selectDefaultVariant() {
+    final colors = StoreMockState.colorsOf(_item);
+    final sizes = StoreMockState.sizesOf(_item);
+    if (colors.isNotEmpty) _selectedColor = colors.first;
+    if (sizes.isNotEmpty) _selectedSize = sizes.first;
+  }
+
+  void _onVariantChanged() {
+    final qty = StoreMockState.instance.quantityForVariant(
+      _item,
+      _selectedVariant,
+    );
+    setState(() => _quantity = qty > 0 ? qty : 1);
+  }
+
+  /// Refetches the product by id so detail is never stale.
+  /// Seed/offline items keep the passed-in data on any failure.
+  Future<void> _refreshDetail() async {
+    final id = _item.id.trim();
+    if (!_serverIdPattern.hasMatch(id)) return;
+    try {
+      final data = await Phase2StoreApi().getProduct(id);
+      if (!mounted || data.isEmpty) return;
+      final fresh = StoreMockState.productFromApi(data);
+      setState(() {
+        _item = fresh;
+        if (_selectedColor != null &&
+            !StoreMockState.colorsOf(fresh).contains(_selectedColor)) {
+          _selectedColor = null;
+        }
+        if (_selectedSize != null &&
+            !StoreMockState.sizesOf(fresh).contains(_selectedSize)) {
+          _selectedSize = null;
+        }
+        if (_selectedColor == null || _selectedSize == null) {
+          _selectDefaultVariant();
+        }
+      });
+    } catch (_) {
+      // Keep the listed data; browse/Search already show server content.
+    }
+  }
+
   void _syncQuantityFromCart() {
-    final cartQuantity =
-        StoreMockState.instance.quantityFor(widget.product.item.id);
+    final cartQuantity = StoreMockState.instance.quantityForVariant(
+      _item,
+      _selectedVariant,
+    );
     final nextQuantity = cartQuantity > 0 ? cartQuantity : 1;
     if (!mounted || nextQuantity == _quantity) return;
     setState(() => _quantity = nextQuantity);
@@ -109,7 +203,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
     }
 
     return _ProductOwner(
-      displayName: name ?? 'Alex Morgan',
+      displayName: name ?? 'Store owner',
       avatarUrl: avatarUrl,
       avatarHeaders: avatarHeaders,
     );
@@ -132,8 +226,11 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
   }
 
   void _addToCart({required bool openCart}) {
-    final product = widget.product;
-    StoreMockState.instance.setCartQuantity(product.item, _quantity);
+    StoreMockState.instance.setCartQuantity(
+      _item,
+      _quantity,
+      variant: _selectedVariant,
+    );
     if (openCart) {
       _openCart();
       return;
@@ -143,10 +240,15 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
   void _setQuantity(int quantity) {
     final nextQuantity = quantity.clamp(1, 99);
     setState(() => _quantity = nextQuantity);
-    if (StoreMockState.instance.quantityFor(widget.product.item.id) > 0) {
+    if (StoreMockState.instance.quantityForVariant(
+          _item,
+          _selectedVariant,
+        ) >
+        0) {
       StoreMockState.instance.setCartQuantity(
-        widget.product.item,
+        _item,
         nextQuantity,
+        variant: _selectedVariant,
       );
     }
   }
@@ -155,7 +257,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => VisitorProductReviewsPage(
-          product: widget.product,
+          product: VisitorProductDetailData(item: _item),
           ownerUserId: widget.ownerUserId,
         ),
       ),
@@ -164,7 +266,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final product = widget.product;
+    final product = VisitorProductDetailData(item: _item);
 
     return Theme(
       data: BStoreTheme.data(context),
@@ -180,7 +282,9 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                 children: [
                   _ProductTopBar(onCart: _openCart),
                   const SizedBox(height: 16),
-                  _ProductImageCard(imageAsset: product.imageAsset),
+                  _ProductImageCard(
+                    imageUrl: product.imageUrl,
+                  ),
                   const SizedBox(height: 14),
                   Text(
                     product.category,
@@ -211,7 +315,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                     children: [
                       Expanded(
                         child: Text(
-                          product.price,
+                          _displayPrice,
                           style: const TextStyle(
                             color: BStoreColors.primary,
                             fontSize: 22,
@@ -219,7 +323,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                           ),
                         ),
                       ),
-                      const _StockBadge(),
+                      _StockBadge(stock: _stockQuantity),
                     ],
                   ),
                   const SizedBox(height: 11),
@@ -267,6 +371,23 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                       ),
                     ],
                   ),
+                  if (_variants.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    _VariantSelector(
+                      colors: _colors.toList(),
+                      sizes: _sizes.toList(),
+                      selectedColor: _selectedColor,
+                      selectedSize: _selectedSize,
+                      onColorSelected: (color) {
+                        setState(() => _selectedColor = color);
+                        _onVariantChanged();
+                      },
+                      onSizeSelected: (size) {
+                        setState(() => _selectedSize = size);
+                        _onVariantChanged();
+                      },
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   const Divider(color: BStoreColors.divider),
                   const SizedBox(height: 8),
@@ -283,6 +404,187 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VariantSelector extends StatelessWidget {
+  final List<String> colors;
+  final List<String> sizes;
+  final String? selectedColor;
+  final String? selectedSize;
+  final ValueChanged<String> onColorSelected;
+  final ValueChanged<String> onSizeSelected;
+
+  const _VariantSelector({
+    required this.colors,
+    required this.sizes,
+    required this.selectedColor,
+    required this.selectedSize,
+    required this.onColorSelected,
+    required this.onSizeSelected,
+  });
+
+  static Color? _parseColor(String value) {
+    var hex = value.trim().replaceFirst('#', '');
+    if (hex.length == 3) {
+      hex = hex.split('').map((c) => '$c$c').join();
+    }
+    if (hex.length == 6) {
+      final parsed = int.tryParse(hex, radix: 16);
+      if (parsed != null) return Color(0xFF000000 | parsed);
+    }
+    if (hex.length == 8) {
+      final parsed = int.tryParse(hex, radix: 16);
+      if (parsed != null) return Color(parsed);
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (colors.isNotEmpty) ...[
+          Text(
+            'Color${selectedColor == null ? '' : ': $selectedColor'}',
+            style: const TextStyle(
+              color: BStoreColors.textPrimary,
+              fontSize: 14.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (final color in colors)
+                _ColorChip(
+                  label: color,
+                  swatch: _parseColor(color),
+                  selected: selectedColor == color,
+                  onTap: () => onColorSelected(color),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (sizes.isNotEmpty) ...[
+          Text(
+            'Size${selectedSize == null ? '' : ': $selectedSize'}',
+            style: const TextStyle(
+              color: BStoreColors.textPrimary,
+              fontSize: 14.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (final size in sizes)
+                _SizeChip(
+                  label: size,
+                  selected: selectedSize == size,
+                  onTap: () => onSizeSelected(size),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ColorChip extends StatelessWidget {
+  final String label;
+  final Color? swatch;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ColorChip({
+    required this.label,
+    required this.swatch,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final circle = swatch ?? BStoreColors.textSecondary;
+    return Tooltip(
+      message: label,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: circle,
+            border: Border.all(
+              color: selected
+                  ? BStoreColors.primary
+                  : BStoreColors.divider,
+              width: selected ? 3 : 1.5,
+            ),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: BStoreColors.primary.withValues(alpha: 0.35),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: selected
+              ? const Icon(LucideIcons.check, color: Colors.white, size: 18)
+              : null,
+        ),
+      ),
+    );
+  }
+}
+
+class _SizeChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SizeChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(9),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? BStoreColors.primary : Colors.white,
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(
+            color: selected ? BStoreColors.primary : BStoreColors.divider,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : BStoreColors.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
           ),
         ),
       ),
@@ -345,9 +647,11 @@ class _ProductTopBar extends StatelessWidget {
 }
 
 class _ProductImageCard extends StatelessWidget {
-  final String imageAsset;
+  final String imageUrl;
 
-  const _ProductImageCard({required this.imageAsset});
+  const _ProductImageCard({
+    required this.imageUrl,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -356,12 +660,12 @@ class _ProductImageCard extends StatelessWidget {
       child: Stack(
         alignment: Alignment.bottomCenter,
         children: [
-          Image.asset(
-            imageAsset,
+          StoreItemImage(
+            imageUrl: imageUrl,
+            icon: LucideIcons.package,
             width: double.infinity,
             height: 250,
-            fit: BoxFit.cover,
-            cacheWidth: 820,
+            debugLabel: 'store-product-detail',
           ),
           Positioned(
             top: 14,
@@ -477,29 +781,47 @@ class _RatingLine extends StatelessWidget {
 }
 
 class _StockBadge extends StatelessWidget {
-  const _StockBadge();
+  final int? stock;
+
+  const _StockBadge({required this.stock});
 
   @override
   Widget build(BuildContext context) {
+    final inStock = (stock ?? 1) > 0;
+    final label = stock == null
+        ? 'In stock'
+        : !inStock
+            ? 'Out of stock'
+            : stock! <= 5
+                ? 'Only $stock left'
+                : 'In stock';
+    final color =
+        !inStock ? const Color(0xFFB3261E) : BStoreColors.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
-        color: const Color(0xFFE5F5F3),
+        color: inStock
+            ? const Color(0xFFE5F5F3)
+            : const Color(0xFFFDECEA),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           CircleAvatar(
             radius: 11,
-            backgroundColor: BStoreColors.primary,
-            child: Icon(LucideIcons.check, color: Colors.white, size: 14),
+            backgroundColor: color,
+            child: Icon(
+              inStock ? LucideIcons.check : LucideIcons.x,
+              color: Colors.white,
+              size: 14,
+            ),
           ),
-          SizedBox(width: 8),
+          const SizedBox(width: 8),
           Text(
-            'In stock',
+            label,
             style: TextStyle(
-              color: BStoreColors.primary,
+              color: color,
               fontSize: 14,
               fontWeight: FontWeight.w900,
             ),
@@ -551,7 +873,7 @@ class _SellerCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ownerName = owner?.displayName.trim().isNotEmpty == true
         ? owner!.displayName.trim()
-        : (loading ? 'Loading store...' : 'Alex Morgan');
+        : (loading ? 'Loading store...' : 'Store owner');
 
     return Container(
       height: 86,

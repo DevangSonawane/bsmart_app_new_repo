@@ -1,51 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../api/phase2_store_api.dart';
+import '../../utils/url_helper.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_models.dart';
 import 'store_theme.dart';
 
-class StoreOrderTrackingListPage extends StatelessWidget {
+class StoreOrderTrackingListPage extends StatefulWidget {
   const StoreOrderTrackingListPage({super.key});
 
-  static const List<_TrackingOrder> _orders = [
-    _TrackingOrder(
-      id: 'BS10482',
-      title: 'Eco Cleaning Kit',
-      status: 'Arriving today',
-      eta: '2:30-3:15 PM',
-      imageAsset: 'assets/bSmart_Store/mockimages/vegetables.jpg',
-      currentStep: 2,
-      isService: false,
-      courierName: 'Jordan Lee',
-      courierRating: '4.9',
-      courierDeliveries: '128 deliveries',
-    ),
-    _TrackingOrder(
-      id: 'BS10471',
-      title: 'Handmade Notebook',
-      status: 'Packed',
-      eta: 'Tomorrow, 11:00 AM',
-      imageAsset: 'assets/bSmart_Store/mockimages/clothes.jpg',
-      currentStep: 1,
-      isService: false,
-      courierName: 'Aarav Mehta',
-      courierRating: '4.8',
-      courierDeliveries: '96 deliveries',
-    ),
-    _TrackingOrder(
-      id: 'BS10459',
-      title: 'Wireless Desk Lamp',
-      status: 'Order confirmed',
-      eta: 'Sep 10, 4:00 PM',
-      imageAsset: 'assets/bSmart_Store/mockimages/electronics.jpg',
-      currentStep: 0,
-      isService: false,
-      courierName: 'Nina Carter',
-      courierRating: '4.7',
-      courierDeliveries: '214 deliveries',
-    ),
-  ];
+  @override
+  State<StoreOrderTrackingListPage> createState() =>
+      _StoreOrderTrackingListState();
+}
+
+class _StoreOrderTrackingListState extends State<StoreOrderTrackingListPage> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      StoreMockState.instance.refreshBuyerOrders();
+      StoreMockState.instance.refreshBuyerBookings();
+    });
+  }
+
+  Future<void> _retry() async {
+    await Future.wait([
+      StoreMockState.instance.refreshBuyerOrders(),
+      StoreMockState.instance.refreshBuyerBookings(),
+    ]);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -69,17 +54,52 @@ class StoreOrderTrackingListPage extends StatelessWidget {
               AnimatedBuilder(
                 animation: StoreMockState.instance,
                 builder: (context, _) {
-                  final liveOrders = StoreMockState.instance.orders
-                      .map(_TrackingOrder.fromMockOrder)
-                      .toList();
-                  final visibleOrders =
-                      liveOrders.isEmpty ? _orders : liveOrders;
+                  final visibleOrders = [
+                    ...StoreMockState.instance.buyerOrders
+                        .map(_TrackingOrder.fromApiOrder),
+                    ...StoreMockState.instance.buyerBookings
+                        .map(_TrackingOrder.fromApiBooking),
+                  ];
+                  final loading =
+                      StoreMockState.instance.ordersLoading ||
+                          StoreMockState.instance.bookingsLoading;
+                  final error = !loading && visibleOrders.isEmpty
+                      ? StoreMockState.instance.lastError
+                      : null;
                   return Column(
                     children: [
+                      if (loading) const LinearProgressIndicator(),
                       for (final order in visibleOrders) ...[
                         _TrackingOrderCard(order: order),
                         const SizedBox(height: 10),
                       ],
+                      if (visibleOrders.isEmpty && !loading)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 24),
+                          child: error == null
+                              ? const StoreEmptyState(
+                                  icon: LucideIcons.packageSearch,
+                                  title: 'No orders yet',
+                                  body:
+                                      'Your product orders and service bookings will appear here.',
+                                )
+                              : StoreEmptyState(
+                                  icon: LucideIcons.cloudOff,
+                                  title: "Couldn't load orders",
+                                  body: '$error',
+                                ),
+                        ),
+                      if (error != null && !loading)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: OutlinedButton.icon(
+                            onPressed: _retry,
+                            icon: const Icon(
+                                LucideIcons.refreshCw,
+                                size: 16),
+                            label: const Text('Retry'),
+                          ),
+                        ),
                     ],
                   );
                 },
@@ -92,12 +112,107 @@ class StoreOrderTrackingListPage extends StatelessWidget {
   }
 }
 
-class _StoreOrderTrackingDetailPage extends StatelessWidget {
+class _StoreOrderTrackingDetailPage extends StatefulWidget {
   final _TrackingOrder order;
 
   const _StoreOrderTrackingDetailPage({
     required this.order,
   });
+
+  @override
+  State<_StoreOrderTrackingDetailPage> createState() =>
+      _StoreOrderTrackingDetailState();
+}
+
+class _StoreOrderTrackingDetailState
+    extends State<_StoreOrderTrackingDetailPage> {
+  late _TrackingOrder _order;
+  bool _refreshing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _order = widget.order;
+    _refreshStatus();
+  }
+
+  /// Refetches the latest order/booking status by id (Phase 2 md:
+  /// GET /api/orders/:id, GET /api/service-bookings/:id).
+  Future<void> _refreshStatus() async {
+    if (!_order.live || _refreshing) return;
+    setState(() => _refreshing = true);
+    try {
+      final data = _order.isService
+          ? await Phase2StoreApi().getServiceBooking(_order.id)
+          : await Phase2StoreApi().getOrder(_order.id);
+      if (!mounted || data.isEmpty) return;
+      final status = StoreMockState.statusOf(data);
+      if (status.isEmpty) return;
+      setState(() {
+        _order = _TrackingOrder(
+          id: _order.id,
+          title: _order.title,
+          status: status,
+          eta: _order.isService
+              ? (data['booking_date']?.toString() ?? _order.eta)
+              : _order.eta,
+          imageUrl: _order.imageUrl,
+          currentStep: _order.isService
+              ? _TrackingOrder.stepForBookingStatus(status)
+              : _TrackingOrder.stepForOrderStatus(status),
+          isService: _order.isService,
+          live: true,
+          rawStatus: status,
+        );
+      });
+    } catch (_) {
+      // Keep list data on failure.
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
+  bool get _cancellable =>
+      _order.live &&
+      ['pending', 'confirmed', 'processing'].contains(_order.rawStatus);
+
+  Future<void> _cancel(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: const Text('Cancel?'),
+        content: Text(_order.isService
+            ? 'Cancel booking #${_order.id}? Refund issued if already paid.'
+            : 'Cancel order #${_order.id}? Items restocked, refund issued.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(d).pop(false),
+              child: const Text('Keep')),
+          FilledButton(
+              onPressed: () => Navigator.of(d).pop(true),
+              child: const Text('Cancel')),
+        ],
+      ),
+    );
+    if (confirm != true || !context.mounted) return;
+    try {
+      if (_order.isService) {
+        await StoreMockState.instance.cancelBuyerBooking(_order.id);
+      } else {
+        await StoreMockState.instance.cancelBuyerOrder(_order.id);
+      }
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cancelled with refund where paid.')),
+      );
+      Navigator.of(context).maybePop();
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cancel failed: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -117,16 +232,30 @@ class _StoreOrderTrackingDetailPage extends StatelessWidget {
             ),
             children: [
               const _StorePageHeader(title: 'Order tracking'),
+              if (_refreshing) const LinearProgressIndicator(),
               const SizedBox(height: 12),
-              _ArrivalCard(order: order),
+              _ArrivalCard(order: _order),
               const SizedBox(height: 10),
-              _TrackingMapCard(isService: order.isService),
+              _TrackingMapCard(isService: _order.isService),
               const SizedBox(height: 10),
-              _TimelineCard(order: order),
+              _TimelineCard(order: _order),
               const SizedBox(height: 10),
-              _CourierCard(order: order),
-              const SizedBox(height: 10),
-              _ViewDetailsCard(order: order),
+              _StatusNoteCard(order: _order),
+              if (_cancellable) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: OutlinedButton(
+                    onPressed: () => _cancel(context),
+                    style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red),
+                    child: Text(_order.isService
+                        ? 'Cancel booking'
+                        : 'Cancel order'),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -140,47 +269,112 @@ class _TrackingOrder {
   final String title;
   final String status;
   final String eta;
-  final String imageAsset;
+  final String imageUrl;
   final int currentStep;
   final bool isService;
-  final String courierName;
-  final String courierRating;
-  final String courierDeliveries;
+  final bool live;
+  final String rawStatus;
 
   const _TrackingOrder({
     required this.id,
     required this.title,
     required this.status,
     required this.eta,
-    required this.imageAsset,
+    required this.imageUrl,
     required this.currentStep,
     required this.isService,
-    required this.courierName,
-    required this.courierRating,
-    required this.courierDeliveries,
+    this.live = false,
+    this.rawStatus = '',
   });
 
-  factory _TrackingOrder.fromMockOrder(StoreMockOrder order) {
-    final firstLine = order.lines.isEmpty ? null : order.lines.first;
-    final hasService =
-        order.lines.any((line) => line.item.type == StoreMockItemType.service);
+  static int stepForOrderStatus(String s) => _stepForOrderStatus(s);
+
+  static int stepForBookingStatus(String s) => _stepForBookingStatus(s);
+
+  static int _stepForOrderStatus(String s) {
+    return switch (s) {
+      'processing' => 1,
+      'shipped' => 2,
+      'delivered' || 'completed' => 3,
+      _ => 0,
+    };
+  }
+
+  static int _stepForBookingStatus(String s) {
+    return switch (s) {
+      'in_progress' => 2,
+      'completed' => 3,
+      'confirmed' => 1,
+      _ => 0,
+    };
+  }
+
+  factory _TrackingOrder.fromApiOrder(Map<String, dynamic> m) {
+    final id = StoreMockState.orderIdOf(m);
+    final status = StoreMockState.statusOf(m);
+    final items = m['items'];
+    String title = 'Store order';
+    String imageUrl = '';
+    if (items is List && items.isNotEmpty) {
+      final first = items.first;
+      if (first is Map) {
+        final fm = first.map((k, v) => MapEntry(k.toString(), v));
+        final prod = fm['product'];
+        final pm = prod is Map
+            ? prod.map((k, v) => MapEntry(k.toString(), v))
+            : fm;
+        title = (pm['name'] ?? pm['title'] ?? 'Store order').toString();
+        if (items.length > 1) title = '$title + ${items.length - 1} more';
+        imageUrl = _imageOf(pm);
+      }
+    }
     return _TrackingOrder(
-      id: order.id,
-      title: firstLine == null
-          ? 'Store order'
-          : order.lines.length == 1
-              ? firstLine.item.title
-              : '${firstLine.item.title} + ${order.lines.length - 1} more',
-      status: hasService ? 'Request confirmed' : 'Order confirmed',
-      eta: hasService ? 'Awaiting provider' : 'Sep 10, 4:00 PM',
-      imageAsset: firstLine?.item.imageAsset ??
-          'assets/bSmart_Store/mockimages/vegetables.jpg',
-      currentStep: 0,
-      isService: hasService,
-      courierName: hasService ? 'Service provider' : 'Nina Carter',
-      courierRating: '4.8',
-      courierDeliveries: hasService ? '52 services' : '214 deliveries',
+      id: id.isEmpty ? 'order' : id,
+      title: title,
+      status: status.isEmpty ? 'Order confirmed' : status,
+      eta: 'Live order',
+      imageUrl: imageUrl,
+      currentStep: _stepForOrderStatus(status),
+      isService: false,
+      live: true,
+      rawStatus: status,
     );
+  }
+
+  factory _TrackingOrder.fromApiBooking(Map<String, dynamic> m) {
+    final id = StoreMockState.bookingIdOf(m);
+    final status = StoreMockState.statusOf(m);
+    final svc = m['service'];
+    final sm = svc is Map
+        ? svc.map((k, v) => MapEntry(k.toString(), v))
+        : m;
+    return _TrackingOrder(
+      id: id.isEmpty ? 'booking' : id,
+      title: (sm['name'] ?? sm['title'] ?? 'Service booking').toString(),
+      status: status.isEmpty ? 'Request confirmed' : status,
+      eta: (m['booking_date'] ?? 'Scheduled').toString(),
+      imageUrl: _imageOf(sm),
+      currentStep: _stepForBookingStatus(status),
+      isService: true,
+      live: true,
+      rawStatus: status,
+    );
+  }
+
+  static String _imageOf(Map<String, dynamic> json) {
+    final images = json['images'];
+    if (images is List && images.isNotEmpty) {
+      final first = images.first;
+      if (first is Map) {
+        for (final key in ['url', 'fileName', 'filename', 'path', 'src']) {
+          final value = first[key]?.toString().trim() ?? '';
+          if (value.isNotEmpty) return UrlHelper.absoluteUrl(value);
+        }
+      } else if (first is String && first.trim().isNotEmpty) {
+        return UrlHelper.absoluteUrl(first.trim());
+      }
+    }
+    return '';
   }
 }
 
@@ -250,14 +444,15 @@ class _TrackingOrderCard extends StatelessWidget {
         decoration: BStoreDecorations.card(radius: 14),
         child: Row(
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.asset(
-                order.imageAsset,
-                width: 52,
-                height: 52,
-                fit: BoxFit.cover,
-              ),
+            StoreItemImage(
+              imageUrl: order.imageUrl,
+              icon: order.isService
+                  ? LucideIcons.briefcaseBusiness
+                  : LucideIcons.package,
+              width: 52,
+              height: 52,
+              borderRadius: 10,
+              debugLabel: 'store-tracking-order',
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -654,91 +849,54 @@ class _TimelineStep extends StatelessWidget {
   }
 }
 
-class _CourierCard extends StatelessWidget {
+/// Honest status note: the backend exposes no courier assignment, so we
+/// show payment/fulfilment state instead of inventing a courier.
+class _StatusNoteCard extends StatelessWidget {
   final _TrackingOrder order;
 
-  const _CourierCard({required this.order});
+  const _StatusNoteCard({required this.order});
 
   @override
   Widget build(BuildContext context) {
+    final note = order.isService
+        ? 'The provider confirms each step. You will be notified on every update.'
+        : 'The seller advances each step. Stock and refunds are handled automatically on cancel.';
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+      padding: const EdgeInsets.fromLTRB(15, 14, 15, 14),
       decoration: BStoreDecorations.card(radius: 14),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            order.isService ? 'Your provider' : 'Your courier',
-            style: const TextStyle(
-              color: BStoreColors.textPrimary,
-              fontSize: 14.5,
-              fontWeight: FontWeight.w900,
-            ),
+          const Icon(
+            LucideIcons.info,
+            color: BStoreColors.primary,
+            size: 20,
           ),
-          const SizedBox(height: 11),
-          Row(
-            children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: const BoxDecoration(
-                  color: BStoreColors.primarySoft,
-                  shape: BoxShape.circle,
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Order #${order.id}',
+                  style: const TextStyle(
+                    color: BStoreColors.textPrimary,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-                child: const Icon(
-                  LucideIcons.userRound,
-                  color: BStoreColors.primary,
-                  size: 25,
+                const SizedBox(height: 4),
+                Text(
+                  note,
+                  style: const TextStyle(
+                    color: BStoreColors.textSecondary,
+                    fontSize: 12,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      order.courierName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: BStoreColors.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        const Icon(
-                          LucideIcons.star,
-                          color: BStoreColors.primary,
-                          size: 14,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            '${order.courierRating} | ${order.courierDeliveries}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: BStoreColors.textSecondary,
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const _CourierAction(
-                icon: LucideIcons.messageCircle,
-                label: 'Message',
-              ),
-              const SizedBox(width: 6),
-              const _CourierAction(icon: LucideIcons.phone, label: 'Call'),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -746,92 +904,3 @@ class _CourierCard extends StatelessWidget {
   }
 }
 
-class _CourierAction extends StatelessWidget {
-  final IconData icon;
-  final String label;
-
-  const _CourierAction({
-    required this.icon,
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 48,
-      height: 48,
-      child: OutlinedButton(
-        onPressed: () {},
-        style: OutlinedButton.styleFrom(
-          padding: EdgeInsets.zero,
-          foregroundColor: BStoreColors.textPrimary,
-          side: const BorderSide(color: BStoreColors.border),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 17),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style:
-                  const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ViewDetailsCard extends StatelessWidget {
-  final _TrackingOrder order;
-
-  const _ViewDetailsCard({required this.order});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Order #${order.id} details will open here.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      },
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
-        decoration: BStoreDecorations.card(radius: 14),
-        child: const Row(
-          children: [
-            Icon(
-              LucideIcons.box,
-              color: BStoreColors.primary,
-              size: 24,
-            ),
-            SizedBox(width: 13),
-            Expanded(
-              child: Text(
-                'View order details',
-                style: TextStyle(
-                  color: BStoreColors.primary,
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-            Icon(
-              LucideIcons.chevronRight,
-              color: BStoreColors.primary,
-              size: 22,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

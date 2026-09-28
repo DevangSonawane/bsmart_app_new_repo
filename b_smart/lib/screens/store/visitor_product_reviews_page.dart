@@ -24,40 +24,9 @@ class VisitorProductReviewsPage extends StatefulWidget {
 class _VisitorProductReviewsPageState extends State<VisitorProductReviewsPage> {
   bool _withPhotosOnly = false;
 
-  static const List<_ProductReview> _reviews = [
-    _ProductReview(
-      name: 'Emily Carter',
-      rating: 5,
-      verified: true,
-      body:
-          'The kit works well and feels durable. I love the reusable packaging.',
-      avatarColor: Color(0xFFEBD8C9),
-      photoAssets: [
-        'assets/bSmart_Store/mockimages/vegetables.jpg',
-        'assets/bSmart_Store/mockimages/vegetables_clean_test.jpg',
-        'assets/bSmart_Store/mockimages/vegetables_cutout_preview.png',
-      ],
-    ),
-    _ProductReview(
-      name: 'Daniel Kim',
-      rating: 4,
-      verified: true,
-      body: 'Good-quality essentials and fast delivery.',
-      avatarColor: Color(0xFFD9EBED),
-      photoAssets: [],
-    ),
-    _ProductReview(
-      name: 'Priya Shah',
-      rating: 5,
-      verified: true,
-      body: 'Exactly as described. The packaging looked premium too.',
-      avatarColor: Color(0xFFECE4F8),
-      photoAssets: [
-        'assets/bSmart_Store/mockimages/clothes.jpg',
-        'assets/bSmart_Store/mockimages/electronics.jpg',
-      ],
-    ),
-  ];
+  // The Phase 2 API exposes no reviews endpoint, so there is no fake
+  // review content: the list stays empty until a reviews API exists.
+  static const List<_ProductReview> _reviews = [];
 
   void _openCart() {
     Navigator.of(context).push(
@@ -118,19 +87,31 @@ class _VisitorProductReviewsPageState extends State<VisitorProductReviewsPage> {
                     _ReviewCard(review: review),
                     const SizedBox(height: 10),
                   ],
-                  TextButton.icon(
-                    onPressed: () => setState(() => _withPhotosOnly = false),
-                    iconAlignment: IconAlignment.end,
-                    icon: const Icon(LucideIcons.chevronRight, size: 19),
-                    label: const Text('View all reviews'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: BStoreColors.accentPurple,
-                      textStyle: const TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w900,
+                  if (visibleReviews.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: StoreEmptyState(
+                        icon: LucideIcons.star,
+                        title: 'No reviews yet',
+                        body:
+                            'Customer reviews will appear here once this product is rated.',
                       ),
                     ),
-                  ),
+                  if (visibleReviews.isNotEmpty)
+                    TextButton.icon(
+                      onPressed: () =>
+                          setState(() => _withPhotosOnly = false),
+                      iconAlignment: IconAlignment.end,
+                      icon: const Icon(LucideIcons.chevronRight, size: 19),
+                      label: const Text('View all reviews'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: BStoreColors.accentPurple,
+                        textStyle: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
                 ],
               ),
               Positioned(
