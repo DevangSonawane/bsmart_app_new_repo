@@ -56,26 +56,32 @@ class StoreProfile {
     };
   }
 
+  /// Accepts either the bare store object or the full `{store: {...}}`
+  /// envelope, so callers can pass a raw API response either way.
   factory StoreProfile.fromApiJson(Map<String, dynamic> json) {
+    final map = json['store'] is Map
+        ? (json['store'] as Map).map((k, v) => MapEntry(k.toString(), v))
+        : json;
     return StoreProfile(
-      storeName: _text(json, const ['store_name', 'storeName']) ?? '',
-      storeType: _text(json, const ['store_type', 'storeType']) ?? '',
-      about: _text(json, const ['about', 'store_description', 'description']) ??
+      storeName: _text(map, const ['store_name', 'storeName']) ?? '',
+      storeType: _text(map, const ['store_type', 'storeType']) ?? '',
+      about: _text(map, const ['about', 'store_description', 'description']) ??
           '',
       serviceAreas: _stringList(
-        json,
+        map,
         const ['service_areas', 'serviceAreas'],
       ),
-      languages: _stringList(json, const ['languages']),
-      trustBadges: _stringList(json, const ['trust_badges', 'trustBadges']),
+      languages: _stringList(map, const ['languages']),
+      trustBadges: _stringList(map, const ['trust_badges', 'trustBadges']),
       followersCount:
-          _int(json, const ['followers_count', 'followersCount']) ?? 0,
+          _int(map, const ['followers_count', 'followersCount']) ?? 0,
       followingCount:
-          _int(json, const ['following_count', 'followingCount']) ?? 0,
-      isFollowing: json['is_following'] == true || json['isFollowing'] == true,
-      productCount: _int(json, const ['product_count', 'productCount']) ?? 0,
-      serviceCount: _int(json, const ['service_count', 'serviceCount']) ?? 0,
-      memberSince: _text(json, const ['member_since', 'memberSince']) ?? '',
+          _int(map, const ['following_count', 'followingCount']) ?? 0,
+      isFollowing:
+          map['is_following'] == true || map['isFollowing'] == true,
+      productCount: _int(map, const ['product_count', 'productCount']) ?? 0,
+      serviceCount: _int(map, const ['service_count', 'serviceCount']) ?? 0,
+      memberSince: _text(map, const ['member_since', 'memberSince']) ?? '',
     );
   }
 

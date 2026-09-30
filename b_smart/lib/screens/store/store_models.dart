@@ -251,6 +251,19 @@ class StoreMockState extends ChangeNotifier {
       final value = variant[key]?.toString().trim();
       if (value != null && value.isNotEmpty) cleaned[key] = value;
     }
+    // Variants carry their own price per the Phase 2 spec
+    // (`variants: [{color, size, stock_quantity, price}]`). Dropping it made
+    // a priced variant silently fall back to the product price, so the cart
+    // and checkout totals were wrong.
+    final price = variant['price'];
+    if (price is num && price > 0) {
+      cleaned['price'] = price.toDouble();
+    } else if (price is String) {
+      final parsed = double.tryParse(price.trim());
+      if (parsed != null && parsed > 0) cleaned['price'] = parsed;
+    }
+    final stock = variant['stock_quantity'];
+    if (stock is num) cleaned['stock_quantity'] = stock.toInt();
     return cleaned;
   }
 
@@ -398,7 +411,7 @@ class StoreMockState extends ChangeNotifier {
     notifyListeners();
     try {
       final data = await _api.getCart();
-      final items = _cartItemsFromApi(data);
+      final items = cartLinesFromApi(data);
       if (items != null) {
         _cartLines
           ..clear()
@@ -674,7 +687,8 @@ class StoreMockState extends ChangeNotifier {
     );
   }
 
-  List<StoreMockCartLine>? _cartItemsFromApi(Map<String, dynamic> data) {
+  /// Public for testing: parses a `GET /cart` response into cart lines.
+  static List<StoreMockCartLine>? cartLinesFromApi(Map<String, dynamic> data) {
     final rawItems = _cartItemList(data);
     if (rawItems == null) return null;
     return rawItems.whereType<Map>().map((raw) {

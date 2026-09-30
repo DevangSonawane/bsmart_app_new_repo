@@ -43,6 +43,11 @@ class WishlistApi {
     await _client.delete('/wishlist');
   }
 
+  /// Unwraps the item array from any supported response envelope.
+  /// Public for testing; returns an empty list when nothing matches.
+  static List<Map<String, dynamic>> listFrom(dynamic data) =>
+      _asListOrNull(data) ?? const [];
+
   /// Returns null when the payload carries no list (e.g. `{success: true}`),
   /// so callers can fall back to a refetch.
   static List<Map<String, dynamic>>? _asListOrNull(dynamic data) {

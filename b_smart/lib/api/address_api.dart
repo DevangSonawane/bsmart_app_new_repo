@@ -21,12 +21,25 @@ class AddressApi {
   /// GET /addresses — default address first.
   Future<List<ShipAddress>> list() async {
     final data = await _client.get('/addresses');
+    return parseList(data);
+  }
+
+  /// Maps a response payload into addresses, default first.
+  ///
+  /// Invalid entries are dropped *before* the default is applied, so a
+  /// malformed first row can never leave every address un-defaulted.
+  static List<ShipAddress> parseList(dynamic data) {
     final items = _listOf(data);
     if (items.isEmpty) return const [];
+    final valid = items
+        .map(ShipAddress.fromApiJson)
+        .where((a) => a.line1.trim().isNotEmpty)
+        .toList();
+    if (valid.isEmpty) return const [];
     return [
-      for (var i = 0; i < items.length; i++)
-        ShipAddress.fromApiJson(items[i], fallbackDefault: i == 0),
-    ].where((a) => a.line1.trim().isNotEmpty).toList();
+      valid.first.copyWith(isDefault: true),
+      ...valid.skip(1).map((a) => a.copyWith(isDefault: false)),
+    ];
   }
 
   /// POST /addresses — the first address saved becomes the default server-side.
@@ -55,6 +68,10 @@ class AddressApi {
     await _client.patch('/addresses/${Uri.encodeComponent(id)}/default');
     return list();
   }
+
+  /// Public for testing: unwraps the address array from any supported
+  /// response envelope.
+  static List<Map<String, dynamic>> listFrom(dynamic data) => _listOf(data);
 
   /// Tolerates a bare list, a `data`/`addresses`/`results` envelope, or a
   /// single-object wrapper around one address.
