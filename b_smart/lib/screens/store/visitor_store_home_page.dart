@@ -9,8 +9,11 @@ import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_models.dart';
+import 'store_profile_page.dart';
+import 'store_profile_state.dart';
+import 'store_theme.dart';
+import 'store_wishlist.dart';
 import 'visitor_product_detail_page.dart';
-import 'visitor_store_cart_page.dart';
 import 'visitor_service_detail_page.dart';
 
 class VisitorStoreHomePage extends StatefulWidget {
@@ -33,13 +36,16 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
     super.initState();
     _ownerFuture = _loadOwner();
     StoreMockState.instance.addListener(_handleStoreChanged);
+    StoreProfileState.instance.addListener(_handleStoreChanged);
     unawaited(StoreMockState.instance.refreshMarketplace());
     unawaited(StoreMockState.instance.refreshCart());
+    unawaited(StoreProfileState.instance.ensureLoaded(widget.ownerUserId));
   }
 
   @override
   void dispose() {
     StoreMockState.instance.removeListener(_handleStoreChanged);
+    StoreProfileState.instance.removeListener(_handleStoreChanged);
     super.dispose();
   }
 
@@ -48,6 +54,7 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.ownerUserId != widget.ownerUserId) {
       _ownerFuture = _loadOwner();
+      unawaited(StoreProfileState.instance.ensureLoaded(widget.ownerUserId));
     }
   }
 
@@ -117,6 +124,7 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
             return _SellerHeroCard(
               owner: snapshot.data,
               isLoading: snapshot.connectionState != ConnectionState.done,
+              ownerUserId: widget.ownerUserId,
             );
           },
         ),
@@ -200,9 +208,43 @@ class _VisitorStoreTopBar extends StatelessWidget {
             Expanded(child: StoreBsmartWordmark()),
             Icon(LucideIcons.search, color: Color(0xFF060D35), size: 23),
             SizedBox(width: 18),
+            _WishlistNavIcon(),
+            SizedBox(width: 18),
             _NotifiedBell(),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Heart icon with a live saved-count badge; opens the wishlist screen.
+class _WishlistNavIcon extends StatelessWidget {
+  const _WishlistNavIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => openWishlist(context),
+      behavior: HitTestBehavior.opaque,
+      child: ListenableBuilder(
+        listenable: WishlistState.instance,
+        builder: (context, _) {
+          final count = WishlistState.instance.count;
+          const icon =
+              Icon(LucideIcons.heart, color: Color(0xFF060D35), size: 23);
+          if (count == 0) return icon;
+          return Badge.count(
+            count: count,
+            backgroundColor: BStoreColors.primary,
+            textColor: Colors.white,
+            textStyle: const TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w900,
+            ),
+            child: icon,
+          );
+        },
       ),
     );
   }
@@ -237,131 +279,164 @@ class _NotifiedBell extends StatelessWidget {
 class _SellerHeroCard extends StatelessWidget {
   final _VisitorStoreOwner? owner;
   final bool isLoading;
+  final String? ownerUserId;
 
   const _SellerHeroCard({
     required this.owner,
     required this.isLoading,
+    this.ownerUserId,
   });
 
   @override
   Widget build(BuildContext context) {
-    final name = owner?.displayName.trim().isNotEmpty == true
+    final profile = StoreProfileState.instance.profileFor(ownerUserId);
+    final fallbackName = owner?.displayName.trim().isNotEmpty == true
         ? owner!.displayName.trim()
         : (isLoading ? 'Loading store...' : 'Store owner');
+    // Prefer the seller's storefront name, then the account display name.
+    final name = (profile?.storeName.trim().isNotEmpty == true
+            ? profile!.storeName.trim()
+            : fallbackName);
+    final storeType = profile?.storeType.trim().isNotEmpty == true
+        ? profile!.storeType.trim()
+        : 'Personal Store';
+    final badges = profile?.trustBadges ?? const <String>[];
+    final badgeLine = badges.isEmpty
+        ? 'Professional • Trusted • Reliable'
+        : badges.join(' • ');
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 18, 12, 0),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
-        decoration: storeSoftCardDecoration(radius: 16),
-        child: Row(
-          children: [
-            _VerifiedAvatar(
-              initials: _initialsFor(name),
-              avatarUrl: owner?.avatarUrl ?? '',
-              avatarHeaders: owner?.avatarHeaders,
-              size: 78,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF060D35),
-                      fontSize: 21,
-                      fontWeight: FontWeight.w900,
-                    ),
+      child: InkWell(
+        onTap: ownerUserId == null
+            ? null
+            : () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) =>
+                        StoreProfilePage(ownerUserId: ownerUserId),
                   ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Personal Store',
-                    style: TextStyle(
-                      color: Color(0xFF684AC8),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
+                ),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
+          decoration: storeSoftCardDecoration(radius: 16),
+          child: Row(
+            children: [
+              _VerifiedAvatar(
+                initials: _initialsFor(name),
+                avatarUrl: owner?.avatarUrl ?? '',
+                avatarHeaders: owner?.avatarHeaders,
+                size: 78,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF060D35),
+                        fontSize: 21,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Row(
-                    children: [
-                      Icon(LucideIcons.star,
-                          color: Color(0xFF078D92), size: 15),
-                      SizedBox(width: 5),
-                      Text(
-                        '4.9',
-                        style: TextStyle(
-                          color: Color(0xFF060D35),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                        ),
+                    const SizedBox(height: 4),
+                    Text(
+                      storeType,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF684AC8),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
                       ),
-                      SizedBox(width: 9),
-                      SizedBox(
-                        height: 16,
-                        child: VerticalDivider(
-                          color: Color(0xFFD4D8DD),
-                          thickness: 1,
-                        ),
-                      ),
-                      SizedBox(width: 9),
-                      Expanded(
-                        child: Text(
-                          '128 reviews',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Color(0xFF29304D),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(LucideIcons.package,
+                            color: Color(0xFF078D92), size: 14),
+                        const SizedBox(width: 4),
+                        Text(
+                          profile == null
+                              ? '—'
+                              : '${profile.productCount}',
+                          style: const TextStyle(
+                            color: Color(0xFF060D35),
                             fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'Professional • Trusted • Reliable',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Color(0xFF29304D),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
+                        const SizedBox(width: 9),
+                        const Icon(LucideIcons.briefcaseBusiness,
+                            color: Color(0xFF078D92), size: 14),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            profile == null
+                                ? '—'
+                                : '${profile.serviceCount} services',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF060D35),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            OutlinedButton(
-              onPressed: () {},
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF060D35),
-                side: const BorderSide(color: Color(0xFFE1E5EA)),
-                fixedSize: const Size(56, 56),
-                padding: EdgeInsets.zero,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(9),
+                    const SizedBox(height: 8),
+                    Text(
+                      badgeLine,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF29304D),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: const Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(LucideIcons.messageCircle, size: 21),
-                  SizedBox(height: 4),
-                  Text(
-                    'Message',
-                    style:
-                        TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: ownerUserId == null
+                    ? null
+                    : () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                StoreProfilePage(ownerUserId: ownerUserId),
+                          ),
+                        ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF060D35),
+                  side: const BorderSide(color: Color(0xFFE1E5EA)),
+                  fixedSize: const Size(56, 56),
+                  padding: EdgeInsets.zero,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(9),
                   ),
-                ],
+                ),
+                child: const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(LucideIcons.store, size: 21),
+                    SizedBox(height: 4),
+                    Text(
+                      'Store',
+                      style:
+                          TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -933,6 +1008,15 @@ class _ServiceFeatureCard extends StatelessWidget {
                   ),
                 ),
               ),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: WishlistHeartButton(
+                  productId: service.id,
+                  size: 32,
+                  iconSize: 17,
+                ),
+              ),
             ],
           ),
           Padding(
@@ -1081,27 +1165,28 @@ class _ProductCard extends StatelessWidget {
                 _CatalogImage(item: item, height: 108),
                 Positioned(
                   top: 8,
-                  right: 8,
+                  left: 8,
                   child: Container(
-                    width: 34,
-                    height: 34,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 9,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
+                      color: Colors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Icon(
-                      LucideIcons.heart,
-                      color: Color(0xFF060D35),
-                      size: 18,
+                    child: const Text(
+                      'WISHLIST',
+                      style: TextStyle(
+                        color: BStoreColors.textSecondary,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: WishlistHeartButton(productId: item.id),
                 ),
               ],
             ),
@@ -1206,20 +1291,6 @@ class _VisitorProductList extends StatelessWidget {
               ),
           ],
         ),
-        Positioned(
-          right: 6,
-          bottom: 8,
-          child: _FloatingCartShortcut(
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) =>
-                      VisitorStoreCartScreen(ownerUserId: ownerUserId),
-                ),
-              );
-            },
-          ),
-        ),
       ],
     );
   }
@@ -1287,27 +1358,28 @@ class _VisitorProductGridCard extends StatelessWidget {
                 _CatalogImage(item: item, height: 132),
                 Positioned(
                   top: 8,
-                  right: 8,
+                  left: 8,
                   child: Container(
-                    width: 34,
-                    height: 34,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 9,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
+                      color: Colors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Icon(
-                      LucideIcons.heart,
-                      color: Color(0xFF060D35),
-                      size: 18,
+                    child: const Text(
+                      'WISHLIST',
+                      style: TextStyle(
+                        color: BStoreColors.textSecondary,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: WishlistHeartButton(productId: item.id),
                 ),
               ],
             ),
@@ -1488,89 +1560,6 @@ class _StepperTapTarget extends StatelessWidget {
       child: Center(
         child: Icon(icon, color: Colors.white, size: 16),
       ),
-    );
-  }
-}
-
-class _FloatingCartShortcut extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _FloatingCartShortcut({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: StoreMockState.instance,
-      builder: (context, _) {
-        return SizedBox(
-          width: 76,
-          height: 76,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Material(
-                color: const Color(0xFF078D92),
-                shape: const CircleBorder(),
-                elevation: 8,
-                shadowColor: Colors.black.withValues(alpha: 0.16),
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: onTap,
-                  child: const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          LucideIcons.shoppingCart,
-                          color: Colors.white,
-                          size: 25,
-                        ),
-                        SizedBox(height: 3),
-                        Text(
-                          'My Cart',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                right: 0,
-                top: 4,
-                child: Container(
-                  width: 24,
-                  height: 24,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Text(
-                    '${StoreMockState.instance.cartCount}',
-                    style: const TextStyle(
-                      color: Color(0xFF078D92),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }

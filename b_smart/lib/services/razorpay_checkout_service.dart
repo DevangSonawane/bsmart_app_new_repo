@@ -134,15 +134,34 @@ class RazorpayCheckoutService {
     Map<String, dynamic> response, {
     required double fallbackTotal,
   }) {
-    final raw = response['razorpay'];
-    if (raw is! Map) return null;
-    final map = raw.map((key, value) => MapEntry(key.toString(), value));
-    var keyId = map['key_id']?.toString().trim() ?? '';
+    // The razorpay block can be a sibling of `order`, nested under `data`,
+    // or flattened onto the response root.
+    final map = response.map((key, value) => MapEntry(key.toString(), value));
+    final data = map['data'];
+    final scope = data is Map
+        ? data.map((key, value) => MapEntry(key.toString(), value))
+        : map;
+    Map<String, dynamic>? block;
+    for (final source in [map, scope]) {
+      final raw = source['razorpay'];
+      if (raw is Map) {
+        block = raw.map((key, value) => MapEntry(key.toString(), value));
+        break;
+      }
+    }
+
+    var keyId = block?['key_id']?.toString().trim() ?? '';
+    if (keyId.isEmpty) keyId = scope['key_id']?.toString().trim() ?? '';
     if (keyId.isEmpty) keyId = _envKeyId.trim();
-    final orderId = map['order_id']?.toString().trim() ?? '';
+
+    var orderId = block?['order_id']?.toString().trim() ?? '';
+    if (orderId.isEmpty) {
+      orderId = scope['razorpay_order_id']?.toString().trim() ?? '';
+    }
     if (keyId.isEmpty || orderId.isEmpty) return null;
+
     var amountPaise = (fallbackTotal * 100).round();
-    final rawAmount = map['amount'];
+    final rawAmount = block?['amount'] ?? block?['amount_paise'];
     if (rawAmount is num && rawAmount > 0) {
       amountPaise = rawAmount.toInt();
     } else if (rawAmount is String) {

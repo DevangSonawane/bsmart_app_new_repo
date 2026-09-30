@@ -43,7 +43,7 @@ const MiniProductCard = ({ product, isFavorite, onToggleFavorite }) => {
       </div>
       <Link to={`/market/product/${product.id}`} className="block p-3">
         <p className="text-sm text-gray-900 dark:text-white font-medium truncate">{product.name}</p>
-        <p className="text-sm font-bold text-gray-900 dark:text-white mt-0.5">₹{product.price.toFixed(2)}</p>
+        <p className="text-sm font-bold text-gray-900 dark:text-white mt-0.5">₹{Number(product.price ?? 0).toFixed(2)}</p>
       </Link>
     </div>
   );
@@ -57,6 +57,7 @@ const ProductDetail = () => {
   const allProducts = useSelector((state) => state.products.items);
   const product = allProducts.find((p) => String(p.id) === String(productId));
   const [qty, setQty] = useState(1);
+  const [galleryFailed, setGalleryFailed] = useState(false);
   const favorite = isSaved('product', productId);
   
   const [thumbIndex, setThumbIndex] = useState(0);
@@ -71,14 +72,18 @@ const ProductDetail = () => {
   }
 
   const { icon: Icon, text, bg } = CATEGORY_STYLE[product.category] || { icon: Package, text: 'text-[#fa3f5e]', bg: 'bg-gray-50 dark:bg-gray-800' };
+  const galleryImages = (product?.images || []).filter(Boolean);
+  const mainImage = !galleryFailed ? galleryImages[thumbIndex] || galleryImages[0] : null;
+  const price = Number(product?.price ?? 0);
 
   const addToCart = () => dispatch(addItem({
     id: product.id,
     name: product.name,
     subtitle: product.dimensions,
     brand: product.vendor,
-    price: product.price,
+    price: Number(product.price) || 0,
     category: product.category,
+    images: product.images,
     qty,
   }));
 
@@ -100,32 +105,35 @@ const ProductDetail = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
         {/* Gallery */}
         <div>
-          <div className={`relative aspect-[4/3] rounded-2xl flex items-center justify-center ${bg}`}>
+          <div className={`relative aspect-[4/3] rounded-2xl flex items-center justify-center overflow-hidden ${mainImage ? 'bg-gray-50 dark:bg-gray-800' : bg}`}>
             <button
               type="button"
               aria-label={`${favorite ? 'Remove' : 'Add'} ${product.name} ${favorite ? 'from' : 'to'} wishlist`}
               aria-pressed={favorite}
               onClick={() => toggle('product', product.id)}
-              className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white dark:bg-gray-800 shadow flex items-center justify-center"
+              className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full bg-white dark:bg-gray-800 shadow flex items-center justify-center"
             >
               <Heart size={16} className={favorite ? 'fill-[#fa3f5e] text-[#fa3f5e]' : 'text-gray-400'} />
             </button>
-            <Icon size={96} className={`${text} opacity-70`} />
+            {mainImage
+              ? <img src={mainImage} alt={product.name} onError={() => setGalleryFailed(true)} className="w-full h-full object-cover" />
+              : <Icon size={96} className={`${text} opacity-70`} />}
           </div>
-          <div className="flex gap-3 mt-3">
-            {[0, 1, 2, 3].map((i) => (
-              <button
-                key={i}
-                onClick={() => setThumbIndex(i)}
-                className={`w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0 border-2 ${bg} ${
-                  thumbIndex === i ? 'border-[#fa3f5e]' : 'border-transparent'
-                }`}
-              >
-                <Icon size={22} className={`${text} opacity-70`} />
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">Showing mock data — not wired to a real product catalog yet.</p>
+          {galleryImages.length > 1 && (
+            <div className="flex gap-3 mt-3">
+              {galleryImages.map((src, i) => (
+                <button
+                  key={`${src}-${i}`}
+                  onClick={() => { setThumbIndex(i); setGalleryFailed(false); }}
+                  className={`w-16 h-16 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0 border-2 bg-gray-50 dark:bg-gray-800 ${
+                    thumbIndex === i ? 'border-[#fa3f5e]' : 'border-transparent'
+                  }`}
+                >
+                  <img src={src} alt="" onError={() => setGalleryFailed(true)} className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Info */}
@@ -135,11 +143,11 @@ const ProductDetail = () => {
             {Array.from({ length: 5 }).map((_, i) => (
               <Star key={i} size={16} className={i < Math.round(product.rating) ? 'fill-amber-400 text-amber-400' : 'text-gray-300 dark:text-gray-700'} />
             ))}
-            <span className="text-sm text-gray-500 dark:text-gray-400 ml-1">{product.rating} ({product.reviews} reviews)</span>
+            <span className="text-sm text-gray-500 dark:text-gray-400 ml-1">{product.rating || 'New'}{product.reviews ? ` (${product.reviews} reviews)` : ''}</span>
           </div>
 
           <p className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-            ₹{product.price.toFixed(2)} <span className="text-sm font-normal text-gray-400">INR</span>
+            ₹{price.toFixed(2)} <span className="text-sm font-normal text-gray-400">INR</span>
           </p>
 
           <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed mb-6">

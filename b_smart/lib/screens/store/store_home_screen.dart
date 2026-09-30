@@ -17,6 +17,9 @@ import 'store_role_setup_screen.dart';
 import 'store_role_switch_sheet.dart';
 import 'store_theme.dart';
 import 'store_saved_address_page.dart';
+import 'store_floating_cart_button.dart';
+import 'store_wishlist.dart';
+import 'store_wishlist_screen.dart';
 import 'visitor_store_cart_page.dart';
 import 'visitor_store_home_page.dart';
 
@@ -70,6 +73,7 @@ enum _StoreNavSection {
   store,
   product,
   cart,
+  wishlist,
   profile,
 }
 
@@ -78,16 +82,38 @@ class _StoreNavItem {
   final String label;
   final _StoreNavSection section;
 
+  /// Shows a live badge with the wishlist count on this nav item.
+  final bool showsWishlistBadge;
+
   const _StoreNavItem({
     required this.icon,
     required this.label,
     required this.section,
+    this.showsWishlistBadge = false,
   });
 }
 
 class _StoreHomeScreenState extends State<StoreHomeScreen> {
   int _selectedNav = 0;
   int _refreshTick = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // The embedded wishlist section cannot host its own ListenableBuilder
+    // (a box widget is not a sliver), so the shell rebuilds on change.
+    WishlistState.instance.addListener(_onWishlistChanged);
+  }
+
+  @override
+  void dispose() {
+    WishlistState.instance.removeListener(_onWishlistChanged);
+    super.dispose();
+  }
+
+  void _onWishlistChanged() {
+    if (mounted) setState(() {});
+  }
 
   List<_StoreNavItem> get _navItems {
     if (widget.isSelfStore) {
@@ -142,6 +168,12 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
         section: _StoreNavSection.cart,
       ),
       _StoreNavItem(
+        icon: LucideIcons.heart,
+        label: 'Wishlist',
+        section: _StoreNavSection.wishlist,
+        showsWishlistBadge: true,
+      ),
+      _StoreNavItem(
         icon: LucideIcons.circleUserRound,
         label: 'Profile',
         section: _StoreNavSection.profile,
@@ -151,6 +183,11 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
 
   Future<void> _refreshStorePage() async {
     setState(() => _refreshTick++);
+    final navItems = _navItems;
+    final selectedIndex = _selectedNav.clamp(0, navItems.length - 1);
+    if (navItems[selectedIndex].section == _StoreNavSection.wishlist) {
+      await WishlistState.instance.refresh();
+    }
     await Future<void>.delayed(const Duration(milliseconds: 350));
   }
 
@@ -167,7 +204,8 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
             selectedItem.section == _StoreNavSection.profile);
     final usesCustomVisitorHeader = !widget.isSelfStore &&
         (selectedItem.section == _StoreNavSection.store ||
-            selectedItem.section == _StoreNavSection.cart);
+            selectedItem.section == _StoreNavSection.cart ||
+            selectedItem.section == _StoreNavSection.wishlist);
 
     return Theme(
       data: BStoreTheme.data(context),
@@ -175,34 +213,57 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
         backgroundColor: BStoreColors.backgroundAlt,
         body: SafeArea(
           top: false,
-          child: Column(
+          child: Stack(
             children: [
-              Expanded(
-                child: RefreshIndicator.adaptive(
-                  color: BStoreColors.primary,
-                  onRefresh: _refreshStorePage,
-                  child: CustomScrollView(
-                    key: ValueKey('${selectedItem.section}-$_refreshTick'),
-                    physics: const AlwaysScrollableScrollPhysics(
-                      parent: BouncingScrollPhysics(),
-                    ),
-                    slivers: [
-                      if (!usesCustomSelfHeader && !usesCustomVisitorHeader)
-                        _StoreHeader(
-                          isSelfStore: widget.isSelfStore,
-                          activeLabel: selectedItem.label,
-                          ownerUserId: widget.ownerUserId,
+              Column(
+                children: [
+                  Expanded(
+                    child: RefreshIndicator.adaptive(
+                      color: BStoreColors.primary,
+                      onRefresh: _refreshStorePage,
+                      child: CustomScrollView(
+                        key: ValueKey(
+                            '${selectedItem.section}-$_refreshTick'),
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
                         ),
-                      _buildSection(selectedItem.section),
-                      const SliverToBoxAdapter(child: SizedBox(height: 22)),
-                    ],
+                        slivers: [
+                          if (!usesCustomSelfHeader &&
+                              !usesCustomVisitorHeader)
+                            _StoreHeader(
+                              isSelfStore: widget.isSelfStore,
+                              activeLabel: selectedItem.label,
+                              ownerUserId: widget.ownerUserId,
+                            ),
+                          _buildSection(selectedItem.section),
+                          const SliverToBoxAdapter(
+                              child: SizedBox(height: 22)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  _StoreFooterNav(
+                    items: navItems,
+                    selectedIndex: selectedIndex,
+                    onSelected: (index) =>
+                        setState(() => _selectedNav = index),
+                  ),
+                ],
+              ),
+              // Draggable cart bubble floating above every store tab.
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: widget.isSelfStore,
+                  child: StoreFloatingCartButton(
+                    onTap: () {
+                      final index = navItems.indexWhere(
+                          (item) => item.section == _StoreNavSection.cart);
+                      if (index >= 0) {
+                        setState(() => _selectedNav = index);
+                      }
+                    },
                   ),
                 ),
-              ),
-              _StoreFooterNav(
-                items: navItems,
-                selectedIndex: selectedIndex,
-                onSelected: (index) => setState(() => _selectedNav = index),
               ),
             ],
           ),
@@ -231,6 +292,9 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
       _StoreNavSection.cart => widget.isSelfStore
           ? const _CartSection()
           : VisitorStoreCartPage(ownerUserId: widget.ownerUserId),
+      _StoreNavSection.wishlist => StoreWishlistSliver(
+          onExplore: () => setState(() => _selectedNav = 0),
+        ),
     };
   }
 }
@@ -1287,6 +1351,7 @@ class _FooterButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = selected ? BStoreColors.primary : BStoreColors.textSecondary;
+    final icon = Icon(item.icon, color: color, size: selected ? 22 : 21);
     return Tooltip(
       message: item.label,
       child: Material(
@@ -1297,7 +1362,26 @@ class _FooterButton extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(item.icon, color: color, size: selected ? 22 : 21),
+                if (item.showsWishlistBadge)
+                  ListenableBuilder(
+                    listenable: WishlistState.instance,
+                    builder: (context, _) {
+                      final count = WishlistState.instance.count;
+                      if (count == 0) return icon;
+                      return Badge.count(
+                        count: count,
+                        backgroundColor: BStoreColors.primary,
+                        textColor: Colors.white,
+                        textStyle: const TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                        child: icon,
+                      );
+                    },
+                  )
+                else
+                  icon,
                 const SizedBox(height: 3),
                 Text(
                   item.label,

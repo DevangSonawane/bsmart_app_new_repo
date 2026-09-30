@@ -42,6 +42,7 @@ import 'screens/store/self_store_products_page.dart';
 import 'screens/store/store_role_setup_screen.dart';
 import 'screens/store/store_qr_scanner_screen.dart';
 import 'screens/store/store_search_screen.dart';
+import 'screens/store/store_wishlist_screen.dart';
 
 final RouteObserver<PageRoute<dynamic>> appRouteObserver =
     RouteObserver<PageRoute<dynamic>>();
@@ -122,6 +123,7 @@ final Map<String, WidgetBuilder> appRoutes = {
   '/store/publish/delivery': (ctx) => const StoreDeliveryPublishScreen(),
   '/store/scan': (ctx) => const StoreQrScannerScreen(),
   '/store/search': (ctx) => const StoreSearchScreen(),
+  '/store/wishlist': (ctx) => const StoreWishlistScreen(),
   '/privacy': (ctx) => const PrivacyScreen(),
   '/contact-support': (ctx) => const ContactSupportScreen(),
   '/faqs': (ctx) => const FaqScreen(),

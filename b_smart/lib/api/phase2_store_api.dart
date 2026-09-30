@@ -1,3 +1,4 @@
+import '../models/store_profile.dart';
 import 'api_client.dart';
 
 class Phase2StoreApi {
@@ -126,7 +127,11 @@ class Phase2StoreApi {
   }
 
   Future<Map<String, dynamic>> getCart() async {
-    return _asMap(await _cachedGet('/cart'));
+    // Returned un-unwrapped on purpose: the cart line array can live under
+    // `data`, `cart` or the root, and the caller walks all of them.
+    final data = await _cachedGet('/cart');
+    if (data is Map<String, dynamic>) return data;
+    return <String, dynamic>{'items': data};
   }
 
   Future<Map<String, dynamic>> addCartItem({
@@ -162,12 +167,28 @@ class Phase2StoreApi {
 
   Future<Map<String, dynamic>> checkoutOrder({
     required String paymentMethod,
-    required Map<String, dynamic> shippingAddress,
+    required Map<String, String> shippingAddress,
   }) async {
-    return _asMap(await _post('/orders/checkout', body: {
+    // Returned raw, not through _asMap: the Razorpay branch returns
+    // `{order: {...}, razorpay: {order_id, amount, key_id}}` and _asMap
+    // would unwrap `order`, discarding the sibling `razorpay` payload.
+    final data = await _post('/orders/checkout', body: {
       'payment_method': paymentMethod,
       'shipping_address': shippingAddress,
-    }));
+    });
+    return _rawMap(data);
+  }
+
+  /// Returns the response object as-is, unwrapping only a `data` envelope
+  /// (never a named sibling like `order` / `razorpay`).
+  static Map<String, dynamic> _rawMap(dynamic data) {
+    if (data is! Map) return <String, dynamic>{};
+    final map = data.map((key, value) => MapEntry(key.toString(), value));
+    final nested = map['data'];
+    if (nested is Map) {
+      return nested.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return map;
   }
 
   Future<Map<String, dynamic>> verifyOrderPayment({
@@ -211,7 +232,9 @@ class Phase2StoreApi {
   Future<Map<String, dynamic>> createServiceBooking({
     required Map<String, dynamic> body,
   }) async {
-    return _asMap(await _post('/service-bookings', body: body));
+    // Raw for the same reason as checkoutOrder: the Razorpay branch returns a
+    // sibling `razorpay` payload that _asMap would discard.
+    return _rawMap(await _post('/service-bookings', body: body));
   }
 
   Future<List<Map<String, dynamic>>> myServiceBookings() async {
@@ -257,6 +280,52 @@ class Phase2StoreApi {
     required Map<String, dynamic> body,
   }) async {
     return _asMap(await _patch('/users/$userId/role', body: body));
+  }
+
+  /// Storefront profile for a seller. Public / optional auth.
+  ///
+  /// The response is `{ "store": { ... } }`.
+  Future<StoreProfile> getStoreProfile(String userId) async {
+    final data = await _client.get('/users/$userId/store-profile');
+    return StoreProfile.fromApiJson(_storeOf(data));
+  }
+
+  /// Updates the signed-in seller's own storefront profile.
+  ///
+  /// Only the fields present in [body] are updated, so callers should send
+  /// just what changed.
+  Future<StoreProfile> updateStoreProfile({
+    required Map<String, dynamic> body,
+  }) async {
+    if (body.isEmpty) {
+      throw ArgumentError('Nothing to update on the store profile.');
+    }
+    final data = await _client.patch('/users/me/store-profile', body: body);
+    final store = _storeOf(data);
+    // Some deployments return an ack without the profile; fall back to
+    // merging the patch we just sent so the UI stays in sync.
+    if (store.isEmpty) return StoreProfile.fromApiJson(body);
+    return StoreProfile.fromApiJson(store);
+  }
+
+  /// Unwraps `{store: {...}}`, tolerating a bare or `data`-wrapped object.
+  static Map<String, dynamic> _storeOf(dynamic data) {
+    if (data is! Map) return const {};
+    final map = data.map((k, v) => MapEntry(k.toString(), v));
+    final store = map['store'];
+    if (store is Map) {
+      return store.map((k, v) => MapEntry(k.toString(), v));
+    }
+    final data_ = map['data'];
+    if (data_ is Map) {
+      final nested = data_.map((k, v) => MapEntry(k.toString(), v));
+      final nestedStore = nested['store'];
+      if (nestedStore is Map) {
+        return nestedStore.map((k, v) => MapEntry(k.toString(), v));
+      }
+      return nested;
+    }
+    return map;
   }
 
   static Map<String, String>? _cleanQuery(Map<String, String?> source) {

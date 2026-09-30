@@ -9,6 +9,7 @@ import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_models.dart';
 import 'store_theme.dart';
+import 'store_wishlist.dart';
 import 'visitor_product_reviews_page.dart';
 import 'visitor_store_cart_page.dart';
 
@@ -280,10 +281,11 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                 physics: const BouncingScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 108),
                 children: [
-                  _ProductTopBar(onCart: _openCart),
+                  _ProductTopBar(onCart: _openCart, productId: _item.id),
                   const SizedBox(height: 16),
                   _ProductImageCard(
                     imageUrl: product.imageUrl,
+                    productId: _item.id,
                   ),
                   const SizedBox(height: 14),
                   Text(
@@ -606,8 +608,9 @@ class _ProductOwner {
 
 class _ProductTopBar extends StatelessWidget {
   final VoidCallback onCart;
+  final String productId;
 
-  const _ProductTopBar({required this.onCart});
+  const _ProductTopBar({required this.onCart, required this.productId});
 
   @override
   Widget build(BuildContext context) {
@@ -627,17 +630,28 @@ class _ProductTopBar extends StatelessWidget {
           const Center(child: StoreBsmartWordmark()),
           Align(
             alignment: Alignment.centerRight,
-            child: AnimatedBuilder(
-              animation: StoreMockState.instance,
-              builder: (context, _) => IconButton(
-                onPressed: onCart,
-                icon: Badge.count(
-                  count: StoreMockState.instance.cartCount,
-                  backgroundColor: BStoreColors.primary,
-                  child: const Icon(LucideIcons.shoppingCart, size: 26),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                WishlistHeartButton(
+                  productId: productId,
+                  size: 36,
+                  iconSize: 20,
                 ),
-                color: BStoreColors.textPrimary,
-              ),
+                const SizedBox(width: 6),
+                AnimatedBuilder(
+                  animation: StoreMockState.instance,
+                  builder: (context, _) => IconButton(
+                    onPressed: onCart,
+                    icon: Badge.count(
+                      count: StoreMockState.instance.cartCount,
+                      backgroundColor: BStoreColors.primary,
+                      child: const Icon(LucideIcons.shoppingCart, size: 26),
+                    ),
+                    color: BStoreColors.textPrimary,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -648,9 +662,11 @@ class _ProductTopBar extends StatelessWidget {
 
 class _ProductImageCard extends StatelessWidget {
   final String imageUrl;
+  final String productId;
 
   const _ProductImageCard({
     required this.imageUrl,
+    required this.productId,
   });
 
   @override
@@ -670,25 +686,10 @@ class _ProductImageCard extends StatelessWidget {
           Positioned(
             top: 14,
             right: 14,
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 14,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                LucideIcons.heart,
-                color: BStoreColors.textPrimary,
-                size: 21,
-              ),
+            child: WishlistHeartButton(
+              productId: productId,
+              size: 42,
+              iconSize: 21,
             ),
           ),
           Positioned(

@@ -120,6 +120,8 @@ POST /api/influencer-products
   "warranty": "None"
 }
 
+
+
 Field Groups
 Group
 Fields
@@ -375,4 +377,182 @@ Booking Status Flow
 confirmed → in_progress → completed
 
 
+
+
+
+9. Wishlist
+Endpoints
+Method
+Path
+Purpose
+GET
+/api/wishlist
+Get all wishlisted items with full product data, newest first
+POST
+/api/wishlist/items
+Add a product to the wishlist
+DELETE
+/api/wishlist/items/:productId
+Remove one item
+DELETE
+/api/wishlist
+Clear the whole wishlist
+
+Access: Authenticated
+Add to Wishlist: Request Body
+POST /api/wishlist/items
+{
+  "product_id": "..."
+}
+
+Adding is idempotent: if the product is already in the wishlist, no error is returned.
+Get Wishlist: Response
+GET /api/wishlist
+{
+  "success": true,
+  "total": 2,
+  "products": [
+    {
+      "...full InfluencerProduct object...": "",
+      "images": ["<resolved image URLs>"],
+      "wishlisted_at": "2026-09-29T08:30:00.000Z"
+    }
+  ]
+}
+
+Notes
+Each item is the full InfluencerProduct object (not just the ID), with resolved image URLs.
+Each item includes a wishlisted_at timestamp.
+Items are sorted newest-added first.
+If a wishlisted product has been deleted, it is silently left out of the response instead of causing an error.
+
+10. Store Profile
+New Fields on influencer_profile
+Field
+Type
+Example
+service_areas
+array of strings
+["Mumbai", "Online"]
+languages
+array of strings
+["English", "Hindi"]
+store_type
+string
+"Personal Store"
+trust_badges
+array of strings
+["Professional", "Trusted", "Reliable"]
+
+These fields are optional. They can be sent during the role switch (PATCH /api/users/:id/role) or updated any time later with the endpoint below.
+Endpoints
+Method
+Path
+Access
+PATCH
+/api/users/me/store-profile
+Influencer only (own profile)
+GET
+/api/users/:id/store-profile
+Public
+
+Update Store Profile
+PATCH /api/users/me/store-profile
+You can send any subset of the fields. Only the fields you include are updated.
+{
+  "service_areas": ["Mumbai", "Online"],
+  "languages": ["English", "Hindi"],
+  "store_type": "Personal Store",
+  "trust_badges": ["Professional", "Trusted", "Reliable"]
+}
+
+Get Store Profile
+GET /api/users/:id/store-profile
+Returns everything the storefront header needs in a single call.
+{
+  "store": {
+    "store_name": "Harsh Nikharge's Store",
+    "store_type": "Personal Store",
+    "about": "...",
+    "service_areas": ["Mumbai", "Online"],
+    "languages": ["English", "Hindi"],
+    "trust_badges": ["Professional", "Trusted", "Reliable"],
+    "followers_count": 0,
+    "following_count": 0,
+    "is_following": false,
+    "product_count": 0,
+    "service_count": 0,
+    "member_since": "..."
+  }
+}
+
+Notes
+This endpoint uses optional authentication, so it works for both logged-in and anonymous viewers.
+is_following is calculated only when the request includes a valid token. For anonymous viewers it is returned as false.
+11. Saved Addresses
+Endpoints
+Method
+Path
+Purpose
+GET
+/api/addresses
+List saved addresses, default first
+POST
+/api/addresses
+Save a new address
+PATCH
+/api/addresses/:id
+Update an address (owner only)
+DELETE
+/api/addresses/:id
+Delete an address (soft delete)
+PATCH
+/api/addresses/:id/default
+Set an address as the default
+
+Access: Authenticated
+Save Address
+POST /api/addresses
+{
+  "label": "Home",
+  "name": "Aniket",
+  "phone": "9876543210",
+  "address_line1": "221B Baker St",
+  "city": "Mumbai",
+  "state": "Maharashtra",
+  "pincode": "400001"
+}
+
+Default Address Rules
+Situation
+Behaviour
+First address saved
+Automatically becomes the default
+Default address deleted
+The next most recent address is automatically made the default
+Changing the default manually
+Use PATCH /api/addresses/:id/default
+
+Notes
+Deletion is a soft delete. The address is hidden from the list but not permanently removed.
+GET /api/addresses always returns the default address first.
+Only the owner can update or delete an address.
+Using Saved Addresses at Checkout
+Both checkout flows already accept an address object inline:
+Flow
+Endpoint
+Address field
+Product checkout
+POST /api/orders/checkout
+shipping_address
+Service booking
+POST /api/service-bookings
+customer_address
+
+Recommended frontend flow:
+Fetch saved addresses with GET /api/addresses.
+Pre-select the default address (the first item in the list).
+Let the user pick a different saved address or add a new one.
+Pass the selected address object directly as shipping_address or customer_address at checkout.
+This way users don't have to retype their address every time.
 

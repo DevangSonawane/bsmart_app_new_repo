@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api/phase2_store_api.dart';
+import '../../api/upload_api.dart';
 import '../../utils/url_helper.dart';
 import 'self_store_availability_page.dart';
 import 'shared/store_image_editor.dart';
@@ -477,6 +479,7 @@ class _ManageServiceCard extends StatelessWidget {
                 initial: images,
                 minCount: 0,
                 onChanged: (next) => images = next,
+                uploadFn: UploadApi().uploadInfluencerServiceImages,
               ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
@@ -672,6 +675,7 @@ class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
     'Thursday',
     'Friday'
   ];
+  final _coverImageFileNames = <String>[];
 
   @override
   void dispose() {
@@ -722,7 +726,12 @@ class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
     return [
       const _ServiceStepHeader(stepText: '1 of 2', title: 'Basics'),
       const SizedBox(height: 14),
-      const _CoverUploadCard(),
+      _CoverUploadCard(
+        imageFileNames: _coverImageFileNames,
+        onChanged: (list) => setState(() => _coverImageFileNames
+          ..clear()
+          ..addAll(list)),
+      ),
       const SizedBox(height: 14),
       _InputShell(
         label: 'Service name',
@@ -828,8 +837,13 @@ class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
     }
     setState(() => _publishing = true);
     try {
+      final uploaded = _coverImageFileNames.isNotEmpty
+          ? await UploadApi().uploadInfluencerServiceImages(
+              filePaths: _coverImageFileNames,
+            )
+          : <UploadedImage>[];
       await Phase2StoreApi().createService({
-        'images': const [],
+        'images': uploaded.map((img) => img.toJson()).toList(),
         'name': name,
         'category': category,
         'provider': 'B-Smart Store',
@@ -959,45 +973,143 @@ class _ServiceStepHeader extends StatelessWidget {
   }
 }
 
-class _CoverUploadCard extends StatelessWidget {
-  const _CoverUploadCard();
+class _CoverUploadCard extends StatefulWidget {
+  final List<String> imageFileNames;
+  final ValueChanged<List<String>> onChanged;
+
+  const _CoverUploadCard({
+    required this.imageFileNames,
+    required this.onChanged,
+  });
+
+  @override
+  State<_CoverUploadCard> createState() => _CoverUploadCardState();
+}
+
+class _CoverUploadCardState extends State<_CoverUploadCard> {
+  final _picker = ImagePicker();
+  bool _uploading = false;
+
+  Future<void> _pickAndUpload() async {
+    if (_uploading) return;
+    setState(() => _uploading = true);
+    try {
+      final picked = await _picker.pickImage(source: ImageSource.gallery);
+      if (picked == null || !mounted) return;
+      final uploaded = await UploadApi().uploadInfluencerServiceImages(
+        filePaths: [picked.path],
+      );
+      if (!mounted) return;
+      final fileNames = [...widget.imageFileNames];
+      for (final img in uploaded) {
+        fileNames.add(img.fileName);
+      }
+      widget.onChanged(fileNames);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cover upload failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  void _remove(int index) {
+    final fileNames = [...widget.imageFileNames];
+    fileNames.removeAt(index);
+    widget.onChanged(fileNames);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 150,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFD5DEE4), width: 1.2),
-      ),
-      child: const Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircleAvatar(
-            radius: 31,
-            backgroundColor: Color(0xFFE5F5F3),
-            child: Icon(LucideIcons.image, color: Color(0xFF078D92), size: 32),
-          ),
-          SizedBox(height: 12),
-          Text(
-            'Add cover photo',
-            style: TextStyle(
-              color: Color(0xFF060D35),
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          SizedBox(height: 5),
-          Text(
-            'JPG, PNG up to 10MB',
-            style: TextStyle(
-              color: Color(0xFF29304D),
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
+    final fileNames = widget.imageFileNames;
+    return InkWell(
+      onTap: _uploading ? null : _pickAndUpload,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        height: 150,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFD5DEE4), width: 1.2),
+        ),
+        child: Stack(
+          children: [
+            if (fileNames.isEmpty)
+              const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(LucideIcons.cloudUpload,
+                      color: Color(0xFF684AC8), size: 36),
+                  SizedBox(height: 12),
+                  Text(
+                    'Add cover photo',
+                    style: TextStyle(
+                      color: Color(0xFF060D35),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  SizedBox(height: 5),
+                  Text(
+                    'JPG, PNG up to 10MB',
+                    style: TextStyle(
+                      color: Color(0xFF29304D),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              )
+            else
+              ListView.separated(
+                padding: const EdgeInsets.all(8),
+                scrollDirection: Axis.horizontal,
+                itemCount: fileNames.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Stack(
+                      children: [
+                        StoreItemImage(
+                          imageUrl: fileNames[index],
+                          icon: LucideIcons.image,
+                          width: 110,
+                          height: 110,
+                          fit: BoxFit.cover,
+                        ),
+                        Positioned(
+                          right: 4,
+                          top: 4,
+                          child: GestureDetector(
+                            onTap: () => _remove(index),
+                            child: const CircleAvatar(
+                              radius: 12,
+                              backgroundColor: Colors.black87,
+                              child: Icon(Icons.close_rounded,
+                                  color: Colors.white, size: 14),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            if (_uploading)
+              Container(
+                color: Colors.black.withValues(alpha: 0.3),
+                child: const Center(
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation(Colors.white),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

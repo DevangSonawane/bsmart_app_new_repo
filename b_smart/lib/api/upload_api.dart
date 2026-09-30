@@ -283,4 +283,151 @@ class UploadApi {
       onSendProgress: onSendProgress,
     );
   }
+
+  /// Upload one or more images for an influencer product listing.
+  ///
+  /// POST multipart `/upload/influencer-product` with every file under the
+  /// `files` field. Returns the real fileName/fileUrl pairs — drop them
+  /// straight into POST `/influencer-products`' `images` field. The backend
+  /// rejects anything that isn't a real image.
+  Future<List<UploadedImage>> uploadInfluencerProductImages({
+    List<String>? filePaths,
+    List<MultipartBytesFile>? byteFiles,
+    UploadProgressCallback? onSendProgress,
+  }) {
+    return _uploadInfluencerImages(
+      _pathFor('influencer-product'),
+      filePaths: filePaths,
+      byteFiles: byteFiles,
+      onSendProgress: onSendProgress,
+    );
+  }
+
+  /// Upload one or more images for an influencer service listing.
+  ///
+  /// POST multipart `/upload/influencer-service` with every file under the
+  /// `files` field. Returns the real fileName/fileUrl pairs — drop them
+  /// straight into POST `/influencer-services`' `images` field.
+  Future<List<UploadedImage>> uploadInfluencerServiceImages({
+    List<String>? filePaths,
+    List<MultipartBytesFile>? byteFiles,
+    UploadProgressCallback? onSendProgress,
+  }) {
+    return _uploadInfluencerImages(
+      _pathFor('influencer-service'),
+      filePaths: filePaths,
+      byteFiles: byteFiles,
+      onSendProgress: onSendProgress,
+    );
+  }
+
+  Future<List<UploadedImage>> _uploadInfluencerImages(
+    String path, {
+    List<String>? filePaths,
+    List<MultipartBytesFile>? byteFiles,
+    UploadProgressCallback? onSendProgress,
+  }) async {
+    final paths = filePaths ?? const <String>[];
+    final files = byteFiles ?? const <MultipartBytesFile>[];
+    if (paths.isEmpty && files.isEmpty) {
+      throw ArgumentError('No files selected for upload.');
+    }
+    dynamic res;
+    if (files.isNotEmpty) {
+      res = await _client.multipartPostManyBytes(
+        path,
+        files: files,
+        fileField: 'files',
+        onSendProgress: onSendProgress,
+      );
+    } else {
+      res = await _client.multipartPostManyPaths(
+        path,
+        filePaths: paths,
+        fileField: 'files',
+        onSendProgress: onSendProgress,
+      );
+    }
+    final images = UploadedImage.listOf(res);
+    if (images.isEmpty) {
+      throw StateError('Upload succeeded but returned no images.');
+    }
+    return images;
+  }
+}
+
+/// A real uploaded image: `{fileName, fileUrl}` as returned by the
+/// influencer upload endpoints. Use [fileUrl] for display and for the
+/// listing `images` payload.
+class UploadedImage {
+  final String fileName;
+  final String fileUrl;
+
+  const UploadedImage({required this.fileName, required this.fileUrl});
+
+  Map<String, String> toJson() => {'fileName': fileName, 'fileUrl': fileUrl};
+
+  static List<UploadedImage> listOf(dynamic res) {
+    final raw = _imagesOf(res);
+    return raw.map((entry) {
+      final fileUrl = entry['fileUrl'] ??
+          entry['file_url'] ??
+          entry['url'] ??
+          entry['path'] ??
+          '';
+      final fileName = entry['fileName'] ??
+          entry['file_name'] ??
+          entry['filename'] ??
+          fileUrl.toString().split('/').last;
+      return UploadedImage(
+        fileName: fileName.toString(),
+        fileUrl: fileUrl.toString(),
+      );
+    }).where((img) => img.fileUrl.isNotEmpty).toList();
+  }
+
+  static List<Map<String, dynamic>> _imagesOf(dynamic res) {
+    if (res is Map) {
+      final map = res.map((k, v) => MapEntry(k.toString(), v));
+      for (final key in ['images', 'data', 'files', 'result']) {
+        final value = map[key];
+        if (value is List) {
+          final list = value
+              .whereType<Map>()
+              .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+              .toList();
+          if (key != 'images') {
+            // `data`/`result` may wrap the images list one level deeper.
+            for (final entry in list) {
+              final nested = entry['images'];
+              if (nested is List) {
+                return nested
+                    .whereType<Map>()
+                    .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+                    .toList();
+              }
+            }
+          }
+          if (list.isNotEmpty || key == 'images') return list;
+        }
+        if (value is Map) {
+          final nested = value.map((k, v) => MapEntry(k.toString(), v));
+          final images = nested['images'];
+          if (images is List) {
+            return images
+                .whereType<Map>()
+                .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+                .toList();
+          }
+        }
+      }
+    }
+    if (res is List) {
+      return res
+          .whereType<Map>()
+          .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+          .toList();
+    }
+    return const [];
+  }
 }

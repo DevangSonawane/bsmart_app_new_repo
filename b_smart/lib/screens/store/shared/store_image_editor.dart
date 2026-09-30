@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../api/api_client.dart';
 import '../../../api/upload_api.dart';
 import '../../../utils/url_helper.dart';
 import '../../../widgets/safe_network_image.dart';
@@ -9,19 +10,24 @@ import '../../../widgets/safe_network_image.dart';
 /// Edit the `images` payload of an influencer product/service.
 ///
 /// Keeps existing entries untouched (passed back verbatim) and uploads new
-/// picks via [UploadApi.uploadPromoteProductFile], appending `{fileName}`.
+/// picks via [uploadFn], appending `{fileName}`.
 /// [minCount] is 1 for products (spec requires at least one image) and 0
 /// for services (images optional).
 class StoreImageEditor extends StatefulWidget {
   final List<Map<String, dynamic>> initial;
   final int minCount;
   final ValueChanged<List<Map<String, dynamic>>> onChanged;
+  final Future<List<UploadedImage>> Function({
+    List<String>? filePaths,
+    List<MultipartBytesFile>? byteFiles,
+  })? uploadFn;
 
   const StoreImageEditor({
     super.key,
     required this.initial,
     required this.minCount,
     required this.onChanged,
+    this.uploadFn,
   });
 
   /// Image entries from a product/service payload, normalized to maps.
@@ -62,10 +68,21 @@ class _StoreImageEditorState extends State<StoreImageEditor> {
       final picked =
           await ImagePicker().pickImage(source: ImageSource.gallery);
       if (picked == null || !mounted) return;
-      final upload =
-          await UploadApi().uploadPromoteProductFile(picked.path);
-      final name = _uploadName(upload);
-      if (name.isEmpty) {
+
+      String? name;
+      if (widget.uploadFn != null) {
+        final uploaded = await widget.uploadFn!(
+          filePaths: [picked.path],
+        );
+        if (uploaded.isNotEmpty) {
+          name = uploaded.first.fileName;
+        }
+      } else {
+        final upload = await UploadApi().uploadPromoteProductFile(picked.path);
+        name = _uploadName(upload);
+      }
+
+      if (name == null || name.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Upload failed: empty response.')),

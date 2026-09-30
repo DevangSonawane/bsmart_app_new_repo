@@ -233,6 +233,12 @@ class _VisitorServiceBookingFlowPageState
     }
     // Step 2: create the booking directly (services have no cart per spec).
     if (_submitting) return;
+    // customer_address is required for at-customer-location bookings.
+    if (_address == null) {
+      setState(() => _bookingError =
+          'Add a service address before confirming this booking.');
+      return;
+    }
     setState(() {
       _submitting = true;
       _bookingError = null;
@@ -252,7 +258,7 @@ class _VisitorServiceBookingFlowPageState
           'selected_subservices': [
             for (final name in _selectedSubservices) {'name': name}
           ],
-        'customer_address': _address.toCustomerJson(),
+        'customer_address': _address?.toCustomerJson() ?? const {},
         'payment_method': _paymentMethod,
       });
       final id = _bookingIdFrom(response);
@@ -388,7 +394,7 @@ class _VisitorServiceBookingFlowPageState
     return {all.first['name'] ?? ''}..remove('');
   }
 
-  ShipAddress get _address => StoreAddressBook.instance.selected;
+  ShipAddress? get _address => StoreAddressBook.instance.selected;
 
   Future<void> _pickAddress() async {
     final picked = await Navigator.of(context).push<ShipAddress>(
@@ -532,7 +538,8 @@ class _VisitorServiceBookingFlowPageState
                               morningTimes: _morningSlots,
                               afternoonTimes: _afternoonSlots,
                               dayUnavailable: _selectedDayUnavailable,
-                              serviceAddress: _address.summaryLine,
+                              serviceAddress: _address?.summaryLine ??
+                                  'Add a service address',
                               onDateSelected: (date) {
                                 setState(() => _selectedDate = date);
                                 _ensureTimeInSlots();
@@ -554,7 +561,8 @@ class _VisitorServiceBookingFlowPageState
                               selectedDate: _selectedBookingDate,
                               selectedTime: _selectedTime,
                               selectedDuration: _selectedDuration,
-                              addressLine: _address.summaryLine,
+                              addressLine: _address?.summaryLine ??
+                                  'Add a service address',
                               onAddressTap: _pickAddress,
                               subservices: _allSubservices,
                               selectedSubservices: _selectedSubservices,

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useFloating, autoUpdate, offset, flip, shift } from '@floating-ui/react-dom';
 import { HexColorPicker } from 'react-colorful';
-import { ChevronDown, ChevronUp, ImagePlus, GripVertical, X, Plus, Check } from 'lucide-react';
+import { ChevronDown, ChevronUp, ImagePlus, GripVertical, X, Plus, Check, Loader2 } from 'lucide-react';
 
 export const CATEGORIES = ['Fashion', 'Tech', 'Home', 'Beauty'];
 export const STATUS_OPTIONS = ['Draft', 'Active', 'Out of Stock'];
@@ -371,7 +371,9 @@ export const VariantsPricingTable = ({ variants, onChange, onRemove, onAdd }) =>
 );
 
 // ─── Product image gallery: main preview + thumbnail strip ─────────────────────
-export const ImageGallery = ({ images, mainIndex, onSetMain, onAdd, onRemove, fileInputRef, onDrop, onDragOver, onDragLeave, isDragging, label = 'Product Images *' }) => (
+// Images being uploaded show a spinner overlay; `uploadError` (string) renders
+// a dismissible error line under the dropzone.
+export const ImageGallery = ({ images, mainIndex, onSetMain, onAdd, onRemove, fileInputRef, onDrop, onDragOver, onDragLeave, isDragging, label = 'Product Images *', uploadError, onClearUploadError }) => (
   <div>
     <label className={labelCls}>{label}</label>
     <div
@@ -388,6 +390,12 @@ export const ImageGallery = ({ images, mainIndex, onSetMain, onAdd, onRemove, fi
         {images.length > 0 ? (
           <>
             <img src={images[mainIndex]?.url} alt="" className="w-full h-full object-cover" />
+            {images[mainIndex]?.uploading && (
+              <span className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-2 text-white">
+                <Loader2 size={24} className="animate-spin" />
+                <span className="text-[11px] font-semibold">Uploading…</span>
+              </span>
+            )}
             <span className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-black/60 text-white text-[10px] font-semibold">Main</span>
           </>
         ) : (
@@ -399,6 +407,16 @@ export const ImageGallery = ({ images, mainIndex, onSetMain, onAdd, onRemove, fi
         <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={onAdd} />
       </button>
     </div>
+    {uploadError && (
+      <div className="mt-2 flex items-start justify-between gap-2 rounded-lg bg-red-50 dark:bg-red-900/20 px-3 py-2 text-xs font-medium text-red-600 dark:text-red-400">
+        <span>{uploadError}</span>
+        {onClearUploadError && (
+          <button type="button" onClick={onClearUploadError} aria-label="Dismiss upload error" className="shrink-0 hover:opacity-70">
+            <X size={14} />
+          </button>
+        )}
+      </div>
+    )}
     {images.length > 0 && (
       <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
         {images.map((img, i) => (
@@ -406,9 +424,14 @@ export const ImageGallery = ({ images, mainIndex, onSetMain, onAdd, onRemove, fi
             <button
               type="button"
               onClick={() => onSetMain(i)}
-              className={`w-14 h-14 rounded-lg overflow-hidden border-2 ${i === mainIndex ? 'border-[#fa3f5e]' : 'border-transparent'}`}
+              className={`w-14 h-14 rounded-lg overflow-hidden border-2 relative ${i === mainIndex ? 'border-[#fa3f5e]' : 'border-transparent'}`}
             >
               <img src={img.url} alt="" className="w-full h-full object-cover" />
+              {img.uploading && (
+                <span className="absolute inset-0 bg-black/50 flex items-center justify-center text-white">
+                  <Loader2 size={16} className="animate-spin" />
+                </span>
+              )}
             </button>
             <button
               type="button"

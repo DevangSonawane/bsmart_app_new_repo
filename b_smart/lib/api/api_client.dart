@@ -317,6 +317,44 @@ class ApiClient {
     });
   }
 
+  /// Multipart `POST` from multiple local files.
+  ///
+  /// Sends every path as its own `fileField` part in a single request
+  /// (used by the influencer image endpoints, field `files`).
+  Future<dynamic> multipartPostManyPaths(
+    String path, {
+    required List<String> filePaths,
+    String fileField = 'file',
+    Map<String, String>? fields,
+    Duration? timeout,
+    UploadProgressCallback? onSendProgress,
+  }) async {
+    final paths = filePaths.where((p) => p.trim().isNotEmpty).toList();
+    if (paths.isEmpty) return <String, dynamic>{};
+    return _withTransientRetry(() async {
+      final request = http.MultipartRequest('POST', _uri(path));
+      final token = await getToken();
+      if (token != null) request.headers['Authorization'] = 'Bearer $token';
+      if (fields != null) request.fields.addAll(fields);
+      for (final filePath in paths) {
+        final filename = filePath.split(Platform.pathSeparator).last;
+        final ct = _contentTypeForFilename(filename);
+        request.files.add(await http.MultipartFile.fromPath(
+          fileField,
+          filePath,
+          contentType: ct,
+        ));
+      }
+      final streamed = await _sendMultipartRequest(
+        request,
+        timeout: timeout ?? ApiConfig.timeout,
+        onSendProgress: onSendProgress,
+      );
+      final response = await http.Response.fromStream(streamed);
+      return _handleResponse(response);
+    });
+  }
+
   /// Multipart `POST` from multiple files (as bytes).
   ///
   /// Matches the React web app behaviour: send multiple `fileField` parts.

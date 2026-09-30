@@ -36,3 +36,5 @@ export 'wallet_api.dart';
 export 'gift_cards_api.dart';
 export 'views_api.dart';
 export 'phase2_store_api.dart';
+export 'wishlist_api.dart';
+export 'address_api.dart';

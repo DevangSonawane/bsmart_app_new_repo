@@ -59,6 +59,34 @@ class StoreMockCatalogItem {
     final whole = price == price.roundToDouble();
     return '₹${whole ? price.toStringAsFixed(0) : price.toStringAsFixed(2)}';
   }
+
+  StoreMockCatalogItem copyWith({
+    String? id,
+    String? title,
+    String? category,
+    String? description,
+    String? imageUrl,
+    double? price,
+    String? duration,
+    String? rating,
+    String? reviews,
+    Map<String, dynamic>? raw,
+  }) {
+    return StoreMockCatalogItem(
+      id: id ?? this.id,
+      type: type,
+      title: title ?? this.title,
+      category: category ?? this.category,
+      description: description ?? this.description,
+      imageUrl: imageUrl ?? this.imageUrl,
+      icon: icon,
+      price: price ?? this.price,
+      duration: duration ?? this.duration,
+      rating: rating ?? this.rating,
+      reviews: reviews ?? this.reviews,
+      raw: raw ?? this.raw,
+    );
+  }
 }
 
 class StoreMockCartLine {
@@ -385,7 +413,7 @@ class StoreMockState extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>> checkoutWithWallet({
-    required Map<String, dynamic> shippingAddress,
+    required Map<String, String> shippingAddress,
   }) async {
     final response = await _api.checkoutOrder(
       paymentMethod: 'wallet',
@@ -401,7 +429,7 @@ class StoreMockState extends ChangeNotifier {
   /// Caller must open Razorpay Checkout with `response['razorpay']`
   /// then call [verifyOrderPayment].
   Future<Map<String, dynamic>> checkoutWithRazorpay({
-    required Map<String, dynamic> shippingAddress,
+    required Map<String, String> shippingAddress,
   }) async {
     final response = await _api.checkoutOrder(
       paymentMethod: 'razorpay',
@@ -610,7 +638,14 @@ class StoreMockState extends ChangeNotifier {
       ),
       imageUrl: _firstImage(json),
       icon: _iconForCategory(category),
-      price: _number(json, const ['selling_price', 'price', 'amount']),
+      price: _number(json, const [
+        'selling_price',
+        'sale_price',
+        'discounted_price',
+        'price',
+        'amount',
+        'mrp',
+      ]),
       duration: _text(json, const ['dispatch_time'], fallback: '2-3 days'),
       rating: _text(json, const ['rating'], fallback: 'New'),
       reviews: _text(json, const ['reviews', 'review_count'], fallback: '0'),
@@ -640,15 +675,33 @@ class StoreMockState extends ChangeNotifier {
   }
 
   List<StoreMockCartLine>? _cartItemsFromApi(Map<String, dynamic> data) {
-    final rawItems = data['items'] ?? data['cart_items'] ?? data['products'];
-    if (rawItems is! List) return null;
+    final rawItems = _cartItemList(data);
+    if (rawItems == null) return null;
     return rawItems.whereType<Map>().map((raw) {
       final map = raw.map((key, value) => MapEntry(key.toString(), value));
-      final productJson = (map['product'] is Map)
-          ? (map['product'] as Map)
-              .map((key, value) => MapEntry(key.toString(), value))
+      // Some responses nest the product, others inline it on the cart line.
+      final nested = map['product'] ?? map['item'] ?? map['product_details'];
+      final productJson = (nested is Map)
+          ? nested.map((key, value) => MapEntry(key.toString(), value))
           : map;
-      final product = _productFromApi(productJson);
+      var product = _productFromApi(productJson);
+      // A cart line often carries its own live price alongside a partial
+      // product object; prefer whichever actually resolved to a value.
+      if (product.price <= 0) {
+        final linePrice = _number(map, const [
+          'unit_price',
+          'line_price',
+          'unitPrice',
+          'linePrice',
+          'selling_price',
+          'price',
+          'final_price',
+          'total_price',
+          'amount',
+          'mrp',
+        ]);
+        if (linePrice > 0) product = product.copyWith(price: linePrice);
+      }
       final variantJson = map['variant'];
       final variant = variantJson is Map
           ? _cleanVariant(
@@ -660,6 +713,36 @@ class StoreMockState extends ChangeNotifier {
         variant: variant,
       );
     }).toList();
+  }
+
+  /// Locates the cart line array across the response shapes the API may use.
+  static List<dynamic>? _cartItemList(Map<String, dynamic> data) {
+    for (final key in const [
+      'items',
+      'cart_items',
+      'cartItems',
+      'products',
+      'lines',
+      'data',
+      'cart',
+    ]) {
+      final value = data[key];
+      if (value is List) return value;
+      if (value is Map) {
+        final nested = value.map((k, v) => MapEntry(k.toString(), v));
+        for (final nestedKey in const [
+          'items',
+          'cart_items',
+          'cartItems',
+          'products',
+          'lines',
+        ]) {
+          final nestedValue = nested[nestedKey];
+          if (nestedValue is List) return nestedValue;
+        }
+      }
+    }
+    return null;
   }
 
   /// Public parsing helpers so search/detail screens can reuse the same
@@ -736,16 +819,51 @@ class StoreMockState extends ChangeNotifier {
   }
 
   static String _firstImage(Map<String, dynamic> json) {
-    final images = json['images'];
-    dynamic first;
-    if (images is List && images.isNotEmpty) first = images.first;
-    if (first is Map) {
-      final value = _text(
+    // The influencer upload endpoints return `{fileName, fileUrl}`, so
+    // `fileUrl` must be tried before the bare `fileName` (which is not a URL).
+    for (final key in const ['images', 'image_urls', 'media']) {
+      final images = json[key];
+      if (images is! List || images.isEmpty) continue;
+      final first = images.first;
+      if (first is Map) {
+        final value = _text(
           first.map((key, value) => MapEntry(key.toString(), value)),
-          const ['url', 'fileName', 'filename', 'path', 'src']);
-      return UrlHelper.absoluteUrl(value);
+          const [
+            'fileUrl',
+            'file_url',
+            'url',
+            'image_url',
+            'imageUrl',
+            'src',
+            'path',
+            'fileName',
+            'filename',
+          ],
+        );
+        final resolved = UrlHelper.absoluteUrl(value);
+        if (resolved.isNotEmpty) return resolved;
+      }
+      if (first is String) {
+        final resolved = UrlHelper.absoluteUrl(first);
+        if (resolved.isNotEmpty) return resolved;
+      }
     }
-    if (first is String) return UrlHelper.absoluteUrl(first);
+    // Single-image fallbacks.
+    for (final key in const [
+      'fileUrl',
+      'file_url',
+      'image_url',
+      'imageUrl',
+      'image',
+      'thumbnail',
+      'url',
+    ]) {
+      final value = json[key];
+      if (value is String && value.trim().isNotEmpty) {
+        final resolved = UrlHelper.absoluteUrl(value);
+        if (resolved.isNotEmpty) return resolved;
+      }
+    }
     return '';
   }
 

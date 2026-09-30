@@ -13,7 +13,10 @@ const FILTERS = ['All', 'Products', 'Services', 'Persons'];
 
 export const ProductCard = ({ product, isFavorite, onToggleFavorite, showType = false }) => {
   const dispatch = useDispatch();
+  const [imageFailed, setImageFailed] = useState(false);
   const { icon: Icon, text, bg } = CATEGORY_STYLE[product.category] || { icon: Package, text: 'text-[#fa3f5e]', bg: 'bg-gray-50 dark:bg-gray-800' };
+  const imageSrc = !imageFailed ? (product.images?.[0] || product.image) : null;
+  const price = Number(product.price ?? 0);
 
   const handleAddToCart = () => {
     dispatch(addItem({
@@ -21,16 +24,20 @@ export const ProductCard = ({ product, isFavorite, onToggleFavorite, showType = 
       name: product.name,
       subtitle: product.dimensions,
       brand: product.vendor,
-      price: product.price,
+      price: Number(product.price) || 0,
       category: product.category,
+      images: product.images,
+      image: product.image,
     }));
   };
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-        <div className={`relative aspect-[4/3] flex items-center justify-center ${bg}`}>
+        <div className={`relative aspect-[4/3] flex items-center justify-center overflow-hidden ${imageSrc ? 'bg-gray-50 dark:bg-gray-800' : bg}`}>
           <Link to={`/market/product/${product.id}`} aria-label={`View ${product.name}`} className="absolute inset-0 flex items-center justify-center">
-            <Icon size={48} className={`${text} opacity-70`} />
+            {imageSrc
+              ? <img src={imageSrc} alt={product.name} onError={() => setImageFailed(true)} className="w-full h-full object-cover" loading="lazy" />
+              : <Icon size={48} className={`${text} opacity-70`} />}
           </Link>
           <span className="absolute top-3 left-3 px-2 py-0.5 rounded-md bg-white/90 dark:bg-black/60 text-[10px] font-bold tracking-wide text-gray-700 dark:text-gray-200 uppercase">
             Market
@@ -55,13 +62,13 @@ export const ProductCard = ({ product, isFavorite, onToggleFavorite, showType = 
         </Link>
         <div className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 mb-2.5">
           <Star size={12} className="fill-amber-400 text-amber-400" />
-          <span>{product.rating}</span>
+          <span>{product.rating || 'New'}</span>
           <span className="mx-1">·</span>
           <Eye size={12} />
-          <span>{product.views}</span>
+          <span>{product.views || 0}</span>
         </div>
         <p className="font-bold text-[#fa3f5e] mb-3">
-          ₹{product.price.toFixed(2)} <span className="text-gray-400 dark:text-gray-500 text-xs font-normal">INR</span>
+          ₹{price.toFixed(2)} <span className="text-gray-400 dark:text-gray-500 text-xs font-normal">INR</span>
         </p>
         <div className="flex gap-2">
           <button
@@ -219,7 +226,11 @@ const Market = () => {
       </div>
 
       <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-1">Featured in Market</h2>
-      <p className="text-xs text-gray-400 dark:text-gray-500 mb-6">Showing local Marketplace listings — not wired to live listings yet.</p>
+      <p className="text-xs text-gray-400 dark:text-gray-500 mb-6">
+        {listedProducts.length + listedServices.length === 0
+          ? 'No listings yet — be the first to add one.'
+          : `${listedProducts.length} product${listedProducts.length === 1 ? '' : 's'} · ${listedServices.length} service${listedServices.length === 1 ? '' : 's'}`}
+      </p>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
         {showProducts && products.map((p) => (
@@ -230,9 +241,16 @@ const Market = () => {
         ))}
         {showPersons && showCreator && <PersonCard key={user._id || user.id || 'store-creator'} user={user} productCount={listedProducts.length} serviceCount={listedServices.length} />}
         {!hasResults && (
-          <p className="col-span-full text-center text-gray-400 dark:text-gray-500 py-10">
-            {query ? `No results for “${searchQuery.trim()}”.` : `No ${activeFilter === 'All' ? 'marketplace listings' : activeFilter.toLowerCase()} yet.`}
-          </p>
+          <div className="col-span-full rounded-2xl border border-dashed border-gray-200 dark:border-gray-800 px-4 py-14 text-center">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {query ? `No results for “${searchQuery.trim()}”.` : `No ${activeFilter === 'All' ? 'marketplace listings' : activeFilter.toLowerCase()} yet.`}
+            </p>
+            {!query && (
+              <Link to="/market/add-product" className="inline-block mt-4 px-5 py-2 rounded-lg text-sm font-bold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange">
+                Add a product
+              </Link>
+            )}
+          </div>
         )}
       </div>
     </div>

@@ -647,6 +647,7 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
   bool _publishing = false;
   final _imagePicker = ImagePicker();
   XFile? _productImage;
+  final _productImages = <XFile>[];
   final _productNameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _priceController = TextEditingController(text: '0.00');
@@ -710,10 +711,11 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
       const _StepHeading(stepText: '1 of 2', title: 'Details'),
       const SizedBox(height: 14),
       _PhotoUploadCard(
-        image: _productImage,
-        onTap: _pickProductImage,
-        onRemove: () => setState(() => _productImage = null),
-      ),
+          images: _productImages,
+          onTap: _pickProductImage,
+          onRemove: (index) =>
+              setState(() => _productImages.removeAt(index)),
+        ),
       const SizedBox(height: 12),
       _FormPanel(
         children: [
@@ -883,9 +885,9 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
 
   Future<void> _pickProductImage() async {
     try {
-      final image = await _imagePicker.pickImage(source: ImageSource.gallery);
-      if (image == null || !mounted) return;
-      setState(() => _productImage = image);
+      final images = await _imagePicker.pickMultiImage();
+      if (images.isEmpty || !mounted) return;
+      setState(() => _productImages.addAll(images));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -898,30 +900,29 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
     final name = _productNameController.text.trim();
     final description = _descriptionController.text.trim();
     final category = _category?.trim();
-    final image = _productImage;
+    final images = _productImages;
     final price = _parseNumber(_priceController.text);
     final stock = _parseNumber(_stockController.text).round();
     if (name.isEmpty ||
         description.isEmpty ||
         category == null ||
         category.isEmpty ||
-        image == null ||
+        images.isEmpty ||
         price <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Add image, name, category, description and price.'),
+          content: Text('Add images, name, category, description and price.'),
         ),
       );
       return;
     }
     setState(() => _publishing = true);
     try {
-      final upload = await UploadApi().uploadPromoteProductFile(image.path);
-      final imageName = _firstUploadName(upload);
+      final uploaded = await UploadApi().uploadInfluencerProductImages(
+        filePaths: images.map((e) => e.path).toList(),
+      );
       await Phase2StoreApi().createProduct({
-        'images': [
-          {'fileName': imageName},
-        ],
+        'images': uploaded.map((img) => img.toJson()).toList(),
         'name': name,
         'category': category,
         'brand': 'B-Smart',
@@ -1048,19 +1049,18 @@ class _StepHeading extends StatelessWidget {
 }
 
 class _PhotoUploadCard extends StatelessWidget {
-  final XFile? image;
+  final List<XFile> images;
   final VoidCallback onTap;
-  final VoidCallback onRemove;
+  final Function(int) onRemove;
 
   const _PhotoUploadCard({
-    required this.image,
+    required this.images,
     required this.onTap,
     required this.onRemove,
   });
 
   @override
   Widget build(BuildContext context) {
-    final selectedImage = image;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -1072,7 +1072,7 @@ class _PhotoUploadCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: const Color(0xFFD5DEE4), width: 1.2),
         ),
-        child: selectedImage == null
+        child: images.isEmpty
             ? const Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -1080,7 +1080,7 @@ class _PhotoUploadCard extends StatelessWidget {
                       color: Color(0xFF684AC8), size: 36),
                   SizedBox(height: 9),
                   Text(
-                    'Add product photo',
+                    'Add product photos',
                     style: TextStyle(
                       color: Color(0xFF060D35),
                       fontSize: 13.5,
@@ -1101,27 +1101,47 @@ class _PhotoUploadCard extends StatelessWidget {
             : Stack(
                 fit: StackFit.expand,
                 children: [
-                  Image.file(File(selectedImage.path), fit: BoxFit.cover),
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: GestureDetector(
-                      onTap: onRemove,
-                      child: const CircleAvatar(
-                        radius: 15,
-                        backgroundColor: Colors.black87,
-                        child: Icon(Icons.close_rounded,
-                            color: Colors.white, size: 17),
-                      ),
-                    ),
+                  ListView.separated(
+                    padding: const EdgeInsets.all(8),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: images.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (context, index) {
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Stack(
+                          children: [
+                            Image.file(
+                              File(images[index].path),
+                              width: 110,
+                              height: 110,
+                              fit: BoxFit.cover,
+                            ),
+                            Positioned(
+                              right: 4,
+                              top: 4,
+                              child: GestureDetector(
+                                onTap: () => onRemove(index),
+                                child: const CircleAvatar(
+                                  radius: 12,
+                                  backgroundColor: Colors.black87,
+                                  child: Icon(Icons.close_rounded,
+                                      color: Colors.white, size: 14),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-          ],
-        ),
+                ],
+              ),
       ),
     );
   }
-
 }
+
 
 class _FormPanel extends StatelessWidget {
   final List<Widget> children;

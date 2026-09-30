@@ -34,7 +34,7 @@ class _VisitorProductPaymentPageState extends State<VisitorProductPaymentPage> {
     StoreAddressBook.instance.ensureLoaded();
   }
 
-  ShipAddress get _address => StoreAddressBook.instance.selected;
+  ShipAddress? get _address => StoreAddressBook.instance.selected;
 
   Future<void> _pickAddress() async {
     final picked = await Navigator.of(context).push<ShipAddress>(
@@ -124,14 +124,19 @@ class _VisitorProductPaymentPageState extends State<VisitorProductPaymentPage> {
               ),
               AnimatedBuilder(
                 animation: StoreAddressBook.instance,
-                builder: (context, _) => _PayButton(
-                  amount: widget.amount,
-                  bCoinsSavings: widget.bCoinsSavings,
-                  paymentMethod: _selectedMethod,
-                  shippingAddress: _address.toShippingJson(),
-                  addressLabel:
-                      '${_address.name}\n${_address.summaryLine}\nIndia',
-                ),
+                builder: (context, _) {
+                  final address = _address;
+                  return _PayButton(
+                    amount: widget.amount,
+                    bCoinsSavings: widget.bCoinsSavings,
+                    paymentMethod: _selectedMethod,
+                    shippingAddress: address?.toShippingJson() ?? const {},
+                    addressLabel: address == null
+                        ? 'Add a delivery address'
+                        : '${address.name}\n${address.summaryLine}\nIndia',
+                    enabled: address != null,
+                  );
+                },
               ),
             ],
           ),
@@ -381,7 +386,7 @@ class _SelectedPill extends StatelessWidget {
 }
 
 class _DeliveryAddressCard extends StatelessWidget {
-  final ShipAddress address;
+  final ShipAddress? address;
   final VoidCallback onChange;
 
   const _DeliveryAddressCard({
@@ -391,6 +396,7 @@ class _DeliveryAddressCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final address = this.address;
     return Container(
       constraints: const BoxConstraints(minHeight: 54),
       padding: const EdgeInsets.fromLTRB(10, 10, 4, 10),
@@ -417,7 +423,9 @@ class _DeliveryAddressCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${address.label} · ${address.name}',
+                  address == null
+                      ? 'No delivery address'
+                      : '${address.label} · ${address.name}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -428,7 +436,9 @@ class _DeliveryAddressCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  address.summaryLine,
+                  address == null
+                      ? 'Add an address to continue'
+                      : address.summaryLine,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -548,6 +558,7 @@ class _PayButton extends StatefulWidget {
   final String paymentMethod;
   final Map<String, String> shippingAddress;
   final String addressLabel;
+  final bool enabled;
 
   const _PayButton({
     required this.amount,
@@ -555,6 +566,7 @@ class _PayButton extends StatefulWidget {
     this.paymentMethod = 'wallet',
     required this.shippingAddress,
     required this.addressLabel,
+    this.enabled = true,
   });
 
   @override
@@ -628,8 +640,9 @@ class _PayButtonState extends State<_PayButton> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Razorpay is not configured on the server (missing key_id). '
-            'Pay with wallet instead.',
+            'Razorpay checkout is unavailable — the server did not return a '
+            'Razorpay order. Pay with wallet, or ask the backend team to '
+            'verify RAZORPAY_KEY_ID / RAZORPAY_SECRET are set.',
           ),
         ),
       );
@@ -691,7 +704,7 @@ class _PayButtonState extends State<_PayButton> {
         height: 46,
         width: double.infinity,
         child: FilledButton.icon(
-          onPressed: _submitting
+          onPressed: (_submitting || !widget.enabled)
               ? null
               : () async {
                   if (StoreMockState.instance.cartLines.isEmpty) {
@@ -749,7 +762,11 @@ class _PayButtonState extends State<_PayButton> {
                 )
               : const Icon(LucideIcons.lockKeyhole, size: 18),
           label: Text(
-            _submitting ? 'Confirming...' : 'Confirm and pay ${widget.amount}',
+            _submitting
+                ? 'Confirming...'
+                : widget.enabled
+                    ? 'Confirm and pay ${widget.amount}'
+                    : 'Add a delivery address to continue',
             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
           ),
           style: BStoreButtons.filled(radius: 9),

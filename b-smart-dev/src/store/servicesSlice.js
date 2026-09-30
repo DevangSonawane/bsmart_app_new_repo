@@ -1,23 +1,20 @@
 import { createSlice } from '@reduxjs/toolkit';
-import { SEED_SERVICES } from '../myStore/data/mockServices';
-import { defaultAvailability } from '../myStore/data/serviceFields';
 
-// Same in-memory catalog lifecycle as Products.
+// User's own service listings, created via the Add Service page. Starts
+// empty — no demo services.
+const nextId = (items) => items.reduce(
+  (max, item) => (typeof item.id === 'number' ? Math.max(max, item.id) : max),
+  0,
+) + 1;
+
 const servicesSlice = createSlice({
   name: 'services',
   initialState: {
-    items: SEED_SERVICES.map((service, index) => ({
-      ...service, status: 'Published', visible: true, bookings: [2, 1, 2][index],
-      category: ['Home Services', 'Delivery', 'Photography'][index],
-      rateType: ['Starting from', 'Fixed price', 'Per session'][index],
-      duration: '1 hour', method: 'At customer location', address: '', provider: '',
-      images: [], highlights: [], availability: defaultAvailability(),
-    })),
+    items: [],
   },
   reducers: {
     addService: (state, { payload }) => {
-      const id = state.items.reduce((max, item) => Math.max(max, item.id), 0) + 1;
-      state.items.push({ ...payload, id, bookings: 0 });
+      state.items.push({ ...payload, id: nextId(state.items), bookings: 0 });
     },
     updateService: (state, { payload }) => {
       const service = state.items.find((item) => item.id === payload.id);

@@ -4,6 +4,7 @@ import { useDispatch } from 'react-redux';
 import { Calendar, MapPin, Globe, Plus, X, Star } from 'lucide-react';
 import { addService, updateService } from '../../store/servicesSlice';
 import useMediaUploader from '../../hooks/useMediaUploader';
+import { uploadInfluencerServiceImages } from '../../services/uploadService';
 import {
   Stepper, SectionCard, ImageGallery, Dropdown, HighlightsList, CompletenessCard, Checkbox,
   inputCls, labelCls, MAX_IMAGES, MAX_HIGHLIGHTS,
@@ -62,7 +63,7 @@ export default function ServiceForm({ service }) {
     name: item.name || '', hours: item.hours == null ? '' : String(item.hours), price: item.price == null ? '' : String(item.price),
   })) : [emptySubservice()]);
   const [availability, setAvailability] = useState(() => service?.availability ? structuredClone(service.availability) : defaultAvailability());
-  const uploader = useMediaUploader(service?.images || [], MAX_IMAGES);
+  const uploader = useMediaUploader(service?.images || [], MAX_IMAGES, { uploadFn: uploadInfluencerServiceImages });
   const { images } = uploader;
   const mainIndex = Math.min(mainImageIndex, Math.max(0, images.length - 1));
   const step1Ref = useRef(null);
@@ -94,6 +95,11 @@ export default function ServiceForm({ service }) {
   }
   const changeSlots = (day, update) => setAvailability((current) => current.map((entry) => entry.day === day ? { ...entry, slots: update(entry.slots) } : entry));
   const save = (draft) => {
+    if (uploader.isUploading) {
+      setError('Please wait for images to finish uploading.');
+      requestAnimationFrame(() => errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+      return;
+    }
     const message = validateService(form, availability, draft, subservices);
     setError(message);
     if (message) {
@@ -101,6 +107,11 @@ export default function ServiceForm({ service }) {
       return;
     }
     const orderedImages = images.length ? [images[mainIndex], ...images.filter((_, index) => index !== mainIndex)] : [];
+    // Only real uploaded URLs — never blob previews or in-flight uploads.
+    const imageUrls = orderedImages
+      .filter((image) => image && !image.uploading && !image.error)
+      .map((image) => image.fileUrl || image.url)
+      .filter((url) => url && !url.startsWith('blob:'));
     const payload = {
       ...form, name: form.name.trim(), description: form.description.trim(),
       price: Number(form.price) || 0, status: draft ? 'Draft' : 'Published',
@@ -110,7 +121,7 @@ export default function ServiceForm({ service }) {
         price: item.price === '' ? '' : Number(item.price),
       })),
       highlights: highlights.filter((value) => value.trim()),
-      images: orderedImages.map((image) => image.url), availability,
+      images: imageUrls, availability,
     };
     dispatch(service ? updateService({ ...payload, id: service.id }) : addService(payload));
     navigate('/market/my-store/services', { state: { serviceTab: draft ? 'Draft' : 'Published' } });
@@ -122,7 +133,7 @@ export default function ServiceForm({ service }) {
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{service ? 'Edit Service' : 'Add Service'}</h1>
         <div className="flex gap-2">
           <button type="button" onClick={() => save(true)} className="px-4 py-2 rounded-lg text-sm font-bold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900">Save Draft</button>
-          <button type="button" onClick={() => save(false)} className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange">{service?.status === 'Published' ? 'Save Changes' : 'Publish Service'}</button>
+          <button type="button" onClick={() => save(false)} disabled={uploader.isUploading} className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange disabled:opacity-50 disabled:cursor-wait">{uploader.isUploading ? 'Uploading images…' : (service?.status === 'Published' ? 'Save Changes' : 'Publish Service')}</button>
         </div>
       </div>
       <Link to="/market/my-store/services" className="text-xs text-gray-400 hover:text-[#fa3f5e]">← Back to My Store</Link>
@@ -132,7 +143,7 @@ export default function ServiceForm({ service }) {
         <div className="space-y-4 min-w-0">
           <SectionCard ref={step1Ref} step={1} title="Service Details">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              <ImageGallery label="Service Images" images={images} mainIndex={mainIndex} onSetMain={setMainImageIndex} onAdd={uploader.handleFileInput} onRemove={uploader.removeImage} fileInputRef={uploader.fileInputRef} onDrop={uploader.handleDrop} onDragOver={uploader.handleDragOver} onDragLeave={uploader.handleDragLeave} isDragging={uploader.isDragging} />
+              <ImageGallery label="Service Images" images={images} mainIndex={mainIndex} onSetMain={setMainImageIndex} onAdd={uploader.handleFileInput} onRemove={uploader.removeImage} fileInputRef={uploader.fileInputRef} onDrop={uploader.handleDrop} onDragOver={uploader.handleDragOver} onDragLeave={uploader.handleDragLeave} isDragging={uploader.isDragging} uploadError={uploader.uploadError} onClearUploadError={uploader.clearUploadError} />
               <div className="space-y-4">
                 <div>
                   <div className="flex items-center justify-between mb-1.5"><label htmlFor="service-name" className="text-sm font-medium text-gray-700 dark:text-gray-300">Service Name *</label><span className="text-xs text-gray-400">{form.name.length}/150</span></div>

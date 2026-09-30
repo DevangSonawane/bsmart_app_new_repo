@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Star, Truck } from 'lucide-react';
 import { updateProduct } from '../store/productsSlice';
 import useMediaUploader from '../hooks/useMediaUploader';
+import { uploadInfluencerProductImages } from '../services/uploadService';
 import {
   CATEGORIES, STATUS_OPTIONS, RETURN_POLICY_OPTIONS, WARRANTY_OPTIONS, COUNTRY_OPTIONS,
   MAX_IMAGES, MAX_HIGHLIGHTS, inputCls, labelCls,
@@ -52,7 +53,9 @@ const EditProduct = () => {
   const {
     images, isDragging, fileInputRef,
     handleFileInput, handleDrop, handleDragOver, handleDragLeave, removeImage,
-  } = useMediaUploader(product?.images || [], MAX_IMAGES);
+    isUploading, uploadError, clearUploadError, uploadedUrls,
+  } = useMediaUploader(product?.images || [], MAX_IMAGES, { uploadFn: uploadInfluencerProductImages });
+  const [submitError, setSubmitError] = useState('');
 
   const step1Ref = useRef(null);
   const step2Ref = useRef(null);
@@ -128,7 +131,7 @@ const EditProduct = () => {
     useStoreReturnPolicy: form.useStoreReturnPolicy,
     warranty: form.warranty,
     highlights: highlights.filter(Boolean),
-    images: images.map((img) => img.url),
+    images: uploadedUrls,
     variants: variants.map((v) => ({
       ...v,
       stock: parseInt(v.stock, 10) || 0,
@@ -136,14 +139,25 @@ const EditProduct = () => {
     })),
   });
 
+  const guardUploads = () => {
+    if (isUploading) {
+      setSubmitError('Please wait for images to finish uploading.');
+      return false;
+    }
+    setSubmitError('');
+    return true;
+  };
+
   const handleSaveDraft = (e) => {
     e.preventDefault();
+    if (!guardUploads()) return;
     dispatch(updateProduct(buildPayload('Draft')));
     navigate('/market/my-store/products');
   };
 
   const handlePublish = (e) => {
     e.preventDefault();
+    if (!guardUploads()) return;
     dispatch(updateProduct(buildPayload(form.status === 'Draft' ? 'Active' : form.status)));
     navigate('/market/my-store/products');
   };
@@ -163,9 +177,10 @@ const EditProduct = () => {
           </button>
           <button
             onClick={handlePublish}
-            className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange"
+            disabled={isUploading}
+            className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange disabled:opacity-50 disabled:cursor-wait"
           >
-            Publish Product
+            {isUploading ? 'Uploading images…' : 'Publish Product'}
           </button>
         </div>
       </div>
@@ -199,6 +214,8 @@ const EditProduct = () => {
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 isDragging={isDragging}
+                uploadError={uploadError || submitError}
+                onClearUploadError={() => { clearUploadError(); setSubmitError(''); }}
               />
 
               <div className="space-y-4">

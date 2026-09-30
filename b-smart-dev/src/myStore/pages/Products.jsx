@@ -126,7 +126,7 @@ const StoreProducts = () => {
         </Link>
       </div>
       <p className="text-xs text-gray-400 dark:text-gray-500 mb-5">
-        Mock only — showing all products as a placeholder for your store, not filtered by vendor yet.
+        {products.length === 0 ? 'No products yet — add your first listing to get started.' : 'Manage your store listings.'}
       </p>
 
       {/* Tabs */}
@@ -200,7 +200,7 @@ const StoreProducts = () => {
                       </Link>
                     </div>
                   </td>
-                  <td className="px-5 py-4 text-gray-700 dark:text-gray-300">₹{p.price.toFixed(2)}</td>
+                  <td className="px-5 py-4 text-gray-700 dark:text-gray-300">₹{Number(p.price ?? 0).toFixed(2)}</td>
                   <td className="px-5 py-4"><StockCell product={p} /></td>
                   <td className="px-5 py-4"><VisibilityCell product={p} /></td>
                   <td className="px-5 py-4 text-right">

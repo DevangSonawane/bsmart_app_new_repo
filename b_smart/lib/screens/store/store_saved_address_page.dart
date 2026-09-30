@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -21,17 +23,25 @@ class _StoreSavedAddressPageState extends State<StoreSavedAddressPage> {
   @override
   void initState() {
     super.initState();
-    StoreAddressBook.instance.ensureLoaded();
+    unawaited(StoreAddressBook.instance.ensureLoaded());
   }
 
   Future<void> _openForm({ShipAddress? initial}) async {
     final result = await showAddressFormDialog(context, initial: initial);
     if (result == null || !mounted) return;
     final book = StoreAddressBook.instance;
-    if (initial == null) {
-      await book.add(result);
-    } else {
-      await book.update(initial.id, result);
+    try {
+      if (initial == null) {
+        await book.add(result);
+      } else {
+        await book.update(initial.id, result);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(book.lastErrorMessage ?? 'Could not save address.')),
+      );
+      return;
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -58,7 +68,29 @@ class _StoreSavedAddressPageState extends State<StoreSavedAddressPage> {
       ),
     );
     if (confirm != true || !mounted) return;
-    await StoreAddressBook.instance.remove(address.id);
+    try {
+      await StoreAddressBook.instance.remove(address.id);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(StoreAddressBook.instance.lastErrorMessage ??
+                'Could not delete address.')),
+      );
+    }
+  }
+
+  Future<void> _setDefault(ShipAddress address) async {
+    try {
+      await StoreAddressBook.instance.setDefault(address.id);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(StoreAddressBook.instance.lastErrorMessage ??
+                'Could not set default address.')),
+      );
+    }
   }
 
   @override
@@ -74,6 +106,10 @@ class _StoreSavedAddressPageState extends State<StoreSavedAddressPage> {
             builder: (context, _) {
               final book = StoreAddressBook.instance;
               final addresses = book.addresses;
+              final selectedId = book.selected?.id;
+              final showEmpty = addresses.isEmpty &&
+                  !book.loading &&
+                  book.lastError == null;
               return Column(
                 children: [
                   Expanded(
@@ -102,37 +138,68 @@ class _StoreSavedAddressPageState extends State<StoreSavedAddressPage> {
                           ),
                         ),
                         const SizedBox(height: 10),
-                        for (final address in addresses) ...[
-                          _SavedAddressCard(
-                            address: address,
-                            selected: book.selected.id == address.id,
-                            onTap: () {
-                              book.select(address.id);
-                              if (widget.selectMode) {
-                                Navigator.of(context).pop(address);
-                              }
-                            },
-                            onEdit: () => _openForm(initial: address),
-                            onSetDefault: address.isDefault
-                                ? null
-                                : () => book.setDefault(address.id),
-                            onDelete: addresses.length <= 1
-                                ? null
-                                : () => _confirmDelete(address),
-                          ),
-                          const SizedBox(height: 9),
-                        ],
+                        if (book.loading && addresses.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 28),
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                                color: BStoreColors.primary,
+                              ),
+                            ),
+                          )
+                        else if (addresses.isEmpty && book.lastError != null)
+                          _AddressNotice(
+                            icon: LucideIcons.cloudOff,
+                            title: "Couldn't load addresses",
+                            body: book.lastErrorMessage ??
+                                'Please try again.',
+                            actionLabel: 'Retry',
+                            onAction: book.refresh,
+                          )
+                        else if (showEmpty)
+                          const _AddressNotice(
+                            icon: LucideIcons.mapPin,
+                            title: 'No saved addresses',
+                            body:
+                                'Add a delivery address so you can check out without typing it every time.',
+                          )
+                        else
+                          for (final address in addresses) ...[
+                            _SavedAddressCard(
+                              address: address,
+                              selected: selectedId == address.id,
+                              onTap: () {
+                                book.select(address.id);
+                                if (widget.selectMode) {
+                                  Navigator.of(context).pop(address);
+                                }
+                              },
+                              onEdit: book.saving
+                                  ? () {}
+                                  : () => _openForm(initial: address),
+                              onSetDefault: (!address.isDefault &&
+                                      !book.saving)
+                                  ? () => _setDefault(address)
+                                  : null,
+                              onDelete: book.saving
+                                  ? null
+                                  : () => _confirmDelete(address),
+                            ),
+                            const SizedBox(height: 9),
+                          ],
                         _AddAddressButton(onTap: () => _openForm()),
                       ],
                     ),
                   ),
                   _DeliverHereButton(
-                    label: widget.selectMode
-                        ? 'Deliver here'
-                        : 'Done',
+                    label: widget.selectMode ? 'Deliver here' : 'Done',
+                    enabled: book.selected != null,
                     onPressed: () {
+                      final address = book.selected;
                       if (widget.selectMode) {
-                        Navigator.of(context).pop(book.selected);
+                        if (address == null) return;
+                        Navigator.of(context).pop(address);
                       } else {
                         Navigator.of(context).maybePop();
                       }
@@ -611,8 +678,13 @@ class _DashedBorderPainter extends CustomPainter {
 class _DeliverHereButton extends StatelessWidget {
   final String label;
   final VoidCallback onPressed;
+  final bool enabled;
 
-  const _DeliverHereButton({required this.label, required this.onPressed});
+  const _DeliverHereButton({
+    required this.label,
+    required this.onPressed,
+    this.enabled = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -628,13 +700,74 @@ class _DeliverHereButton extends StatelessWidget {
         width: double.infinity,
         height: 50,
         child: FilledButton(
-          onPressed: onPressed,
+          onPressed: enabled ? onPressed : null,
           style: BStoreButtons.filled(radius: 10),
           child: Text(
             label,
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Inline empty / error state for the saved-address list.
+class _AddressNotice extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String body;
+  final String? actionLabel;
+  final Future<void> Function()? onAction;
+
+  const _AddressNotice({
+    required this.icon,
+    required this.title,
+    required this.body,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.fromLTRB(16, 22, 16, 20),
+      decoration: BStoreDecorations.card(radius: 16),
+      child: Column(
+        children: [
+          Icon(icon, color: BStoreColors.primary, size: 34),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: BStoreColors.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            body,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: BStoreColors.textMuted,
+              fontSize: 12.5,
+              height: 1.35,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (actionLabel != null && onAction != null) ...[
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: () => onAction!(),
+              icon: const Icon(LucideIcons.refreshCw, size: 16),
+              label: Text(actionLabel!),
+              style: BStoreButtons.outlined(),
+            ),
+          ],
+        ],
       ),
     );
   }
