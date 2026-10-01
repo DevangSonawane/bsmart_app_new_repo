@@ -18,6 +18,7 @@ import 'store_role_switch_sheet.dart';
 import 'store_theme.dart';
 import 'store_saved_address_page.dart';
 import 'store_floating_cart_button.dart';
+import 'store_models.dart';
 import 'store_wishlist.dart';
 import 'store_wishlist_screen.dart';
 import 'visitor_store_cart_page.dart';
@@ -185,7 +186,19 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     setState(() => _refreshTick++);
     final navItems = _navItems;
     final selectedIndex = _selectedNav.clamp(0, navItems.length - 1);
-    if (navItems[selectedIndex].section == _StoreNavSection.wishlist) {
+    final section = navItems[selectedIndex].section;
+    if (!widget.isSelfStore && section == _StoreNavSection.store) {
+      await Future.wait([
+        StoreMockState.instance.refreshMarketplace(),
+        StoreMockState.instance.refreshCart(),
+      ]);
+      return;
+    }
+    if (!widget.isSelfStore && section == _StoreNavSection.cart) {
+      await StoreMockState.instance.refreshCart();
+      return;
+    }
+    if (section == _StoreNavSection.wishlist) {
       await WishlistState.instance.refresh();
     }
     await Future<void>.delayed(const Duration(milliseconds: 350));
@@ -222,22 +235,19 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                       color: BStoreColors.primary,
                       onRefresh: _refreshStorePage,
                       child: CustomScrollView(
-                        key: ValueKey(
-                            '${selectedItem.section}-$_refreshTick'),
+                        key: ValueKey('${selectedItem.section}-$_refreshTick'),
                         physics: const AlwaysScrollableScrollPhysics(
                           parent: BouncingScrollPhysics(),
                         ),
                         slivers: [
-                          if (!usesCustomSelfHeader &&
-                              !usesCustomVisitorHeader)
+                          if (!usesCustomSelfHeader && !usesCustomVisitorHeader)
                             _StoreHeader(
                               isSelfStore: widget.isSelfStore,
                               activeLabel: selectedItem.label,
                               ownerUserId: widget.ownerUserId,
                             ),
                           _buildSection(selectedItem.section),
-                          const SliverToBoxAdapter(
-                              child: SizedBox(height: 22)),
+                          const SliverToBoxAdapter(child: SizedBox(height: 22)),
                         ],
                       ),
                     ),
@@ -245,8 +255,10 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                   _StoreFooterNav(
                     items: navItems,
                     selectedIndex: selectedIndex,
-                    onSelected: (index) =>
-                        setState(() => _selectedNav = index),
+                    onSelected: (index) {
+                      if (index == _selectedNav) return;
+                      setState(() => _selectedNav = index);
+                    },
                   ),
                 ],
               ),
@@ -259,7 +271,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                     onTap: () {
                       final index = navItems.indexWhere(
                           (item) => item.section == _StoreNavSection.cart);
-                      if (index >= 0) {
+                      if (index >= 0 && index != _selectedNav) {
                         setState(() => _selectedNav = index);
                       }
                     },
@@ -816,12 +828,9 @@ class _HubCounts {
     try {
       final items = await Phase2StoreApi().myProducts();
       return items.where((p) {
-        final status =
-            p['status']?.toString().toLowerCase() ?? 'active';
+        final status = p['status']?.toString().toLowerCase() ?? 'active';
         final stock = p['stock_quantity'];
-        final qty = stock is num
-            ? stock.toInt()
-            : int.tryParse('$stock') ?? 1;
+        final qty = stock is num ? stock.toInt() : int.tryParse('$stock') ?? 1;
         return status != 'draft' && qty > 0;
       }).length;
     } catch (_) {
@@ -832,9 +841,7 @@ class _HubCounts {
   static Future<int> services() async {
     try {
       final items = await Phase2StoreApi().myServices();
-      return items
-          .where((s) => s['visible_to_customers'] != false)
-          .length;
+      return items.where((s) => s['visible_to_customers'] != false).length;
     } catch (_) {
       return 0;
     }
@@ -845,9 +852,7 @@ class _HubCounts {
       final items = await Phase2StoreApi().sellerServiceBookings();
       return items.where((b) {
         final status = b['status']?.toString().toLowerCase() ?? '';
-        return status == 'pending' ||
-            status == 'confirmed' ||
-            status == 'paid';
+        return status == 'pending' || status == 'confirmed' || status == 'paid';
       }).length;
     } catch (_) {
       return 0;
@@ -855,7 +860,8 @@ class _HubCounts {
   }
 }
 
-class _VisitorProductSection extends StatelessWidget {  const _VisitorProductSection();
+class _VisitorProductSection extends StatelessWidget {
+  const _VisitorProductSection();
 
   @override
   Widget build(BuildContext context) {
@@ -990,7 +996,7 @@ class _ProfileSectionState extends State<_ProfileSection> {
         const SizedBox(height: 12),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child:             _StoreProfileMenu(
+          child: _StoreProfileMenu(
             items: [
               _StoreProfileMenuItem(
                 icon: LucideIcons.repeat,

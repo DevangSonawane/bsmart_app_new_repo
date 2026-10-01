@@ -201,6 +201,8 @@ class StoreMockState extends ChangeNotifier {
   List<StoreMockCatalogItem> _catalog = [];
   bool _catalogLoading = false;
   bool _cartLoading = false;
+  DateTime? _catalogLoadedAt;
+  DateTime? _cartLoadedAt;
   Object? _lastError;
 
   bool get catalogLoading => _catalogLoading;
@@ -296,8 +298,7 @@ class StoreMockState extends ChangeNotifier {
     }
     notifyListeners();
     if (item.type == StoreMockItemType.product) {
-      unawaited(_syncAddCartItem(
-          item.id, quantity.clamp(1, 99),
+      unawaited(_syncAddCartItem(item.id, quantity.clamp(1, 99),
           variant: cleanVariant));
     }
   }
@@ -377,6 +378,34 @@ class StoreMockState extends ChangeNotifier {
 
   String money(double amount) => '₹${amount.toStringAsFixed(2)}';
 
+  bool _isFresh(DateTime? loadedAt, Duration maxAge) {
+    if (loadedAt == null) return false;
+    return DateTime.now().difference(loadedAt) < maxAge;
+  }
+
+  Future<void> ensureMarketplace({
+    String? query,
+    String? category,
+    Duration maxAge = const Duration(seconds: 45),
+  }) {
+    if (_catalogLoading ||
+        _isFresh(_catalogLoadedAt, maxAge) &&
+            (query == null || query.isEmpty) &&
+            (category == null || category.isEmpty)) {
+      return Future.value();
+    }
+    return refreshMarketplace(query: query, category: category);
+  }
+
+  Future<void> ensureCart({
+    Duration maxAge = const Duration(seconds: 45),
+  }) {
+    if (_cartLoading || _isFresh(_cartLoadedAt, maxAge)) {
+      return Future.value();
+    }
+    return refreshCart();
+  }
+
   /// Loads the live marketplace. On success the catalog reflects the
   /// server exactly (possibly empty); on failure the previous content
   /// stays and [lastError] is set for retry UI.
@@ -395,6 +424,7 @@ class StoreMockState extends ChangeNotifier {
       _catalog = <StoreMockCatalogItem>[...products, ...services]
           .where((item) => item.id.trim().isNotEmpty)
           .toList();
+      _catalogLoadedAt = DateTime.now();
       _lastError = null;
     } catch (e) {
       _lastError = e;
@@ -417,6 +447,7 @@ class StoreMockState extends ChangeNotifier {
           ..clear()
           ..addAll(items);
       }
+      _cartLoadedAt = DateTime.now();
     } catch (e) {
       _lastError = e;
     } finally {
@@ -517,15 +548,13 @@ class StoreMockState extends ChangeNotifier {
 
   Future<Map<String, dynamic>> advanceOrderStatus(
       String orderId, String status) async {
-    final res =
-        await _api.updateOrderStatus(orderId: orderId, status: status);
+    final res = await _api.updateOrderStatus(orderId: orderId, status: status);
     unawaited(refreshSellerOrders());
     return res;
   }
 
   // ── Service bookings (direct booking, no cart per spec) ──
-  Future<Map<String, dynamic>> createBooking(
-      Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> createBooking(Map<String, dynamic> body) async {
     final res = await _api.createServiceBooking(body: body);
     unawaited(refreshBuyerBookings());
     return res;
@@ -598,10 +627,10 @@ class StoreMockState extends ChangeNotifier {
       _text(m, const ['id', '_id', 'booking_id']);
   static String statusOf(Map<String, dynamic> m) =>
       _text(m, const ['status', 'order_status', 'booking_status'],
-          fallback: 'pending')
+              fallback: 'pending')
           .toLowerCase();
-  static double amountOf(Map<String, dynamic> m) =>
-      _number(m, const ['total_amount', 'amount', 'total', 'price', 'paid_amount']);
+  static double amountOf(Map<String, dynamic> m) => _number(
+      m, const ['total_amount', 'amount', 'total', 'price', 'paid_amount']);
 
   Future<void> _syncAddCartItem(String productId, int quantity,
       {Map<String, dynamic>? variant}) async {
@@ -769,8 +798,7 @@ class StoreMockState extends ChangeNotifier {
 
   /// Variant options from a product payload, each with
   /// `color`, `size`, `price`, `stock` strings (may be empty).
-  static List<Map<String, String>> variantsOf(
-      StoreMockCatalogItem item) {
+  static List<Map<String, String>> variantsOf(StoreMockCatalogItem item) {
     final raw = item.raw['variants'];
     if (raw is! List) return const [];
     final out = <Map<String, String>>[];
@@ -784,10 +812,8 @@ class StoreMockState extends ChangeNotifier {
         'color': color,
         'size': size,
         'price': map['price']?.toString().trim() ?? '',
-        'stock': (map['stock_quantity'] ?? map['stock'])
-                ?.toString()
-                .trim() ??
-            '',
+        'stock':
+            (map['stock_quantity'] ?? map['stock'])?.toString().trim() ?? '',
       });
     }
     return out;

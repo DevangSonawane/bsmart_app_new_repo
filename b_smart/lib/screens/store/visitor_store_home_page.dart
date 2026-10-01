@@ -37,8 +37,8 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
     _ownerFuture = _loadOwner();
     StoreMockState.instance.addListener(_handleStoreChanged);
     StoreProfileState.instance.addListener(_handleStoreChanged);
-    unawaited(StoreMockState.instance.refreshMarketplace());
-    unawaited(StoreMockState.instance.refreshCart());
+    unawaited(StoreMockState.instance.ensureMarketplace());
+    unawaited(StoreMockState.instance.ensureCart());
     unawaited(StoreProfileState.instance.ensureLoaded(widget.ownerUserId));
   }
 
@@ -295,8 +295,8 @@ class _SellerHeroCard extends StatelessWidget {
         : (isLoading ? 'Loading store...' : 'Store owner');
     // Prefer the seller's storefront name, then the account display name.
     final name = (profile?.storeName.trim().isNotEmpty == true
-            ? profile!.storeName.trim()
-            : fallbackName);
+        ? profile!.storeName.trim()
+        : fallbackName);
     final storeType = profile?.storeType.trim().isNotEmpty == true
         ? profile!.storeType.trim()
         : 'Personal Store';
@@ -311,8 +311,7 @@ class _SellerHeroCard extends StatelessWidget {
             ? null
             : () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) =>
-                        StoreProfilePage(ownerUserId: ownerUserId),
+                    builder: (_) => StoreProfilePage(ownerUserId: ownerUserId),
                   ),
                 ),
         borderRadius: BorderRadius.circular(16),
@@ -360,9 +359,7 @@ class _SellerHeroCard extends StatelessWidget {
                             color: Color(0xFF078D92), size: 14),
                         const SizedBox(width: 4),
                         Text(
-                          profile == null
-                              ? '—'
-                              : '${profile.productCount}',
+                          profile == null ? '—' : '${profile.productCount}',
                           style: const TextStyle(
                             color: Color(0xFF060D35),
                             fontSize: 11.5,
@@ -1167,8 +1164,8 @@ class _ProductCard extends StatelessWidget {
                   top: 8,
                   left: 8,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.92),
                       borderRadius: BorderRadius.circular(6),
@@ -1360,8 +1357,8 @@ class _VisitorProductGridCard extends StatelessWidget {
                   top: 8,
                   left: 8,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.92),
                       borderRadius: BorderRadius.circular(6),
