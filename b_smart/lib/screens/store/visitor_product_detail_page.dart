@@ -7,6 +7,7 @@ import '../../services/supabase_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
+import 'shared/store_money.dart';
 import 'store_models.dart';
 import 'store_theme.dart';
 import 'store_wishlist.dart';
@@ -84,7 +85,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
         if (matchesColor && matchesSize) {
           final parsed = double.tryParse(v['price'] ?? '');
           if (parsed != null && parsed > 0) {
-            return '₹${parsed == parsed.roundToDouble() ? parsed.toStringAsFixed(0) : parsed.toStringAsFixed(2)}';
+            return formatStoreMoney(parsed);
           }
         }
       }

@@ -130,14 +130,15 @@ void main() {
   });
 
   group('price labels', () {
-    test('whole numbers drop the decimals', () {
+    test('whole numbers drop the decimals but keep thousands separators',
+        () {
       expect(
         StoreMockState.productFromApi({
           'id': 'a',
           'name': 'A',
           'selling_price': 2499,
         }).priceLabel,
-        '₹2499',
+        '₹2,499',
       );
     });
 
@@ -148,7 +149,7 @@ void main() {
           'name': 'A',
           'selling_price': 2499.5,
         }).priceLabel,
-        '₹2499.50',
+        '₹2,499.50',
       );
     });
   });

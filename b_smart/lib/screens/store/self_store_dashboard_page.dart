@@ -7,6 +7,7 @@ import '../../services/wallet_service.dart';
 import 'self_store_products_page.dart';
 import 'self_store_services_manage_page.dart';
 import 'shared/store_shared_widgets.dart';
+import 'shared/store_money.dart';
 import 'store_models.dart';
 import 'store_role_setup_screen.dart';
 import 'store_role_switch_sheet.dart';
@@ -132,7 +133,6 @@ class _SelfStoreDashboardPageState extends State<SelfStoreDashboardPage> {
     return SliverList.list(
       children: [
         const _SelfDashboardHeader(),
-        const _LiveStatusCard(),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
           child: _RevenueCard(dataFuture: _dataFuture),
@@ -373,82 +373,6 @@ class _SelfDashboardHeader extends StatelessWidget {
   }
 }
 
-class _LiveStatusCard extends StatelessWidget {
-  const _LiveStatusCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 62),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: const Color(0xFBF8FFFF),
-          borderRadius: BorderRadius.circular(13),
-          border: Border.all(color: const Color(0xFFD9E4E5)),
-        ),
-        child: Row(
-          children: [
-            const Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.circle,
-                        color: Color(0xFF049844),
-                        size: 9,
-                      ),
-                      SizedBox(width: 8),
-                      Text(
-                        'Live',
-                        style: TextStyle(
-                          color: Color(0xFF00913F),
-                          fontSize: 17,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Text(
-                    'Your store is live and visible to customers.',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Color(0xFF29304D),
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(width: 1, height: 38, color: const Color(0xFFC5D3D8)),
-            const SizedBox(width: 8),
-            const Icon(LucideIcons.eye, color: Color(0xFF078D92), size: 21),
-            const SizedBox(width: 6),
-            const Flexible(
-              child: Text(
-                'View as customer',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Color(0xFF078D92),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class _StatsGrid extends StatelessWidget {
   final Future<_DashboardData> dataFuture;
@@ -511,7 +435,7 @@ class _RevenueCard extends StatelessWidget {
   const _RevenueCard({required this.dataFuture});
 
   static String _money(double amount) =>
-      '₹${amount.toStringAsFixed(amount == amount.roundToDouble() ? 0 : 2)}';
+      formatStoreMoney(amount);
 
   @override
   Widget build(BuildContext context) {
@@ -601,7 +525,7 @@ class _RevenueCard extends StatelessWidget {
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.centerLeft,
                             child: Text(
-                              '₹${data.walletCoins}',
+                              formatStoreMoney(data.walletCoins.toDouble(), decimals: 0),
                               style: const TextStyle(
                                 color: Color(0xFF078D92),
                                 fontSize: 31,

@@ -7,6 +7,7 @@ import '../../api/api_client.dart';
 import '../../services/supabase_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
+import 'shared/store_money.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_models.dart';
 import 'store_profile_page.dart';
@@ -634,25 +635,113 @@ class _StoreItemsContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = StoreMockState.instance;
+    final products = _ownedItems(store.products);
+    final services = _ownedItems(store.services);
+    final catalog = <StoreMockCatalogItem>[...products, ...services];
     return switch (filter) {
       _VisitorStoreFilter.services =>
-        _VisitorServiceList(ownerUserId: ownerUserId, services: store.services),
+        _VisitorServiceList(ownerUserId: ownerUserId, services: services),
       _VisitorStoreFilter.products =>
-        _VisitorProductList(ownerUserId: ownerUserId, products: store.products),
-      _VisitorStoreFilter.all => _StoreItemsGrid(
-          children: [
-            if (store.services.isNotEmpty)
-              _ServiceFeatureCard(
-                ownerUserId: ownerUserId,
-                service: store.services.first,
-              ),
-            for (final item in StoreMockState.catalog.skip(1).take(7))
-              item.type == StoreMockItemType.service
-                  ? _ServiceFeatureCard(ownerUserId: ownerUserId, service: item)
-                  : _ProductCard(item: item, ownerUserId: ownerUserId),
-          ],
-        ),
+        _VisitorProductList(ownerUserId: ownerUserId, products: products),
+      _VisitorStoreFilter.all => catalog.isEmpty
+          ? const StoreEmptyState(
+              icon: LucideIcons.store,
+              title: 'No listings yet',
+              body: 'This store has not published products or services yet.',
+            )
+          : _StoreItemsGrid(
+              children: [
+                if (services.isNotEmpty)
+                  _ServiceFeatureCard(
+                    ownerUserId: ownerUserId,
+                    service: services.first,
+                  ),
+                for (final item in catalog
+                    .where((item) =>
+                        services.isEmpty || item.id != services.first.id)
+                    .take(7))
+                  item.type == StoreMockItemType.service
+                      ? _ServiceFeatureCard(
+                          ownerUserId: ownerUserId,
+                          service: item,
+                        )
+                      : _ProductCard(item: item, ownerUserId: ownerUserId),
+              ],
+            ),
     };
+  }
+
+  List<StoreMockCatalogItem> _ownedItems(List<StoreMockCatalogItem> items) {
+    final ownerId = ownerUserId?.trim();
+    if (ownerId == null || ownerId.isEmpty) return items;
+    return items.where((item) => _belongsToOwner(item.raw, ownerId)).toList();
+  }
+
+  static bool _belongsToOwner(Map<String, dynamic> item, String ownerId) {
+    final expected = _normaliseId(ownerId);
+    if (expected.isEmpty) return false;
+
+    for (final key in const [
+      'influencer_id',
+      'influencerId',
+      'user_id',
+      'userId',
+      'owner_id',
+      'ownerId',
+      'seller_id',
+      'sellerId',
+      'created_by',
+      'createdBy',
+      'created_by_id',
+      'createdById',
+      'provider_id',
+      'providerId',
+      'vendor_id',
+      'vendorId',
+    ]) {
+      if (_valueMatchesOwner(item[key], expected)) return true;
+    }
+
+    for (final key in const [
+      'influencer',
+      'owner',
+      'seller',
+      'user',
+      'created_by',
+      'createdBy',
+      'creator',
+      'provider',
+      'vendor',
+    ]) {
+      if (_valueMatchesOwner(item[key], expected)) return true;
+    }
+    return false;
+  }
+
+  static bool _valueMatchesOwner(dynamic value, String expected) {
+    if (value is Map) {
+      final map = value.map((k, v) => MapEntry(k.toString(), v));
+      for (final key in const [
+        'id',
+        '_id',
+        'user_id',
+        'userId',
+        'owner_id',
+        'ownerId',
+        'seller_id',
+        'sellerId',
+      ]) {
+        if (_normaliseId(map[key]?.toString()) == expected) return true;
+      }
+      return false;
+    }
+    return _normaliseId(value?.toString()) == expected;
+  }
+
+  static String _normaliseId(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty || text == 'null') return '';
+    return text.toLowerCase();
   }
 }
 
@@ -754,30 +843,6 @@ class _VisitorServiceCard extends StatelessWidget {
                 Positioned.fill(
                   child: _CatalogImage(item: service, height: 158),
                 ),
-                Positioned(
-                  top: 8,
-                  left: 8,
-                  child: Container(
-                    width: 31,
-                    height: 31,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.94),
-                      borderRadius: BorderRadius.circular(7),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      service.icon,
-                      color: const Color(0xFF078D92),
-                      size: 18,
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
@@ -870,7 +935,7 @@ class _VisitorServiceCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        service.priceLabel,
+                        formatCompactStoreMoney(service.price),
                         style: const TextStyle(
                           color: Color(0xFF078D92),
                           fontSize: 14,
@@ -981,39 +1046,6 @@ class _ServiceFeatureCard extends StatelessWidget {
           Stack(
             children: [
               _CatalogImage(item: service, height: 160),
-              Positioned(
-                top: 10,
-                left: 10,
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(7),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    service.icon,
-                    color: const Color(0xFF078D92),
-                    size: 21,
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 10,
-                right: 10,
-                child: WishlistHeartButton(
-                  productId: service.id,
-                  size: 32,
-                  iconSize: 17,
-                ),
-              ),
             ],
           ),
           Padding(
@@ -1049,15 +1081,19 @@ class _ServiceFeatureCard extends StatelessWidget {
                     const Icon(LucideIcons.clock3,
                         color: Color(0xFF29304D), size: 14),
                     const SizedBox(width: 5),
-                    Text(
-                      service.duration,
-                      style: const TextStyle(
-                        color: Color(0xFF29304D),
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
+                    Flexible(
+                      child: Text(
+                        service.duration,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF29304D),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     const Text(
                       'From ',
                       style: TextStyle(
@@ -1067,7 +1103,7 @@ class _ServiceFeatureCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      service.priceLabel,
+                      formatCompactStoreMoney(service.price),
                       style: const TextStyle(
                         color: Color(0xFF078D92),
                         fontSize: 16,
@@ -1162,26 +1198,6 @@ class _ProductCard extends StatelessWidget {
                 _CatalogImage(item: item, height: 108),
                 Positioned(
                   top: 8,
-                  left: 8,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Text(
-                      'WISHLIST',
-                      style: TextStyle(
-                        color: BStoreColors.textSecondary,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 8,
                   right: 8,
                   child: WishlistHeartButton(productId: item.id),
                 ),
@@ -1204,7 +1220,7 @@ class _ProductCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    item.priceLabel,
+                    formatCompactStoreMoney(item.price),
                     style: const TextStyle(
                       color: Color(0xFF078D92),
                       fontSize: 15,
@@ -1355,26 +1371,6 @@ class _VisitorProductGridCard extends StatelessWidget {
                 _CatalogImage(item: item, height: 132),
                 Positioned(
                   top: 8,
-                  left: 8,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Text(
-                      'WISHLIST',
-                      style: TextStyle(
-                        color: BStoreColors.textSecondary,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 8,
                   right: 8,
                   child: WishlistHeartButton(productId: item.id),
                 ),
@@ -1398,7 +1394,7 @@ class _VisitorProductGridCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    item.priceLabel,
+                    formatCompactStoreMoney(item.price),
                     style: const TextStyle(
                       color: Color(0xFF078D92),
                       fontSize: 15.5,

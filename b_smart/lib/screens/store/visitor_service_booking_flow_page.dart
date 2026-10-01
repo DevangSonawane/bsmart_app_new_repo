@@ -9,6 +9,7 @@ import '../../services/wallet_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
+import 'shared/store_money.dart';
 import 'store_address_book.dart';
 import 'store_models.dart';
 import 'store_saved_address_page.dart';
@@ -1131,7 +1132,7 @@ class _SubservicePicker extends StatelessWidget {
                   ? Text(
                       [
                         if ((sub['price'] ?? '').isNotEmpty)
-                          '₹${sub['price']}',
+                          _formatSubPrice(sub['price']),
                         if ((sub['hours'] ?? '').isNotEmpty)
                           '${sub['hours']}h',
                       ].join(' · '),
@@ -2200,4 +2201,15 @@ class _ButtonLabel extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Formats a subservice price that arrives from the API as a string, a num, or
+/// an already-grouped value. Anything unparseable is shown verbatim rather than
+/// mangled into `₹0`.
+String _formatSubPrice(dynamic raw) {
+  final text = raw?.toString().trim() ?? '';
+  if (text.isEmpty) return '';
+  final parsed = num.tryParse(text);
+  if (parsed == null) return '₹$text';
+  return formatStoreMoney(parsed.toDouble());
 }

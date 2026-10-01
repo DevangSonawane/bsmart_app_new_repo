@@ -405,7 +405,7 @@ class StoreItemImage extends StatelessWidget {
       height: height ?? double.infinity,
       fit: fit,
       debugLabel: debugLabel,
-      errorWidget: Icon(icon, color: BStoreColors.primary, size: 30),
+      errorWidget: placeholder,
     );
     if (borderRadius <= 0) return image;
     return ClipRRect(
@@ -480,6 +480,135 @@ class StoreOrderNumberText extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The seller-side "Add ..." call to action.
+///
+/// Shared by the My Products and My Services screens so the two entry points
+/// are visually identical; they previously differed in shape (pill vs circle),
+/// icon size and label styling.
+class StoreAddCtaButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onTap;
+
+  const StoreAddCtaButton({
+    super.key,
+    required this.label,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: FilledButton.icon(
+        onPressed: onTap,
+        icon: const Icon(LucideIcons.plus, size: 20),
+        label: Text(
+          label,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
+        ),
+        style: FilledButton.styleFrom(
+          backgroundColor: BStoreColors.primary,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          elevation: 8,
+          shadowColor: BStoreColors.primary.withValues(alpha: 0.24),
+        ),
+      ),
+    );
+  }
+}
+
+/// Underlined status tab row used by My Products and My Services.
+///
+/// The active indicator is positioned with an explicit left offset inside a
+/// [LayoutBuilder]. An earlier version used a `FractionallySizedBox` whose
+/// `alignment` looked correct but could not work: FSB sizes *itself* to
+/// `widthFactor * maxWidth` and then aligns the child inside that shrunken
+/// box, so the underline never left the leftmost segment.
+class StoreUnderlineTabs extends StatelessWidget {
+  final List<String> tabs;
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  /// Colour of the active label and underline.
+  final Color activeColor;
+
+  /// Colour of an inactive label.
+  final Color inactiveColor;
+
+  const StoreUnderlineTabs({
+    super.key,
+    required this.tabs,
+    required this.selectedIndex,
+    required this.onSelected,
+    this.activeColor = BStoreColors.primary,
+    this.inactiveColor = const Color(0xFF29304D),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (tabs.isEmpty) return const SizedBox.shrink();
+    final safeIndex = selectedIndex.clamp(0, tabs.length - 1);
+    return Column(
+      children: [
+        Row(
+          children: [
+            for (var i = 0; i < tabs.length; i++)
+              Expanded(
+                child: InkWell(
+                  onTap: () => onSelected(i),
+                  child: SizedBox(
+                    height: 35,
+                    child: Center(
+                      child: Text(
+                        tabs[i],
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: i == safeIndex ? activeColor : inactiveColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final tabWidth = constraints.maxWidth / tabs.length;
+            return SizedBox(
+              height: 2,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: Container(color: const Color(0xFFE1E5EA)),
+                  ),
+                  AnimatedPositioned(
+                    key: const ValueKey('store-underline-indicator'),
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    left: tabWidth * safeIndex,
+                    top: 0,
+                    bottom: 0,
+                    width: tabWidth,
+                    child: Container(color: activeColor),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 }

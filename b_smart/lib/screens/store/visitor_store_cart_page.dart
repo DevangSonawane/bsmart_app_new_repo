@@ -6,6 +6,7 @@ import '../../services/supabase_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
+import 'shared/store_money.dart';
 import 'store_bcoins_page.dart';
 import 'store_models.dart';
 import 'store_theme.dart';
@@ -115,7 +116,7 @@ class _VisitorStoreCartPageState extends State<VisitorStoreCartPage> {
 
   double get _subtotal => StoreMockState.instance.subtotal;
 
-  String _money(double amount) => '₹${amount.toStringAsFixed(2)}';
+  String _money(double amount) => formatStoreMoney(amount, decimals: 2);
 
   void _handleCartChanged() {
     final subtotal = StoreMockState.instance.subtotal;
@@ -810,7 +811,7 @@ class _BCoinsCard extends StatelessWidget {
                       ),
                       if (hasApplied)
                         TextSpan(
-                          text: ' (-\$${savings.toStringAsFixed(2)})',
+                          text: ' (${formatStoreMoney(-savings, decimals: 2)})',
                         ),
                     ],
                   ),
@@ -868,7 +869,7 @@ class _CartTotalsCard extends StatelessWidget {
               const SizedBox(height: 10),
               _TotalRow(
                 label: 'bCoins savings',
-                value: '-₹${savings.toStringAsFixed(2)}',
+                value: formatStoreMoney(-savings, decimals: 2),
                 valueColor: BStoreColors.primary,
               ),
             ],

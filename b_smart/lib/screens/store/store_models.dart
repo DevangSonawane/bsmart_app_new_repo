@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api/phase2_store_api.dart';
 import '../../utils/url_helper.dart';
+import 'shared/store_money.dart';
 
 class StoreCategory {
   final String label;
@@ -55,10 +56,7 @@ class StoreMockCatalogItem {
     this.raw = const {},
   });
 
-  String get priceLabel {
-    final whole = price == price.roundToDouble();
-    return '₹${whole ? price.toStringAsFixed(0) : price.toStringAsFixed(2)}';
-  }
+  String get priceLabel => formatStoreMoney(price);
 
   StoreMockCatalogItem copyWith({
     String? id,
@@ -376,7 +374,7 @@ class StoreMockState extends ChangeNotifier {
     unawaited(_syncRemoveCartItem(itemId));
   }
 
-  String money(double amount) => '₹${amount.toStringAsFixed(2)}';
+  String money(double amount) => formatStoreMoney(amount, decimals: 2);
 
   bool _isFresh(DateTime? loadedAt, Duration maxAge) {
     if (loadedAt == null) return false;
@@ -678,7 +676,7 @@ class StoreMockState extends ChangeNotifier {
         json,
         const ['short_description', 'description', 'subtitle'],
       ),
-      imageUrl: _firstImage(json),
+      imageUrl: firstImageUrl(json),
       icon: _iconForCategory(category),
       price: _number(json, const [
         'selling_price',
@@ -706,7 +704,7 @@ class StoreMockState extends ChangeNotifier {
         json,
         const ['short_description', 'description', 'subtitle'],
       ),
-      imageUrl: _firstImage(json),
+      imageUrl: firstImageUrl(json),
       icon: _iconForCategory(category),
       price: _number(json, const ['price', 'selling_price', 'amount']),
       duration: _text(json, const ['duration'], fallback: '1 hour'),
@@ -858,7 +856,13 @@ class StoreMockState extends ChangeNotifier {
     return 0;
   }
 
-  static String _firstImage(Map<String, dynamic> json) {
+  /// Resolves the first displayable image URL from an API item.
+  ///
+  /// Public because the seller manage screens parse the same payload and must
+  /// not re-implement the key order: the influencer upload endpoints return
+  /// `{fileName, fileUrl}`, so `fileUrl` has to win over the bare `fileName`,
+  /// which is a filename and not a URL.
+  static String firstImageUrl(Map<String, dynamic> json) {
     // The influencer upload endpoints return `{fileName, fileUrl}`, so
     // `fileUrl` must be tried before the bare `fileName` (which is not a URL).
     for (final key in const ['images', 'image_urls', 'media']) {

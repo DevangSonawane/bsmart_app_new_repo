@@ -7,13 +7,13 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../api/phase2_store_api.dart';
 import '../../api/upload_api.dart';
 import '../../utils/current_user.dart';
-import '../../utils/url_helper.dart';
 import 'self_store_availability_page.dart';
 import 'shared/store_image_editor.dart';
 import 'store_models.dart';
 import 'store_role_setup_screen.dart';
 import 'store_theme.dart';
 import 'shared/store_shared_widgets.dart';
+import 'shared/store_money.dart';
 
 class SelfStoreServicesManageScreen extends StatefulWidget {
   const SelfStoreServicesManageScreen({super.key});
@@ -191,7 +191,8 @@ class _SelfStoreServicesManagePageState
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
-          child: _ServiceTabs(
+          child: StoreUnderlineTabs(
+            tabs: const ['Published', 'Drafts'],
             selectedIndex: _selectedTab,
             onSelected: (index) => setState(() => _selectedTab = index),
           ),
@@ -248,7 +249,8 @@ class _SelfStoreServicesManagePageState
           padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
           child: Align(
             alignment: Alignment.centerRight,
-            child: _AddServiceButton(
+            child: StoreAddCtaButton(
+              label: 'Add Service',
               onTap: () async {
                 if (!await StoreRoleGate.ensureInfluencer(context)) return;
                 if (!context.mounted) return;
@@ -298,66 +300,6 @@ class _ServicesHeader extends StatelessWidget {
   }
 }
 
-class _ServiceTabs extends StatelessWidget {
-  final int selectedIndex;
-  final ValueChanged<int> onSelected;
-
-  const _ServiceTabs({
-    required this.selectedIndex,
-    required this.onSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const tabs = ['Published', 'Drafts'];
-    return Column(
-      children: [
-        Row(
-          children: [
-            for (var i = 0; i < tabs.length; i++)
-              Expanded(
-                child: InkWell(
-                  onTap: () => onSelected(i),
-                  child: SizedBox(
-                    height: 35,
-                    child: Center(
-                      child: Text(
-                        tabs[i],
-                        style: TextStyle(
-                          color: i == selectedIndex
-                              ? const Color(0xFF060D35)
-                              : const Color(0xFF29304D),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        Stack(
-          children: [
-            const Divider(height: 1, color: Color(0xFFE1E5EA)),
-            FractionallySizedBox(
-              widthFactor: 1 / tabs.length,
-              alignment: Alignment(-1.0 + (2.0 * selectedIndex), 0),
-              child: Container(
-                height: 2,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF078D92),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
 class _ManageServiceCard extends StatelessWidget {
   final String imageUrl;
   final String title;
@@ -394,8 +336,7 @@ class _ManageServiceCard extends StatelessWidget {
       imageUrl: _serviceImageUrl(service),
       title:
           _serviceText(service, const ['name', 'title'], fallback: 'Service'),
-      price:
-          '₹${price.toStringAsFixed(price == price.roundToDouble() ? 0 : 2)}$suffix',
+      price: '${formatCompactStoreMoney(price)}$suffix',
       // The API has returned the id under several keys across
       // deployments; missing it disables Edit/Delete, so check them all.
       serviceId: _serviceText(service, const [
@@ -541,9 +482,8 @@ class _ManageServiceCard extends StatelessWidget {
       builder: (sheetContext) {
         // viewPadding covers the Android 3-button nav bar / iPhone home
         // indicator so the Save button is never hidden behind system UI.
-        final bottomPad =
-            MediaQuery.of(sheetContext).viewInsets.bottom +
-                MediaQuery.of(sheetContext).viewPadding.bottom;
+        final bottomPad = MediaQuery.of(sheetContext).viewInsets.bottom +
+            MediaQuery.of(sheetContext).viewPadding.bottom;
         return Theme(
           data: BStoreTheme.data(sheetContext),
           child: StatefulBuilder(
@@ -586,8 +526,8 @@ class _ManageServiceCard extends StatelessWidget {
                             fontWeight: FontWeight.w700)),
                     value: visible,
                     activeThumbColor: Colors.white,
-                    activeTrackColor: const Color(0xFF078D92)
-                        .withValues(alpha: 0.55),
+                    activeTrackColor:
+                        const Color(0xFF078D92).withValues(alpha: 0.55),
                     inactiveThumbColor: Colors.white,
                     inactiveTrackColor: const Color(0xFFD5DEE4),
                     onChanged: (v) => setSheetState(() => visible = v),
@@ -625,8 +565,7 @@ class _ManageServiceCard extends StatelessWidget {
                       label: const Text('Edit weekly availability'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFF078D92),
-                        side: const BorderSide(
-                            color: Color(0xFF078D92)),
+                        side: const BorderSide(color: Color(0xFF078D92)),
                       ),
                     ),
                   ),
@@ -635,8 +574,7 @@ class _ManageServiceCard extends StatelessWidget {
                     width: double.infinity,
                     height: 48,
                     child: FilledButton(
-                      onPressed: () =>
-                          Navigator.of(innerContext).pop('save'),
+                      onPressed: () => Navigator.of(innerContext).pop('save'),
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xFF078D92),
                         foregroundColor: Colors.white,
@@ -746,46 +684,6 @@ class _VisibleBadge extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _AddServiceButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _AddServiceButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          width: 52,
-          height: 52,
-          child: FilledButton(
-            onPressed: onTap,
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF078D92),
-              foregroundColor: Colors.white,
-              padding: EdgeInsets.zero,
-              shape: const CircleBorder(),
-              elevation: 8,
-              shadowColor: const Color(0xFF078D92).withValues(alpha: 0.24),
-            ),
-            child: const Icon(LucideIcons.plus, size: 27),
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Add Service',
-          style: TextStyle(
-            color: Color(0xFF078D92),
-            fontSize: 10.5,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ],
     );
   }
 }
@@ -1820,7 +1718,8 @@ InputDecoration _editDecoration(String label) {
   );
 }
 
-double _serviceNumber(Map<String, dynamic> json, List<String> keys) {  for (final key in keys) {
+double _serviceNumber(Map<String, dynamic> json, List<String> keys) {
+  for (final key in keys) {
     final value = json[key];
     if (value is num) return value.toDouble();
     if (value is String) {
@@ -1843,19 +1742,11 @@ String _serviceText(
   return fallback;
 }
 
-String _serviceImageUrl(Map<String, dynamic> json) {
-  final images = json['images'];
-  dynamic first;
-  if (images is List && images.isNotEmpty) first = images.first;
-  if (first is Map) {
-    return UrlHelper.absoluteUrl(_serviceText(
-      first.map((key, value) => MapEntry(key.toString(), value)),
-      const ['url', 'fileName', 'filename', 'path', 'src'],
-    ));
-  }
-  if (first is String) return UrlHelper.absoluteUrl(first);
-  return '';
-}
+/// Seller-owned services carry `images: [{fileUrl, fileName}]` from the
+/// influencer upload endpoint, so reuse the catalog resolver instead of
+/// guessing key order here.
+String _serviceImageUrl(Map<String, dynamic> json) =>
+    StoreMockState.firstImageUrl(json);
 
 String _rateTypeFor(String rateUnit) {
   return switch (rateUnit) {

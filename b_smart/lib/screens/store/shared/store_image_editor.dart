@@ -40,9 +40,24 @@ class StoreImageEditor extends StatefulWidget {
   }
 
   static String thumbUrl(Map<String, dynamic> entry) {
-    for (final key in ['url', 'fileName', 'filename', 'path', 'src']) {
+    // Key order matters: the influencer upload endpoints return
+    // `{fileName, fileUrl}`, and `fileName` is a bare filename rather than a
+    // URL. Preferring it produced thumbs that resolved to nothing.
+    for (final key in const [
+      'fileUrl',
+      'file_url',
+      'url',
+      'image_url',
+      'imageUrl',
+      'src',
+      'path',
+      'fileName',
+      'filename',
+    ]) {
       final value = entry[key]?.toString().trim() ?? '';
-      if (value.isNotEmpty) return UrlHelper.absoluteUrl(value);
+      if (value.isEmpty) continue;
+      final resolved = UrlHelper.absoluteUrl(value);
+      if (resolved.isNotEmpty) return resolved;
     }
     return '';
   }

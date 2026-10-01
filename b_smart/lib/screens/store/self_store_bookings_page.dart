@@ -142,22 +142,11 @@ class _SelfStoreBookingsPageState extends State<SelfStoreBookingsPage> {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 22, 18, 0),
-              child: Row(
-                children: [
-                  for (final tab in _BookingTab.values)
-                    Expanded(
-                      child: _BookingsTab(
-                        label: switch (tab) {
-                          _BookingTab.incoming => 'New',
-                          _BookingTab.inProgress => 'In progress',
-                          _BookingTab.completed => 'Completed',
-                          _BookingTab.cancelled => 'Cancelled',
-                        },
-                        selected: _tab == tab,
-                        onTap: () => setState(() => _tab = tab),
-                      ),
-                    ),
-                ],
+              child: StoreUnderlineTabs(
+                tabs: const ['New', 'In progress', 'Completed', 'Cancelled'],
+                selectedIndex: _BookingTab.values.indexOf(_tab),
+                onSelected: (index) =>
+                    setState(() => _tab = _BookingTab.values[index]),
               ),
             ),
             if (loading)
@@ -270,54 +259,6 @@ class _SellerBooking {
       status: StoreMockState.statusOf(m).isEmpty
           ? 'pending'
           : StoreMockState.statusOf(m),
-    );
-  }
-}
-
-class _BookingsTab extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _BookingsTab({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: selected ? null : onTap,
-      child: SizedBox(
-        height: 34,
-        child: Column(
-          children: [
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: selected
-                    ? const Color(0xFF078D92)
-                    : const Color(0xFF060D35),
-                fontSize: 11,
-                fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
-              ),
-            ),
-            const Spacer(),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              height: 2,
-              width: selected ? 42 : 0,
-              decoration: BoxDecoration(
-                color: const Color(0xFF078D92),
-                borderRadius: BorderRadius.circular(20),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

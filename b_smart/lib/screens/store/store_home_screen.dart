@@ -530,20 +530,7 @@ class _SelfStoreHubSection extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 12),
-        _SelfStoreHubCard(
-          icon: LucideIcons.calendarCheck,
-          title: 'Service bookings',
-          subtitle: 'Confirm incoming bookings and track progress.',
-          countFuture: _HubCounts.bookings(),
-          countSuffix: 'new',
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => const SelfStoreBookingsScreen(),
-            ),
-          ),
-        ),
-      ],
+        ],
     );
   }
 }
@@ -847,18 +834,7 @@ class _HubCounts {
     }
   }
 
-  static Future<int> bookings() async {
-    try {
-      final items = await Phase2StoreApi().sellerServiceBookings();
-      return items.where((b) {
-        final status = b['status']?.toString().toLowerCase() ?? '';
-        return status == 'pending' || status == 'confirmed' || status == 'paid';
-      }).length;
-    } catch (_) {
-      return 0;
-    }
   }
-}
 
 class _VisitorProductSection extends StatelessWidget {
   const _VisitorProductSection();

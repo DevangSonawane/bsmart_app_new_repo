@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../services/wallet_service.dart';
 import 'shared/store_shared_widgets.dart';
+import 'shared/store_money.dart';
 import 'store_theme.dart';
 
 class StoreBCoinsResult {
@@ -60,7 +61,7 @@ class _StoreBCoinsPageState extends State<StoreBCoinsPage> {
 
   double _savingsFor(int coins) => coins * _coinValue;
 
-  String _money(double amount) => '₹${amount.toStringAsFixed(2)}';
+  String _money(double amount) => formatStoreMoney(amount, decimals: 2);
 
   String _coins(int amount) {
     final text = amount.toString();

@@ -9,12 +9,12 @@ import '../../api/api_client.dart';
 import '../../api/phase2_store_api.dart';
 import '../../api/upload_api.dart';
 import '../../utils/current_user.dart';
-import '../../utils/url_helper.dart';
 import 'store_models.dart';
 import 'store_role_setup_screen.dart';
 import 'store_theme.dart';
 import 'shared/store_image_editor.dart';
 import 'shared/store_shared_widgets.dart';
+import 'shared/store_money.dart';
 
 class SelfStoreProductsPage extends StatefulWidget {
   const SelfStoreProductsPage({super.key});
@@ -151,7 +151,7 @@ class _SelfStoreProductsPageState extends State<SelfStoreProductsPage> {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
-          child: _ProductTabs(
+          child: StoreUnderlineTabs(
             tabs: _tabs,
             selectedIndex: _selectedTab,
             onSelected: (index) => setState(() => _selectedTab = index),
@@ -213,7 +213,8 @@ class _SelfStoreProductsPageState extends State<SelfStoreProductsPage> {
           padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
           child: Align(
             alignment: Alignment.centerRight,
-            child: _AddProductButton(
+            child: StoreAddCtaButton(
+              label: 'Add Product',
               onTap: () async {
                 if (!await StoreRoleGate.ensureInfluencer(context)) return;
                 if (!context.mounted) return;
@@ -286,70 +287,6 @@ class _NotificationBell extends StatelessWidget {
   }
 }
 
-class _ProductTabs extends StatelessWidget {
-  final List<String> tabs;
-  final int selectedIndex;
-  final ValueChanged<int> onSelected;
-
-  const _ProductTabs({
-    required this.tabs,
-    required this.selectedIndex,
-    required this.onSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            for (var i = 0; i < tabs.length; i++)
-              Expanded(
-                child: InkWell(
-                  onTap: () => onSelected(i),
-                  child: SizedBox(
-                    height: 35,
-                    child: Center(
-                      child: Text(
-                        tabs[i],
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: i == selectedIndex
-                              ? const Color(0xFF078D92)
-                              : const Color(0xFF29304D),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        Stack(
-          children: [
-            const Divider(height: 1, color: Color(0xFFE1E5EA)),
-            FractionallySizedBox(
-              widthFactor: 1 / tabs.length,
-              alignment:
-                  Alignment(-1 + (2 * selectedIndex / (tabs.length - 1)), 0),
-              child: Container(
-                height: 2,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF078D92),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
 enum _StockState { ok, low }
 
 class _OwnerProductCard extends StatelessWidget {
@@ -382,8 +319,7 @@ class _OwnerProductCard extends StatelessWidget {
     return _OwnerProductCard(
       imageUrl: _imageUrl(product),
       title: _text(product, const ['name', 'title'], fallback: 'Product'),
-      price:
-          '₹${price.toStringAsFixed(price == price.roundToDouble() ? 0 : 2)}',
+      price: formatCompactStoreMoney(price),
       stockLabel:
           stock <= 5 && stock > 0 ? 'Low stock' : '${stock.round()} in stock',
       stockState: stock <= 5 ? _StockState.low : _StockState.ok,
@@ -511,8 +447,7 @@ class _OwnerProductCard extends StatelessWidget {
       text: _number(raw, const ['stock_quantity']).round().toString(),
     );
     String status = _text(raw, const ['status'], fallback: 'active');
-    List<Map<String, dynamic>> images =
-        StoreImageEditor.entriesOf(raw);
+    List<Map<String, dynamic>> images = StoreImageEditor.entriesOf(raw);
     final result = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
@@ -524,9 +459,8 @@ class _OwnerProductCard extends StatelessWidget {
       builder: (sheetContext) {
         // viewPadding covers the Android 3-button nav bar / iPhone home
         // indicator so Delete/Save are never hidden behind system UI.
-        final bottomPad =
-            MediaQuery.of(sheetContext).viewInsets.bottom +
-                MediaQuery.of(sheetContext).viewPadding.bottom;
+        final bottomPad = MediaQuery.of(sheetContext).viewInsets.bottom +
+            MediaQuery.of(sheetContext).viewPadding.bottom;
         return Theme(
           data: BStoreTheme.data(sheetContext),
           child: StatefulBuilder(
@@ -558,8 +492,7 @@ class _OwnerProductCard extends StatelessWidget {
                     keyboardType: TextInputType.number,
                     style: _editFieldStyle,
                     cursorColor: const Color(0xFF078D92),
-                    decoration:
-                        _editDecoration('Selling price (₹)'),
+                    decoration: _editDecoration('Selling price (₹)'),
                   ),
                   const SizedBox(height: 10),
                   TextField(
@@ -581,25 +514,21 @@ class _OwnerProductCard extends StatelessWidget {
                     items: const [
                       DropdownMenuItem(
                         value: 'active',
-                        child: Text('Active',
-                            style: _editFieldStyle),
+                        child: Text('Active', style: _editFieldStyle),
                       ),
                       DropdownMenuItem(
                         value: 'draft',
-                        child: Text('Draft',
-                            style: _editFieldStyle),
+                        child: Text('Draft', style: _editFieldStyle),
                       ),
                     ],
-                    onChanged: (v) =>
-                        setSheetState(() => status = v ?? status),
+                    onChanged: (v) => setSheetState(() => status = v ?? status),
                   ),
                   const SizedBox(height: 10),
                   StoreImageEditor(
                     initial: images,
                     minCount: 1,
                     onChanged: (next) => images = next,
-                    uploadFn: UploadApi()
-                        .uploadInfluencerProductImages,
+                    uploadFn: UploadApi().uploadInfluencerProductImages,
                   ),
                   const SizedBox(height: 14),
                   Row(
@@ -688,8 +617,7 @@ class _OwnerProductCard extends StatelessWidget {
       if (images.isEmpty) {
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Products need at least one image.')),
+          const SnackBar(content: Text('Products need at least one image.')),
         );
         return;
       }
@@ -739,37 +667,6 @@ class _StatusDot extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _AddProductButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _AddProductButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 44,
-      child: FilledButton.icon(
-        onPressed: onTap,
-        icon: const Icon(LucideIcons.plus, size: 20),
-        label: const Text(
-          'Add Product',
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
-        ),
-        style: FilledButton.styleFrom(
-          backgroundColor: const Color(0xFF078D92),
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          elevation: 8,
-          shadowColor: const Color(0xFF078D92).withValues(alpha: 0.24),
-        ),
-      ),
     );
   }
 }
@@ -853,11 +750,10 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
       const _StepHeading(stepText: '1 of 2', title: 'Details'),
       const SizedBox(height: 14),
       _PhotoUploadCard(
-          images: _productImages,
-          onTap: _pickProductImage,
-          onRemove: (index) =>
-              setState(() => _productImages.removeAt(index)),
-        ),
+        images: _productImages,
+        onTap: _pickProductImage,
+        onRemove: (index) => setState(() => _productImages.removeAt(index)),
+      ),
       const SizedBox(height: 12),
       _FormPanel(
         children: [
@@ -1002,8 +898,8 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
                         if (value) _shippingFeeController.text = '0.00';
                       }),
                       activeThumbColor: const Color(0xFF078D92),
-                      activeTrackColor: const Color(0xFF078D92)
-                          .withValues(alpha: 0.35),
+                      activeTrackColor:
+                          const Color(0xFF078D92).withValues(alpha: 0.35),
                       inactiveThumbColor: Colors.white,
                       inactiveTrackColor: const Color(0xFFD5DEE4),
                     ),
@@ -1328,7 +1224,6 @@ class _PhotoUploadCard extends StatelessWidget {
     );
   }
 }
-
 
 class _FormPanel extends StatelessWidget {
   final List<Widget> children;
@@ -1693,16 +1588,8 @@ String _text(
   return fallback;
 }
 
-String _imageUrl(Map<String, dynamic> json) {
-  final images = json['images'];
-  dynamic first;
-  if (images is List && images.isNotEmpty) first = images.first;
-  if (first is Map) {
-    return UrlHelper.absoluteUrl(_text(
-      first.map((key, value) => MapEntry(key.toString(), value)),
-      const ['url', 'fileName', 'filename', 'path', 'src'],
-    ));
-  }
-    if (first is String) return UrlHelper.absoluteUrl(first);
-  return '';
-}
+/// Seller-owned products carry `images: [{fileUrl, fileName}]` from the
+/// influencer upload endpoint, so reuse the catalog resolver instead of
+/// guessing key order here.
+String _imageUrl(Map<String, dynamic> json) =>
+    StoreMockState.firstImageUrl(json);

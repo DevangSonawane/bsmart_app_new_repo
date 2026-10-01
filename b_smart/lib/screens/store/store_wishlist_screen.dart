@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'shared/store_shared_widgets.dart';
+import 'shared/store_money.dart';
 import 'store_models.dart';
 import 'store_theme.dart';
 import 'store_wishlist.dart';
@@ -292,7 +293,7 @@ mixin StoreWishlistBodyMixin<T extends StatefulWidget> on State<T> {
       (
         LucideIcons.shoppingBag,
         'Total value',
-        '₹${state.totalValue.toStringAsFixed(2)}'
+        formatStoreMoney(state.totalValue, decimals: 2)
       ),
       (LucideIcons.star, 'Avg rating', avg),
     ];

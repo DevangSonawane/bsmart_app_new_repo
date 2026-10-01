@@ -19,7 +19,7 @@ void main() {
         'selling_price': 2499,
       });
       expect(item.price, 2499);
-      expect(item.priceLabel, '₹2499');
+      expect(item.priceLabel, '₹2,499');
     });
 
     test('parses price given as a string', () {

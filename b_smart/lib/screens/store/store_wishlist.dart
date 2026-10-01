@@ -44,11 +44,9 @@ class WishlistState extends ChangeNotifier {
     );
   }
 
-  double get totalValue =>
-      _items.fold(0.0, (sum, item) => sum + item.price);
+  double get totalValue => _items.fold(0.0, (sum, item) => sum + item.price);
 
-  bool isSaved(String productId) =>
-      _items.any((item) => item.id == productId);
+  bool isSaved(String productId) => _items.any((item) => item.id == productId);
 
   bool isMutating(String productId) => _mutatingIds.contains(productId);
 
@@ -166,7 +164,10 @@ class _WishlistHeartButtonState extends State<WishlistHeartButton> {
   @override
   void initState() {
     super.initState();
-    unawaited(WishlistState.instance.ensureLoaded());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(WishlistState.instance.ensureLoaded());
+    });
   }
 
   Future<void> _toggle() async {
