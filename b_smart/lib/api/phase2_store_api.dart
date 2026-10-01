@@ -80,12 +80,24 @@ class Phase2StoreApi {
     return _asList(data);
   }
 
+  /// Personal / authenticated endpoints must never be served from the shared
+  /// GET cache: the cache key has no user component, so a cached `/my`
+  /// response from one account could leak into another account's session
+  /// (or go stale right after a publish). Only public browse endpoints
+  /// use [_cachedGet].
+  Future<dynamic> _personalGet(
+    String path, {
+    Map<String, String>? queryParams,
+  }) async {
+    return _client.get(path, queryParams: queryParams);
+  }
+
   Future<List<Map<String, dynamic>>> myProducts() async {
-    return _asList(await _cachedGet('/influencer-products/my'));
+    return _asList(await _personalGet('/influencer-products/my'));
   }
 
   Future<List<Map<String, dynamic>>> myServices() async {
-    return _asList(await _cachedGet('/influencer-services/my'));
+    return _asList(await _personalGet('/influencer-services/my'));
   }
 
   Future<Map<String, dynamic>> getProduct(String id) async {
@@ -129,7 +141,8 @@ class Phase2StoreApi {
   Future<Map<String, dynamic>> getCart() async {
     // Returned un-unwrapped on purpose: the cart line array can live under
     // `data`, `cart` or the root, and the caller walks all of them.
-    final data = await _cachedGet('/cart');
+    // Personal endpoint: never cached (see [_personalGet]).
+    final data = await _personalGet('/cart');
     if (data is Map<String, dynamic>) return data;
     return <String, dynamic>{'items': data};
   }
@@ -205,11 +218,11 @@ class Phase2StoreApi {
   }
 
   Future<List<Map<String, dynamic>>> myOrders() async {
-    return _asList(await _cachedGet('/orders'));
+    return _asList(await _personalGet('/orders'));
   }
 
   Future<Map<String, dynamic>> getOrder(String orderId) async {
-    return _asMap(await _cachedGet('/orders/$orderId'));
+    return _asMap(await _personalGet('/orders/$orderId'));
   }
 
   Future<Map<String, dynamic>> cancelOrder(String orderId) async {
@@ -217,7 +230,7 @@ class Phase2StoreApi {
   }
 
   Future<List<Map<String, dynamic>>> sellerOrders() async {
-    return _asList(await _cachedGet('/orders/seller/mine'));
+    return _asList(await _personalGet('/orders/seller/mine'));
   }
 
   Future<Map<String, dynamic>> updateOrderStatus({
@@ -238,11 +251,11 @@ class Phase2StoreApi {
   }
 
   Future<List<Map<String, dynamic>>> myServiceBookings() async {
-    return _asList(await _cachedGet('/service-bookings'));
+    return _asList(await _personalGet('/service-bookings'));
   }
 
   Future<Map<String, dynamic>> getServiceBooking(String bookingId) async {
-    return _asMap(await _cachedGet('/service-bookings/$bookingId'));
+    return _asMap(await _personalGet('/service-bookings/$bookingId'));
   }
 
   Future<Map<String, dynamic>> cancelServiceBooking(String bookingId) async {
@@ -264,7 +277,7 @@ class Phase2StoreApi {
   }
 
   Future<List<Map<String, dynamic>>> sellerServiceBookings() async {
-    return _asList(await _cachedGet('/service-bookings/seller/mine'));
+    return _asList(await _personalGet('/service-bookings/seller/mine'));
   }
 
   Future<Map<String, dynamic>> updateServiceBookingStatus({

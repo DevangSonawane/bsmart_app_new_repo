@@ -167,7 +167,7 @@ class _MessagingSettingsScreenState extends State<MessagingSettingsScreen> {
                     ],
                   ),
                   const SizedBox(height: 20),
-                  _sectionTitle('Floating Messages'),
+                  _sectionTitle('Floating Bubbles'),
                   ValueListenableBuilder<bool>(
                     valueListenable: UiPrefs.showFloatingMessage,
                     builder: (context, showFloatingMessage, _) {
@@ -182,9 +182,40 @@ class _MessagingSettingsScreenState extends State<MessagingSettingsScreen> {
                             onChanged: (value) =>
                                 UiPrefs.showFloatingMessage.value = value,
                           ),
+                          const Divider(height: 1),
+                          ValueListenableBuilder<bool>(
+                            valueListenable: UiPrefs.showFloatingCart,
+                            builder: (context, showFloatingCart, _) {
+                              return _toggleRow(
+                                icon: LucideIcons.shoppingCart,
+                                title: 'Show Floating Cart in Store',
+                                subtitle:
+                                    'Display a draggable cart bubble inside the store.',
+                                value: showFloatingCart,
+                                onChanged: (value) =>
+                                    UiPrefs.showFloatingCart.value = value,
+                              );
+                            },
+                          ),
                         ],
                       );
                     },
+                  ),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Text(
+                      'Both bubbles remember where you drop them. Drag one onto '
+                      'the trash zone to hide it.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.4,
+                        fontWeight: FontWeight.w600,
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.6)
+                            : Colors.black.withValues(alpha: 0.45),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 20),
                   _infoCard(isDark),

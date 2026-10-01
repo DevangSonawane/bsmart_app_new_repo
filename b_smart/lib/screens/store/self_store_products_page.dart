@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../api/api_client.dart';
 import '../../api/phase2_store_api.dart';
 import '../../api/upload_api.dart';
+import '../../utils/current_user.dart';
 import '../../utils/url_helper.dart';
 import 'store_models.dart';
 import 'store_role_setup_screen.dart';
@@ -21,8 +23,16 @@ class SelfStoreProductsPage extends StatefulWidget {
   State<SelfStoreProductsPage> createState() => _SelfStoreProductsPageState();
 }
 
-class SelfStoreProductsScreen extends StatelessWidget {
+class SelfStoreProductsScreen extends StatefulWidget {
   const SelfStoreProductsScreen({super.key});
+
+  @override
+  State<SelfStoreProductsScreen> createState() =>
+      _SelfStoreProductsScreenState();
+}
+
+class _SelfStoreProductsScreenState extends State<SelfStoreProductsScreen> {
+  final _pageKey = GlobalKey<_SelfStoreProductsPageState>();
 
   @override
   Widget build(BuildContext context) {
@@ -30,15 +40,21 @@ class SelfStoreProductsScreen extends StatelessWidget {
       backgroundColor: const Color(0xFFFFFEFC),
       body: SafeArea(
         top: false,
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            const StoreRoleGateSliver(child: SelfStoreProductsPage()),
-            SliverToBoxAdapter(
-              child:
-                  SizedBox(height: MediaQuery.of(context).padding.bottom + 18),
+        child: RefreshIndicator(
+          color: const Color(0xFF078D92),
+          onRefresh: () => _pageKey.currentState?.refresh() ?? Future.value(),
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
             ),
-          ],
+            slivers: [
+              StoreRoleGateSliver(child: SelfStoreProductsPage(key: _pageKey)),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                    height: MediaQuery.of(context).padding.bottom + 18),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -54,11 +70,67 @@ class _SelfStoreProductsPageState extends State<SelfStoreProductsPage> {
   @override
   void initState() {
     super.initState();
-    _productsFuture = Phase2StoreApi().myProducts();
+    _productsFuture = _loadMyProducts();
   }
 
   void _refreshProducts() {
-    setState(() => _productsFuture = Phase2StoreApi().myProducts());
+    setState(() => _productsFuture = _loadMyProducts());
+  }
+
+  /// Pull-to-refresh entry point (called by the parent [RefreshIndicator]).
+  Future<void> refresh() async {
+    final future = _loadMyProducts();
+    setState(() => _productsFuture = future);
+    try {
+      await future;
+    } catch (_) {
+      // FutureBuilder surfaces the error; refresh just needs to complete.
+    }
+  }
+
+  /// Loads my products and defensively drops anything owned by someone else,
+  /// so a backend hiccup can never show another seller's products here.
+  static Future<List<Map<String, dynamic>>> _loadMyProducts() async {
+    final myId = await CurrentUser.id;
+    final items = await Phase2StoreApi().myProducts();
+    if (myId == null || myId.isEmpty) return items;
+    return items.where((item) => _isMine(item, myId)).toList();
+  }
+
+  static bool _isMine(Map<String, dynamic> item, String myId) {
+    const ownerKeys = [
+      'influencer_id',
+      'influencerId',
+      'user_id',
+      'userId',
+      'owner_id',
+      'ownerId',
+      'seller_id',
+      'sellerId',
+      'created_by',
+      'createdBy',
+    ];
+    var sawOwner = false;
+    for (final key in ownerKeys) {
+      final value = item[key]?.toString().trim();
+      if (value == null || value.isEmpty || value == 'null') continue;
+      sawOwner = true;
+      if (value == myId) return true;
+    }
+    const nestedKeys = ['influencer', 'owner', 'seller', 'user', 'created_by'];
+    for (final key in nestedKeys) {
+      final nested = item[key];
+      if (nested is! Map) continue;
+      final map = nested.map((k, v) => MapEntry(k.toString(), v));
+      for (final idKey in ['id', '_id', 'user_id', 'userId']) {
+        final value = map[idKey]?.toString().trim();
+        if (value == null || value.isEmpty || value == 'null') continue;
+        sawOwner = true;
+        if (value == myId) return true;
+      }
+    }
+    // No owner info on the item: trust the server-side `/my` filter.
+    return !sawOwner ? true : false;
   }
 
   @override
@@ -315,7 +387,14 @@ class _OwnerProductCard extends StatelessWidget {
       stockLabel:
           stock <= 5 && stock > 0 ? 'Low stock' : '${stock.round()} in stock',
       stockState: stock <= 5 ? _StockState.low : _StockState.ok,
-      productId: _text(product, const ['id', '_id']),
+      // The API has returned the id under several keys across
+      // deployments; missing it disables Edit/Delete, so check them all.
+      productId: _text(product, const [
+        'id',
+        '_id',
+        'product_id',
+        'productId',
+      ]),
       raw: product,
       onChanged: onChanged,
     );
@@ -437,81 +516,137 @@ class _OwnerProductCard extends StatelessWidget {
     final result = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.white,
-      builder: (sheetContext) => Theme(
-        data: BStoreTheme.data(sheetContext),
-        child: StatefulBuilder(
-        builder: (sheetContext, setSheetState) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            18,
-            18,
-            18,
-            MediaQuery.of(sheetContext).viewInsets.bottom + 18,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title,
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: priceCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                    labelText: 'Selling price (₹)', border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: stockCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                    labelText: 'Stock quantity', border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                initialValue: status == 'draft' ? 'draft' : 'active',
-                decoration: const InputDecoration(
-                    labelText: 'Status', border: OutlineInputBorder()),
-                items: const [
-                  DropdownMenuItem(value: 'active', child: Text('Active')),
-                  DropdownMenuItem(value: 'draft', child: Text('Draft')),
-                ],
-                onChanged: (v) =>
-                    setSheetState(() => status = v ?? status),
-              ),
-              const SizedBox(height: 10),
-              StoreImageEditor(
-                initial: images,
-                minCount: 1,
-                onChanged: (next) => images = next,
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.of(sheetContext).pop('delete'),
-                      style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red),
-                      child: const Text('Delete'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: () => Navigator.of(sheetContext).pop('save'),
-                      child: const Text('Save'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        ),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
+      builder: (sheetContext) {
+        // viewPadding covers the Android 3-button nav bar / iPhone home
+        // indicator so Delete/Save are never hidden behind system UI.
+        final bottomPad =
+            MediaQuery.of(sheetContext).viewInsets.bottom +
+                MediaQuery.of(sheetContext).viewPadding.bottom;
+        return Theme(
+          data: BStoreTheme.data(sheetContext),
+          child: StatefulBuilder(
+            builder: (innerContext, setSheetState) => SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(18, 12, 18, bottomPad + 18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE1E5EA),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(title,
+                      style: const TextStyle(
+                          color: Color(0xFF060D35),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: priceCtrl,
+                    keyboardType: TextInputType.number,
+                    style: _editFieldStyle,
+                    cursorColor: const Color(0xFF078D92),
+                    decoration:
+                        _editDecoration('Selling price (₹)'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: stockCtrl,
+                    keyboardType: TextInputType.number,
+                    style: _editFieldStyle,
+                    cursorColor: const Color(0xFF078D92),
+                    decoration: _editDecoration('Stock quantity'),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: status == 'draft' ? 'draft' : 'active',
+                    dropdownColor: Colors.white,
+                    focusColor: Colors.white,
+                    style: _editFieldStyle,
+                    icon: const Icon(LucideIcons.chevronDown, size: 17),
+                    iconEnabledColor: const Color(0xFF060D35),
+                    decoration: _editDecoration('Status'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'active',
+                        child: Text('Active',
+                            style: _editFieldStyle),
+                      ),
+                      DropdownMenuItem(
+                        value: 'draft',
+                        child: Text('Draft',
+                            style: _editFieldStyle),
+                      ),
+                    ],
+                    onChanged: (v) =>
+                        setSheetState(() => status = v ?? status),
+                  ),
+                  const SizedBox(height: 10),
+                  StoreImageEditor(
+                    initial: images,
+                    minCount: 1,
+                    onChanged: (next) => images = next,
+                    uploadFn: UploadApi()
+                        .uploadInfluencerProductImages,
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: 48,
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                Navigator.of(innerContext).pop('delete'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red,
+                              side: const BorderSide(color: Colors.red),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: const Text('Delete'),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: SizedBox(
+                          height: 48,
+                          child: FilledButton(
+                            onPressed: () =>
+                                Navigator.of(innerContext).pop('save'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF078D92),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: const Text('Save'),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
     if (result == null || !context.mounted) return;
     try {
@@ -519,14 +654,22 @@ class _OwnerProductCard extends StatelessWidget {
         final confirm = await showDialog<bool>(
           context: context,
           builder: (d) => AlertDialog(
-            title: const Text('Delete product?'),
-            content: Text('Remove "$title" from your store?'),
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            title: const Text('Delete product?',
+                style: TextStyle(
+                    color: Color(0xFF060D35), fontWeight: FontWeight.w900)),
+            content: Text('Remove "$title" from your store?',
+                style: const TextStyle(color: Color(0xFF29304D))),
             actions: [
               TextButton(
                   onPressed: () => Navigator.of(d).pop(false),
                   child: const Text('Cancel')),
               FilledButton(
                   onPressed: () => Navigator.of(d).pop(true),
+                  style: FilledButton.styleFrom(backgroundColor: Colors.red),
                   child: const Text('Delete')),
             ],
           ),
@@ -646,7 +789,6 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
   bool _freeDelivery = false;
   bool _publishing = false;
   final _imagePicker = ImagePicker();
-  XFile? _productImage;
   final _productImages = <XFile>[];
   final _productNameController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -754,7 +896,7 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
                   label: 'Price',
                   hint: '0.00',
                   controller: _priceController,
-                  prefixText: r'$ ',
+                  prefixText: '₹ ',
                   keyboardType: TextInputType.number,
                 ),
               ),
@@ -831,7 +973,7 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
                   label: 'Shipping fee',
                   hint: '5.00',
                   controller: _shippingFeeController,
-                  prefixText: r'$ ',
+                  prefixText: '₹ ',
                   keyboardType: TextInputType.number,
                   enabled: !_freeDelivery,
                 ),
@@ -860,6 +1002,10 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
                         if (value) _shippingFeeController.text = '0.00';
                       }),
                       activeThumbColor: const Color(0xFF078D92),
+                      activeTrackColor: const Color(0xFF078D92)
+                          .withValues(alpha: 0.35),
+                      inactiveThumbColor: Colors.white,
+                      inactiveTrackColor: const Color(0xFFD5DEE4),
                     ),
                   ],
                 ),
@@ -896,6 +1042,37 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
     }
   }
 
+  /// Reads each picked image into memory for upload.
+  ///
+  /// Reading bytes works for content:// URIs and provider cache paths, which
+  /// `MultipartFile.fromPath` cannot. Images are capped at [_maxUploadBytes]
+  /// so a huge photo cannot blow up the request.
+  static Future<List<MultipartBytesFile>> _readImageBytes(
+    List<XFile> images,
+  ) async {
+    const maxUploadBytes = 12 * 1024 * 1024;
+    final files = <MultipartBytesFile>[];
+    for (final image in images) {
+      final bytes = await image.readAsBytes();
+      if (bytes.isEmpty) continue;
+      files.add(MultipartBytesFile(
+        bytes: bytes.length > maxUploadBytes
+            ? bytes.sublist(0, maxUploadBytes)
+            : bytes,
+        filename: _uploadNameFor(image),
+      ));
+    }
+    if (files.isEmpty) {
+      throw StateError('Could not read the selected images.');
+    }
+    return files;
+  }
+
+  /// Builds an upload filename that keeps a real image extension, since the
+  /// server infers the content type from it.
+  static String _uploadNameFor(XFile image) =>
+      influencerUploadFilename(image.name, image.path);
+
   Future<void> _publishProduct() async {
     final name = _productNameController.text.trim();
     final description = _descriptionController.text.trim();
@@ -918,8 +1095,12 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
     }
     setState(() => _publishing = true);
     try {
+      // Upload from bytes, not from `XFile.path`. `pickMultiImage` can hand
+      // back a content:// URI or a provider cache path that
+      // `MultipartFile.fromPath` cannot open, which threw here and surfaced
+      // "Publish failed" even though nothing was wrong with the product.
       final uploaded = await UploadApi().uploadInfluencerProductImages(
-        filePaths: images.map((e) => e.path).toList(),
+        byteFiles: await _readImageBytes(images),
       );
       await Phase2StoreApi().createProduct({
         'images': uploaded.map((img) => img.toJson()).toList(),
@@ -944,28 +1125,34 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
           'unit': 'cm',
         },
         'dispatch_time': _processingTime,
-        'hsn_gst': '',
         'country_of_origin': 'India',
         'return_policy': '7 Days Replacement',
         'use_store_delivery_settings': _freeDelivery,
         'use_store_return_policy': true,
         'warranty': 'None',
       });
-      await StoreMockState.instance.refreshMarketplace();
-      widget.onPublished?.call();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Product published.')),
-      );
-      Navigator.of(context).pop();
     } catch (e) {
+      // Only the upload + create call can fail the publish. Anything after
+      // this point (list refreshes, navigation) must never surface as
+      // "Publish failed" when the product is already live.
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Publish failed: $e')),
       );
+      return;
     } finally {
       if (mounted) setState(() => _publishing = false);
     }
+    // Success path: refresh lists defensively, then confirm + close.
+    try {
+      widget.onPublished?.call();
+    } catch (_) {}
+    await StoreMockState.instance.refreshMarketplace();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Product published.')),
+    );
+    Navigator.of(context).pop();
   }
 }
 
@@ -1282,7 +1469,17 @@ class _DropdownShell<T> extends StatelessWidget {
           key: ValueKey(value),
           initialValue: value,
           isExpanded: true,
+          dropdownColor: Colors.white,
+          focusColor: Colors.white,
+          style: const TextStyle(
+            color: Color(0xFF060D35),
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+          ),
           icon: const Icon(LucideIcons.chevronDown, size: 17),
+          iconEnabledColor: const Color(0xFF060D35),
+          iconDisabledColor: const Color(0xFF8B90A2),
+          borderRadius: BorderRadius.circular(8),
           hint: hint == null
               ? null
               : Text(
@@ -1431,6 +1628,47 @@ double _parseNumber(String value) {
   return double.tryParse(value.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
 }
 
+/// Explicit light styling for the Edit bottom sheets. The app can run in
+/// system dark mode, so every input declares its own fill / text / border
+/// colors instead of inheriting the (possibly dark) ambient theme.
+const TextStyle _editFieldStyle = TextStyle(
+  color: Color(0xFF060D35),
+  fontSize: 13,
+  fontWeight: FontWeight.w700,
+);
+
+InputDecoration _editDecoration(String label) {
+  const borderColor = Color(0xFFD5DEE4);
+  return InputDecoration(
+    labelText: label,
+    filled: true,
+    fillColor: Colors.white,
+    labelStyle: const TextStyle(
+      color: Color(0xFF29304D),
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+    ),
+    hintStyle: const TextStyle(
+      color: Color(0xFF8B90A2),
+      fontSize: 12.5,
+      fontWeight: FontWeight.w600,
+    ),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(7),
+      borderSide: const BorderSide(color: borderColor),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(7),
+      borderSide: const BorderSide(color: Color(0xFF078D92)),
+    ),
+    disabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(7),
+      borderSide: const BorderSide(color: borderColor),
+    ),
+  );
+}
+
 double _number(Map<String, dynamic> json, List<String> keys) {
   for (final key in keys) {
     final value = json[key];
@@ -1465,28 +1703,6 @@ String _imageUrl(Map<String, dynamic> json) {
       const ['url', 'fileName', 'filename', 'path', 'src'],
     ));
   }
-  if (first is String) return UrlHelper.absoluteUrl(first);
+    if (first is String) return UrlHelper.absoluteUrl(first);
   return '';
-}
-
-String _firstUploadName(Map<String, dynamic> upload) {
-  final direct = _text(upload, const ['fileName', 'filename', 'path', 'url']);
-  if (direct.isNotEmpty) return direct;
-  final data = upload['data'];
-  if (data is Map) {
-    final nested = _text(
-      data.map((key, value) => MapEntry(key.toString(), value)),
-      const ['fileName', 'filename', 'path', 'url'],
-    );
-    if (nested.isNotEmpty) return nested;
-  }
-  final files = upload['files'];
-  if (files is List && files.isNotEmpty && files.first is Map) {
-    final nested = _text(
-      (files.first as Map).map((key, value) => MapEntry(key.toString(), value)),
-      const ['fileName', 'filename', 'path', 'url'],
-    );
-    if (nested.isNotEmpty) return nested;
-  }
-  throw StateError('Upload did not return a file name.');
 }

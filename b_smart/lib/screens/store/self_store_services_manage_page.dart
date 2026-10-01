@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api/phase2_store_api.dart';
 import '../../api/upload_api.dart';
+import '../../utils/current_user.dart';
 import '../../utils/url_helper.dart';
 import 'self_store_availability_page.dart';
 import 'shared/store_image_editor.dart';
@@ -14,8 +15,17 @@ import 'store_role_setup_screen.dart';
 import 'store_theme.dart';
 import 'shared/store_shared_widgets.dart';
 
-class SelfStoreServicesManageScreen extends StatelessWidget {
+class SelfStoreServicesManageScreen extends StatefulWidget {
   const SelfStoreServicesManageScreen({super.key});
+
+  @override
+  State<SelfStoreServicesManageScreen> createState() =>
+      _SelfStoreServicesManageScreenState();
+}
+
+class _SelfStoreServicesManageScreenState
+    extends State<SelfStoreServicesManageScreen> {
+  final _pageKey = GlobalKey<_SelfStoreServicesManagePageState>();
 
   @override
   Widget build(BuildContext context) {
@@ -23,16 +33,22 @@ class SelfStoreServicesManageScreen extends StatelessWidget {
       backgroundColor: const Color(0xFFFFFEFC),
       body: SafeArea(
         top: false,
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            const StoreRoleGateSliver(
-                child: SelfStoreServicesManagePage()),
-            SliverToBoxAdapter(
-              child:
-                  SizedBox(height: MediaQuery.of(context).padding.bottom + 18),
+        child: RefreshIndicator(
+          color: const Color(0xFF078D92),
+          onRefresh: () => _pageKey.currentState?.refresh() ?? Future.value(),
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
             ),
-          ],
+            slivers: [
+              StoreRoleGateSliver(
+                  child: SelfStoreServicesManagePage(key: _pageKey)),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                    height: MediaQuery.of(context).padding.bottom + 18),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -56,18 +72,83 @@ class _SelfStoreServicesManagePageState
   @override
   void initState() {
     super.initState();
-    _servicesFuture = Phase2StoreApi().myServices();
-    _bookingsFuture =
-        Phase2StoreApi().sellerServiceBookings().catchError((_) => const <Map<String, dynamic>>[]);
+    _servicesFuture = _loadMyServices();
+    _bookingsFuture = Phase2StoreApi()
+        .sellerServiceBookings()
+        .catchError((_) => const <Map<String, dynamic>>[]);
   }
 
   void _refreshServices() {
+    if (!mounted) return;
     setState(() {
-      _servicesFuture = Phase2StoreApi().myServices();
+      _servicesFuture = _loadMyServices();
       _bookingsFuture = Phase2StoreApi()
           .sellerServiceBookings()
           .catchError((_) => const <Map<String, dynamic>>[]);
     });
+  }
+
+  /// Pull-to-refresh entry point (called by the parent [RefreshIndicator]).
+  Future<void> refresh() async {
+    final services = _loadMyServices();
+    final bookings = Phase2StoreApi()
+        .sellerServiceBookings()
+        .catchError((_) => const <Map<String, dynamic>>[]);
+    if (!mounted) return;
+    setState(() {
+      _servicesFuture = services;
+      _bookingsFuture = bookings;
+    });
+    try {
+      await Future.wait([services, bookings]);
+    } catch (_) {
+      // Builders surface errors; refresh just needs to complete.
+    }
+  }
+
+  /// Loads my services and defensively drops anything owned by someone else,
+  /// so a backend hiccup can never show another seller's services here.
+  static Future<List<Map<String, dynamic>>> _loadMyServices() async {
+    final myId = await CurrentUser.id;
+    final items = await Phase2StoreApi().myServices();
+    if (myId == null || myId.isEmpty) return items;
+    return items.where((item) => _isMine(item, myId)).toList();
+  }
+
+  static bool _isMine(Map<String, dynamic> item, String myId) {
+    const ownerKeys = [
+      'influencer_id',
+      'influencerId',
+      'user_id',
+      'userId',
+      'owner_id',
+      'ownerId',
+      'seller_id',
+      'sellerId',
+      'created_by',
+      'createdBy',
+    ];
+    var sawOwner = false;
+    for (final key in ownerKeys) {
+      final value = item[key]?.toString().trim();
+      if (value == null || value.isEmpty || value == 'null') continue;
+      sawOwner = true;
+      if (value == myId) return true;
+    }
+    const nestedKeys = ['influencer', 'owner', 'seller', 'user', 'created_by'];
+    for (final key in nestedKeys) {
+      final nested = item[key];
+      if (nested is! Map) continue;
+      final map = nested.map((k, v) => MapEntry(k.toString(), v));
+      for (final idKey in ['id', '_id', 'user_id', 'userId']) {
+        final value = map[idKey]?.toString().trim();
+        if (value == null || value.isEmpty || value == 'null') continue;
+        sawOwner = true;
+        if (value == myId) return true;
+      }
+    }
+    // No owner info on the item: trust the server-side `/my` filter.
+    return !sawOwner ? true : false;
   }
 
   static int _bookingsFor(
@@ -78,12 +159,13 @@ class _SelfStoreServicesManagePageState
       final service = booking['service'];
       String? id;
       if (service is Map) {
-        id = (service['id'] ?? service['_id'])?.toString();
+        final map = service.map((k, v) => MapEntry(k.toString(), v));
+        id = (map['id'] ?? map['_id'] ?? map['service_id'] ?? map['serviceId'])
+            ?.toString();
       }
-      id ??= booking['service_id']?.toString();
+      id ??= (booking['service_id'] ?? booking['serviceId'])?.toString();
       if (id == serviceId) {
-        final status =
-            booking['status']?.toString().toLowerCase() ?? '';
+        final status = booking['status']?.toString().toLowerCase() ?? '';
         if (status != 'cancelled' && status != 'canceled') count++;
       }
     }
@@ -152,8 +234,7 @@ class _SelfStoreServicesManagePageState
                       return _ManageServiceCard.fromApi(
                         services[i],
                         onChanged: _refreshServices,
-                        bookingsCount:
-                            _bookingsFor(serviceId, bookings),
+                        bookingsCount: _bookingsFor(serviceId, bookings),
                       );
                     },
                   ),
@@ -171,12 +252,17 @@ class _SelfStoreServicesManagePageState
               onTap: () async {
                 if (!await StoreRoleGate.ensureInfluencer(context)) return;
                 if (!context.mounted) return;
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => StoreAddServiceFlowScreen(
-                      onPublished: _refreshServices,
-                    ),
+                final published = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute<bool>(
+                    builder: (_) => const StoreAddServiceFlowScreen(),
                   ),
+                );
+                if (published != true || !context.mounted) return;
+                await StoreMockState.instance.refreshMarketplace();
+                _refreshServices();
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Service published.')),
                 );
               },
             ),
@@ -270,9 +356,7 @@ class _ServiceTabs extends StatelessWidget {
       ],
     );
   }
-
 }
-
 
 class _ManageServiceCard extends StatelessWidget {
   final String imageUrl;
@@ -312,7 +396,14 @@ class _ManageServiceCard extends StatelessWidget {
           _serviceText(service, const ['name', 'title'], fallback: 'Service'),
       price:
           '₹${price.toStringAsFixed(price == price.roundToDouble() ? 0 : 2)}$suffix',
-      serviceId: _serviceText(service, const ['id', '_id']),
+      // The API has returned the id under several keys across
+      // deployments; missing it disables Edit/Delete, so check them all.
+      serviceId: _serviceText(service, const [
+        'id',
+        '_id',
+        'service_id',
+        'serviceId',
+      ]),
       raw: service,
       onChanged: onChanged,
       bookingsCount: bookingsCount,
@@ -438,85 +529,130 @@ class _ManageServiceCard extends StatelessWidget {
       text: _serviceNumber(raw, const ['price']).toStringAsFixed(0),
     );
     bool visible = raw['visible_to_customers'] != false;
-    List<Map<String, dynamic>> images =
-        StoreImageEditor.entriesOf(raw);
+    List<Map<String, dynamic>> images = StoreImageEditor.entriesOf(raw);
     final action = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.white,
-      builder: (sheetContext) => Theme(
-        data: BStoreTheme.data(sheetContext),
-        child: StatefulBuilder(
-        builder: (sheetContext, setSheetState) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            18,
-            18,
-            18,
-            MediaQuery.of(sheetContext).viewInsets.bottom + 18,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title,
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: priceCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                    labelText: 'Price (₹)', border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 10),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Visible to customers'),
-                value: visible,
-                onChanged: (v) => setSheetState(() => visible = v),
-              ),
-              StoreImageEditor(
-                initial: images,
-                minCount: 0,
-                onChanged: (next) => images = next,
-                uploadFn: UploadApi().uploadInfluencerServiceImages,
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final updated = await Navigator.of(context).push<bool>(
-                    MaterialPageRoute<bool>(
-                      builder: (_) => SelfStoreAvailabilityScreen(
-                        serviceId: serviceId,
-                        serviceName: title,
-                        initialAvailability: raw['weekly_availability'] is Map
-                            ? Map<String, dynamic>.from(
-                                raw['weekly_availability'] as Map)
-                            : const {},
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        // viewPadding covers the Android 3-button nav bar / iPhone home
+        // indicator so the Save button is never hidden behind system UI.
+        final bottomPad =
+            MediaQuery.of(sheetContext).viewInsets.bottom +
+                MediaQuery.of(sheetContext).viewPadding.bottom;
+        return Theme(
+          data: BStoreTheme.data(sheetContext),
+          child: StatefulBuilder(
+            builder: (innerContext, setSheetState) => SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(18, 12, 18, bottomPad + 18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE1E5EA),
+                        borderRadius: BorderRadius.circular(999),
                       ),
                     ),
-                  );
-                  if (updated == true) {
-                    if (!context.mounted) return;
-                    Navigator.of(sheetContext).pop('saved-externally');
-                  }
-                },
-                icon: const Icon(LucideIcons.calendarDays, size: 18),
-                label: const Text('Edit weekly availability'),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(title,
+                      style: const TextStyle(
+                          color: Color(0xFF060D35),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: priceCtrl,
+                    keyboardType: TextInputType.number,
+                    style: _editFieldStyle,
+                    cursorColor: const Color(0xFF078D92),
+                    decoration: _editDecoration('Price (₹)'),
+                  ),
+                  const SizedBox(height: 10),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Visible to customers',
+                        style: TextStyle(
+                            color: Color(0xFF060D35),
+                            fontWeight: FontWeight.w700)),
+                    value: visible,
+                    activeThumbColor: Colors.white,
+                    activeTrackColor: const Color(0xFF078D92)
+                        .withValues(alpha: 0.55),
+                    inactiveThumbColor: Colors.white,
+                    inactiveTrackColor: const Color(0xFFD5DEE4),
+                    onChanged: (v) => setSheetState(() => visible = v),
+                  ),
+                  StoreImageEditor(
+                    initial: images,
+                    minCount: 0,
+                    onChanged: (next) => images = next,
+                    uploadFn: UploadApi().uploadInfluencerServiceImages,
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final updated = await Navigator.of(context).push<bool>(
+                          MaterialPageRoute<bool>(
+                            builder: (_) => SelfStoreAvailabilityScreen(
+                              serviceId: serviceId,
+                              serviceName: title,
+                              initialAvailability:
+                                  raw['weekly_availability'] is Map
+                                      ? Map<String, dynamic>.from(
+                                          raw['weekly_availability'] as Map)
+                                      : const {},
+                            ),
+                          ),
+                        );
+                        if (updated == true) {
+                          if (!context.mounted) return;
+                          Navigator.of(innerContext).pop('saved-externally');
+                        }
+                      },
+                      icon: const Icon(LucideIcons.calendarDays, size: 18),
+                      label: const Text('Edit weekly availability'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF078D92),
+                        side: const BorderSide(
+                            color: Color(0xFF078D92)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: FilledButton(
+                      onPressed: () =>
+                          Navigator.of(innerContext).pop('save'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF078D92),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text('Save'),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => Navigator.of(sheetContext).pop('save'),
-                  child: const Text('Save'),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-        ),
-      ),
+        );
+      },
     );
     if (!context.mounted) return;
     if (action == 'saved-externally') {
@@ -548,14 +684,22 @@ class _ManageServiceCard extends StatelessWidget {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (d) => AlertDialog(
-        title: const Text('Delete service?'),
-        content: Text('Remove "$title" from your store?'),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+        title: const Text('Delete service?',
+            style: TextStyle(
+                color: Color(0xFF060D35), fontWeight: FontWeight.w900)),
+        content: Text('Remove "$title" from your store?',
+            style: const TextStyle(color: Color(0xFF29304D))),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(d).pop(false),
               child: const Text('Cancel')),
           FilledButton(
               onPressed: () => Navigator.of(d).pop(true),
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
               child: const Text('Delete')),
         ],
       ),
@@ -647,9 +791,7 @@ class _AddServiceButton extends StatelessWidget {
 }
 
 class StoreAddServiceFlowScreen extends StatefulWidget {
-  final VoidCallback? onPublished;
-
-  const StoreAddServiceFlowScreen({super.key, this.onPublished});
+  const StoreAddServiceFlowScreen({super.key});
 
   @override
   State<StoreAddServiceFlowScreen> createState() =>
@@ -662,7 +804,7 @@ class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
   String _serviceMethod = 'At customer location';
   String? _category;
   String _duration = '1 hour';
-  String _currency = 'USD';
+  String _currency = 'INR';
   String _rateUnit = 'per hour';
   String _advanceNotice = '24 hours';
   final _serviceNameController = TextEditingController();
@@ -675,7 +817,7 @@ class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
     'Thursday',
     'Friday'
   ];
-  final _coverImageFileNames = <String>[];
+  final _coverImages = <UploadedImage>[];
 
   @override
   void dispose() {
@@ -727,8 +869,8 @@ class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
       const _ServiceStepHeader(stepText: '1 of 2', title: 'Basics'),
       const SizedBox(height: 14),
       _CoverUploadCard(
-        imageFileNames: _coverImageFileNames,
-        onChanged: (list) => setState(() => _coverImageFileNames
+        images: _coverImages,
+        onChanged: (list) => setState(() => _coverImages
           ..clear()
           ..addAll(list)),
       ),
@@ -791,6 +933,15 @@ class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
               onTap: () => setState(() => _serviceMethod = 'Online'),
             ),
           ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _MethodCard(
+              icon: LucideIcons.house,
+              label: 'At my location',
+              selected: _serviceMethod == 'At my location',
+              onTap: () => setState(() => _serviceMethod = 'At my location'),
+            ),
+          ),
         ],
       ),
       const SizedBox(height: 16),
@@ -837,13 +988,13 @@ class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
     }
     setState(() => _publishing = true);
     try {
-      final uploaded = _coverImageFileNames.isNotEmpty
-          ? await UploadApi().uploadInfluencerServiceImages(
-              filePaths: _coverImageFileNames,
-            )
-          : <UploadedImage>[];
+      // Cover photos are already uploaded when picked (see
+      // _CoverUploadCard): send the returned file references straight to
+      // POST /influencer-services `images` — re-uploading server file names
+      // as local paths is what made publish fail before.
+      final images = _coverImages.map((img) => img.toJson()).toList();
       await Phase2StoreApi().createService({
-        'images': uploaded.map((img) => img.toJson()).toList(),
+        'images': images,
         'name': name,
         'category': category,
         'provider': 'B-Smart Store',
@@ -857,13 +1008,8 @@ class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
         'weekly_availability': _defaultWeeklyAvailability(),
         'visible_to_customers': true,
       });
-      await StoreMockState.instance.refreshMarketplace();
-      widget.onPublished?.call();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Service published.')),
-      );
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -974,11 +1120,11 @@ class _ServiceStepHeader extends StatelessWidget {
 }
 
 class _CoverUploadCard extends StatefulWidget {
-  final List<String> imageFileNames;
-  final ValueChanged<List<String>> onChanged;
+  final List<UploadedImage> images;
+  final ValueChanged<List<UploadedImage>> onChanged;
 
   const _CoverUploadCard({
-    required this.imageFileNames,
+    required this.images,
     required this.onChanged,
   });
 
@@ -1000,11 +1146,7 @@ class _CoverUploadCardState extends State<_CoverUploadCard> {
         filePaths: [picked.path],
       );
       if (!mounted) return;
-      final fileNames = [...widget.imageFileNames];
-      for (final img in uploaded) {
-        fileNames.add(img.fileName);
-      }
-      widget.onChanged(fileNames);
+      widget.onChanged([...widget.images, ...uploaded]);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1016,14 +1158,14 @@ class _CoverUploadCardState extends State<_CoverUploadCard> {
   }
 
   void _remove(int index) {
-    final fileNames = [...widget.imageFileNames];
-    fileNames.removeAt(index);
-    widget.onChanged(fileNames);
+    final images = [...widget.images];
+    images.removeAt(index);
+    widget.onChanged(images);
   }
 
   @override
   Widget build(BuildContext context) {
-    final fileNames = widget.imageFileNames;
+    final images = widget.images;
     return InkWell(
       onTap: _uploading ? null : _pickAndUpload,
       borderRadius: BorderRadius.circular(12),
@@ -1037,37 +1179,45 @@ class _CoverUploadCardState extends State<_CoverUploadCard> {
         ),
         child: Stack(
           children: [
-            if (fileNames.isEmpty)
-              const Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(LucideIcons.cloudUpload,
-                      color: Color(0xFF684AC8), size: 36),
-                  SizedBox(height: 12),
-                  Text(
-                    'Add cover photo',
-                    style: TextStyle(
-                      color: Color(0xFF060D35),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                    ),
+            if (images.isEmpty)
+              const Center(
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Icon(LucideIcons.cloudUpload,
+                          color: Color(0xFF684AC8), size: 36),
+                      SizedBox(height: 12),
+                      Text(
+                        'Add cover photo',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Color(0xFF060D35),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      SizedBox(height: 5),
+                      Text(
+                        'JPG, PNG up to 10MB',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Color(0xFF29304D),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
-                  SizedBox(height: 5),
-                  Text(
-                    'JPG, PNG up to 10MB',
-                    style: TextStyle(
-                      color: Color(0xFF29304D),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+                ),
               )
             else
               ListView.separated(
                 padding: const EdgeInsets.all(8),
                 scrollDirection: Axis.horizontal,
-                itemCount: fileNames.length,
+                itemCount: images.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
                 itemBuilder: (context, index) {
                   return ClipRRect(
@@ -1075,7 +1225,9 @@ class _CoverUploadCardState extends State<_CoverUploadCard> {
                     child: Stack(
                       children: [
                         StoreItemImage(
-                          imageUrl: fileNames[index],
+                          imageUrl: images[index].fileUrl.isNotEmpty
+                              ? images[index].fileUrl
+                              : images[index].fileName,
                           icon: LucideIcons.image,
                           width: 110,
                           height: 110,
@@ -1140,6 +1292,7 @@ class _InputShell extends StatelessWidget {
   final double minHeight;
   final int maxLines;
   final TextInputType? keyboardType;
+  final String? prefixText;
 
   const _InputShell({
     required this.label,
@@ -1148,6 +1301,7 @@ class _InputShell extends StatelessWidget {
     this.minHeight = 48,
     this.maxLines = 1,
     this.keyboardType,
+    this.prefixText,
   });
 
   @override
@@ -1162,8 +1316,12 @@ class _InputShell extends StatelessWidget {
         fontSize: 12.5,
         fontWeight: FontWeight.w700,
       ),
-      decoration:
-          _inputDecoration(label: label, hint: hint, minHeight: minHeight),
+      decoration: _inputDecoration(
+        label: label,
+        hint: hint,
+        minHeight: minHeight,
+        prefixText: prefixText,
+      ),
     );
   }
 }
@@ -1189,7 +1347,17 @@ class _DropdownShell<T> extends StatelessWidget {
       key: ValueKey(value),
       initialValue: value,
       isExpanded: true,
+      dropdownColor: Colors.white,
+      focusColor: Colors.white,
+      style: const TextStyle(
+        color: Color(0xFF060D35),
+        fontSize: 12.5,
+        fontWeight: FontWeight.w700,
+      ),
       icon: const Icon(LucideIcons.chevronDown, size: 17),
+      iconEnabledColor: const Color(0xFF060D35),
+      iconDisabledColor: const Color(0xFF8B90A2),
+      borderRadius: BorderRadius.circular(8),
       hint: hint == null
           ? null
           : Text(
@@ -1225,10 +1393,12 @@ InputDecoration _inputDecoration({
   required String label,
   String? hint,
   double minHeight = 48,
+  String? prefixText,
 }) {
   return InputDecoration(
     labelText: label,
     hintText: hint,
+    prefixText: prefixText,
     constraints: BoxConstraints(minHeight: minHeight),
     labelStyle: const TextStyle(
       color: Color(0xFF29304D),
@@ -1271,35 +1441,34 @@ class _PriceRateRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(
-          width: 82,
-          child: _DropdownShell<String>(
-            label: 'Currency',
-            value: currency,
-            items: const ['USD', 'INR', 'EUR'],
-            onChanged: onCurrencyChanged,
-          ),
+        _DropdownShell<String>(
+          label: 'Currency',
+          value: currency,
+          items: const ['INR'],
+          onChanged: onCurrencyChanged,
         ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _InputShell(
-            label: 'Price or rate',
-            hint: 'Enter amount',
-            controller: amountController,
-            keyboardType: TextInputType.number,
-          ),
+        const SizedBox(height: 12),
+        _InputShell(
+          label: 'Price or rate (₹)',
+          hint: 'Enter amount',
+          controller: amountController,
+          keyboardType: TextInputType.number,
+          prefixText: '₹ ',
         ),
-        const SizedBox(width: 8),
-        SizedBox(
-          width: 96,
-          child: _DropdownShell<String>(
-            label: 'Unit',
-            value: rateUnit,
-            items: const ['per hour', 'per session', 'fixed'],
-            onChanged: onUnitChanged,
-          ),
+        const SizedBox(height: 12),
+        _DropdownShell<String>(
+          label: 'Unit',
+          value: rateUnit,
+          items: const [
+            'starting from',
+            'fixed',
+            'per hour',
+            'per session',
+          ],
+          onChanged: onUnitChanged,
         ),
       ],
     );
@@ -1325,8 +1494,8 @@ class _MethodCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Container(
-        height: 86,
-        padding: const EdgeInsets.all(12),
+        height: 98,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(10),
@@ -1610,8 +1779,48 @@ class _FlowFooter extends StatelessWidget {
   }
 }
 
-double _serviceNumber(Map<String, dynamic> json, List<String> keys) {
-  for (final key in keys) {
+/// Explicit light styling for the Edit bottom sheet. The app can run in
+/// system dark mode, so inputs declare their own fill / text / border
+/// colors instead of inheriting the (possibly dark) ambient theme.
+const TextStyle _editFieldStyle = TextStyle(
+  color: Color(0xFF060D35),
+  fontSize: 13,
+  fontWeight: FontWeight.w700,
+);
+
+InputDecoration _editDecoration(String label) {
+  const borderColor = Color(0xFFD5DEE4);
+  return InputDecoration(
+    labelText: label,
+    filled: true,
+    fillColor: Colors.white,
+    labelStyle: const TextStyle(
+      color: Color(0xFF29304D),
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+    ),
+    hintStyle: const TextStyle(
+      color: Color(0xFF8B90A2),
+      fontSize: 12.5,
+      fontWeight: FontWeight.w600,
+    ),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(7),
+      borderSide: const BorderSide(color: borderColor),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(7),
+      borderSide: const BorderSide(color: Color(0xFF078D92)),
+    ),
+    disabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(7),
+      borderSide: const BorderSide(color: borderColor),
+    ),
+  );
+}
+
+double _serviceNumber(Map<String, dynamic> json, List<String> keys) {  for (final key in keys) {
     final value = json[key];
     if (value is num) return value.toDouble();
     if (value is String) {
@@ -1653,6 +1862,7 @@ String _rateTypeFor(String rateUnit) {
     'per hour' => 'per_hour',
     'per session' => 'per_session',
     'fixed' => 'fixed',
+    // API enum: starting_from, fixed, per_hour, per_session.
     _ => 'starting_from',
   };
 }

@@ -359,6 +359,25 @@ class UploadApi {
 /// A real uploaded image: `{fileName, fileUrl}` as returned by the
 /// influencer upload endpoints. Use [fileUrl] for display and for the
 /// listing `images` payload.
+/// Picks an upload filename for an image-picker result.
+///
+/// The server infers the multipart content type from the extension, so the
+/// name must end in a known image extension; anything else becomes `.jpg`.
+/// [name] is preferred because it survives `content://` URIs, which carry no
+/// extension to copy from [path].
+String influencerUploadFilename(String name, String path) {
+  const known = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic'];
+  final trimmed = name.trim().toLowerCase();
+  for (final ext in known) {
+    if (trimmed.endsWith(ext)) return trimmed;
+  }
+  final lowerPath = path.toLowerCase();
+  for (final ext in known) {
+    if (lowerPath.endsWith(ext)) return 'product_image$ext';
+  }
+  return 'product_image.jpg';
+}
+
 class UploadedImage {
   final String fileName;
   final String fileUrl;

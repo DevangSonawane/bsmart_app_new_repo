@@ -555,6 +555,12 @@ class ApiClient {
     }
     if (n.endsWith('.png')) return MediaType('image', 'png');
     if (n.endsWith('.gif')) return MediaType('image', 'gif');
+    // Without these, image_picker results on modern phones upload as
+    // application/octet-stream and some servers reject the part.
+    if (n.endsWith('.webp')) return MediaType('image', 'webp');
+    if (n.endsWith('.heic') || n.endsWith('.heif')) {
+      return MediaType('image', 'heic');
+    }
     if (n.endsWith('.mp4')) return MediaType('video', 'mp4');
     if (n.endsWith('.mov')) return MediaType('video', 'quicktime');
     if (n.endsWith('.aac')) return MediaType('audio', 'aac');

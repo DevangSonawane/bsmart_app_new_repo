@@ -250,10 +250,11 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                   ),
                 ],
               ),
-              // Draggable cart bubble floating above every store tab.
-              Positioned.fill(
-                child: IgnorePointer(
-                  ignoring: widget.isSelfStore,
+              // Draggable cart bubble floating above every store tab. Buyers
+              // only: a self store has nothing to buy, so the bubble is hidden
+              // there rather than rendered inert.
+              if (!widget.isSelfStore)
+                Positioned.fill(
                   child: StoreFloatingCartButton(
                     onTap: () {
                       final index = navItems.indexWhere(
@@ -264,7 +265,6 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                     },
                   ),
                 ),
-              ),
             ],
           ),
         ),
