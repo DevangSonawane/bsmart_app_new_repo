@@ -13,7 +13,7 @@ class BottomNav extends StatefulWidget {
   final HomeOnboardingStep? homeStep;
   final HomeOnboardingStep? storeStep;
   final HomeOnboardingStep? createStep;
-  final HomeOnboardingStep? milesStep;
+  final HomeOnboardingStep? promoteStep;
   final HomeOnboardingStep? bsparksStep;
 
   const BottomNav({
@@ -23,7 +23,7 @@ class BottomNav extends StatefulWidget {
     this.homeStep,
     this.storeStep,
     this.createStep,
-    this.milesStep,
+    this.promoteStep,
     this.bsparksStep,
   });
 
@@ -81,9 +81,9 @@ class _BottomNavState extends State<BottomNav> {
                   _buildShowcaseCreateButton(context),
                   _buildShowcaseNavItem(
                     context,
-                    step: widget.milesStep,
+                    step: widget.promoteStep,
                     index: 3,
-                    icon: LucideIcons.route,
+                    icon: LucideIcons.megaphone,
                     isActive: false,
                   ),
                   _buildShowcaseNavItem(

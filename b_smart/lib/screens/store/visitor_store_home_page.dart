@@ -17,10 +17,53 @@ import 'store_wishlist.dart';
 import 'visitor_product_detail_page.dart';
 import 'visitor_service_detail_page.dart';
 
+class VisitorStorefrontScreen extends StatelessWidget {
+  final String ownerUserId;
+
+  const VisitorStorefrontScreen({
+    super.key,
+    required this.ownerUserId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Theme(
+      data: BStoreTheme.data(context),
+      child: Scaffold(
+        backgroundColor: BStoreColors.backgroundAlt,
+        body: SafeArea(
+          top: false,
+          child: RefreshIndicator.adaptive(
+            color: BStoreColors.primary,
+            onRefresh: () => Future.wait([
+              StoreMockState.instance.refreshMarketplace(),
+              StoreProfileState.instance.load(ownerUserId, force: true),
+            ]),
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              ),
+              slivers: [
+                VisitorStoreHomePage(
+                  ownerUserId: ownerUserId,
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 28)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class VisitorStoreHomePage extends StatefulWidget {
   final String? ownerUserId;
 
-  const VisitorStoreHomePage({super.key, this.ownerUserId});
+  const VisitorStoreHomePage({
+    super.key,
+    this.ownerUserId,
+  });
 
   @override
   State<VisitorStoreHomePage> createState() => _VisitorStoreHomePageState();
@@ -171,6 +214,7 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
             child: _StoreItemsContent(
               filter: _selectedFilter,
               ownerUserId: widget.ownerUserId,
+              query: '',
             ),
           ),
       ],
@@ -190,63 +234,15 @@ class _VisitorStoreOwner {
   });
 }
 
-class _VisitorStoreTopBar extends StatelessWidget {
-  const _VisitorStoreTopBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        MediaQuery.of(context).padding.top + 10,
-        16,
-        0,
-      ),
-      child: const SizedBox(
-        height: 32,
-        child: Row(
-          children: [
-            Expanded(child: StoreBsmartWordmark()),
-            Icon(LucideIcons.search, color: Color(0xFF060D35), size: 23),
-            SizedBox(width: 18),
-            _WishlistNavIcon(),
-            SizedBox(width: 18),
-            _NotifiedBell(),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Heart icon with a live saved-count badge; opens the wishlist screen.
-class _WishlistNavIcon extends StatelessWidget {
-  const _WishlistNavIcon();
+class _StoreSearchNavIcon extends StatelessWidget {
+  const _StoreSearchNavIcon();
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => openWishlist(context),
+      onTap: () => Navigator.of(context).pushNamed('/store/search'),
       behavior: HitTestBehavior.opaque,
-      child: ListenableBuilder(
-        listenable: WishlistState.instance,
-        builder: (context, _) {
-          final count = WishlistState.instance.count;
-          const icon =
-              Icon(LucideIcons.heart, color: Color(0xFF060D35), size: 23);
-          if (count == 0) return icon;
-          return Badge.count(
-            count: count,
-            backgroundColor: BStoreColors.primary,
-            textColor: Colors.white,
-            textStyle: const TextStyle(
-              fontSize: 9.5,
-              fontWeight: FontWeight.w900,
-            ),
-            child: icon,
-          );
-        },
-      ),
+      child: const Icon(LucideIcons.search, color: Color(0xFF060D35), size: 23),
     );
   }
 }
@@ -273,6 +269,33 @@ class _NotifiedBell extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _VisitorStoreTopBar extends StatelessWidget {
+  const _VisitorStoreTopBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        MediaQuery.of(context).padding.top + 10,
+        16,
+        0,
+      ),
+      child: const SizedBox(
+        height: 32,
+        child: Row(
+          children: [
+            Expanded(child: StoreBsmartWordmark()),
+            _StoreSearchNavIcon(),
+            SizedBox(width: 18),
+            _NotifiedBell(),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -626,28 +649,33 @@ class _StoreFilterTab extends StatelessWidget {
 class _StoreItemsContent extends StatelessWidget {
   final _VisitorStoreFilter filter;
   final String? ownerUserId;
+  final String query;
 
   const _StoreItemsContent({
     required this.filter,
     required this.ownerUserId,
+    required this.query,
   });
 
   @override
   Widget build(BuildContext context) {
     final store = StoreMockState.instance;
-    final products = _ownedItems(store.products);
-    final services = _ownedItems(store.services);
+    final products = _matchingItems(_ownedItems(store.products));
+    final services = _matchingItems(_ownedItems(store.services));
     final catalog = <StoreMockCatalogItem>[...products, ...services];
+    final emptyBody = query.trim().isEmpty
+        ? 'This store has not published products or services yet.'
+        : 'No listings match "${query.trim()}".';
     return switch (filter) {
       _VisitorStoreFilter.services =>
         _VisitorServiceList(ownerUserId: ownerUserId, services: services),
       _VisitorStoreFilter.products =>
         _VisitorProductList(ownerUserId: ownerUserId, products: products),
       _VisitorStoreFilter.all => catalog.isEmpty
-          ? const StoreEmptyState(
+          ? StoreEmptyState(
               icon: LucideIcons.store,
-              title: 'No listings yet',
-              body: 'This store has not published products or services yet.',
+              title: query.trim().isEmpty ? 'No listings yet' : 'No matches',
+              body: emptyBody,
             )
           : _StoreItemsGrid(
               children: [
@@ -675,6 +703,17 @@ class _StoreItemsContent extends StatelessWidget {
     final ownerId = ownerUserId?.trim();
     if (ownerId == null || ownerId.isEmpty) return items;
     return items.where((item) => _belongsToOwner(item.raw, ownerId)).toList();
+  }
+
+  List<StoreMockCatalogItem> _matchingItems(List<StoreMockCatalogItem> items) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return items;
+    return items.where((item) {
+      return item.title.toLowerCase().contains(q) ||
+          item.category.toLowerCase().contains(q) ||
+          item.description.toLowerCase().contains(q) ||
+          item.priceLabel.toLowerCase().contains(q);
+    }).toList();
   }
 
   static bool _belongsToOwner(Map<String, dynamic> item, String ownerId) {
@@ -755,14 +794,19 @@ class _StoreItemsGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         const gap = 10.0;
-        final columnWidth = (constraints.maxWidth - gap) / 2;
-        return Wrap(
-          spacing: gap,
-          runSpacing: 12,
-          children: [
-            for (final child in children)
-              SizedBox(width: columnWidth, child: child),
-          ],
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width - 20;
+        final columnWidth = ((width - gap) / 2).clamp(120.0, 260.0);
+        return GridView.count(
+          padding: EdgeInsets.zero,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          crossAxisSpacing: gap,
+          mainAxisSpacing: 12,
+          childAspectRatio: columnWidth / 260,
+          children: children,
         );
       },
     );
@@ -808,220 +852,11 @@ class _VisitorServiceList extends StatelessWidget {
         body: 'Services published by influencers will appear here.',
       );
     }
-    return Column(
+    return _StoreItemsGrid(
       children: [
-        for (var i = 0; i < services.length; i++) ...[
-          _VisitorServiceCard(ownerUserId: ownerUserId, service: services[i]),
-          if (i != services.length - 1) const SizedBox(height: 10),
-        ],
+        for (final service in services)
+          _ServiceFeatureCard(ownerUserId: ownerUserId, service: service),
       ],
-    );
-  }
-}
-
-class _VisitorServiceCard extends StatelessWidget {
-  final String? ownerUserId;
-  final StoreMockCatalogItem service;
-
-  const _VisitorServiceCard({
-    required this.ownerUserId,
-    required this.service,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 158,
-      decoration: storeSoftCardDecoration(radius: 12),
-      clipBehavior: Clip.antiAlias,
-      child: Row(
-        children: [
-          Expanded(
-            flex: 49,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: _CatalogImage(item: service, height: 158),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            flex: 51,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(11, 9, 10, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          service.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF060D35),
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w900,
-                            height: 1.08,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Container(
-                        width: 26,
-                        height: 26,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.08),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: const Icon(
-                          LucideIcons.heart,
-                          color: Color(0xFF060D35),
-                          size: 15,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    service.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF29304D),
-                      fontSize: 10.5,
-                      height: 1.28,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const Divider(height: 10, color: Color(0xFFE1E5EA)),
-                  Row(
-                    children: [
-                      const Icon(
-                        LucideIcons.clock3,
-                        color: Color(0xFF29304D),
-                        size: 12,
-                      ),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          service.duration,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF29304D),
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                      const Text(
-                        'From ',
-                        style: TextStyle(
-                          color: Color(0xFF29304D),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      Text(
-                        formatCompactStoreMoney(service.price),
-                        style: const TextStyle(
-                          color: Color(0xFF078D92),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(
-                        LucideIcons.star,
-                        color: Color(0xFF078D92),
-                        size: 11,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        service.rating,
-                        style: const TextStyle(
-                          color: Color(0xFF060D35),
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          '(${service.reviews})',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF29304D),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  SizedBox(
-                    height: 26,
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => VisitorServiceDetailPage(
-                            ownerUserId: ownerUserId,
-                            item: service,
-                          ),
-                        ),
-                      ),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF078D92),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                      ),
-                      child: const FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'View service',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            SizedBox(width: 7),
-                            Icon(LucideIcons.chevronRight, size: 15),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -1035,126 +870,152 @@ class _ServiceFeatureCard extends StatelessWidget {
     required this.service,
   });
 
+  void _openDetail(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => VisitorServiceDetailPage(
+          ownerUserId: ownerUserId,
+          item: service,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: storeSoftCardDecoration(radius: 14),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Stack(
+    return InkWell(
+      onTap: () => _openDetail(context),
+      borderRadius: BorderRadius.circular(14),
+      child: SizedBox.expand(
+        child: Container(
+          decoration: storeSoftCardDecoration(radius: 14),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _CatalogImage(item: service, height: 160),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(11, 12, 11, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  service.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF060D35),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  service.description,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF29304D),
-                    fontSize: 11.5,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const Divider(height: 22, color: Color(0xFFE1E5EA)),
-                Row(
+              Stack(
+                children: [
+                  _CatalogImage(item: service, height: 104),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(LucideIcons.clock3,
-                        color: Color(0xFF29304D), size: 14),
-                    const SizedBox(width: 5),
-                    Flexible(
-                      child: Text(
-                        service.duration,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF29304D),
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'From ',
-                      style: TextStyle(
-                        color: Color(0xFF29304D),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
                     Text(
-                      formatCompactStoreMoney(service.price),
+                      service.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: Color(0xFF078D92),
-                        fontSize: 16,
+                        color: Color(0xFF060D35),
+                        fontSize: 13.5,
                         fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Text(
+                          formatCompactStoreMoney(service.price),
+                          style: const TextStyle(
+                            color: Color(0xFF078D92),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            service.duration,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF29304D),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(
+                          LucideIcons.star,
+                          color: Color(0xFF078D92),
+                          size: 13,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          service.rating,
+                          style: const TextStyle(
+                            color: Color(0xFF060D35),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            '(${service.reviews})',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF29304D),
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 32,
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => VisitorServiceDetailPage(
+                              ownerUserId: ownerUserId,
+                              item: service,
+                            ),
+                          ),
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF078D92),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(7),
+                          ),
+                        ),
+                        child: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'View',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              SizedBox(width: 6),
+                              Icon(LucideIcons.chevronRight, size: 17),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 38,
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => VisitorServiceDetailPage(
-                          ownerUserId: ownerUserId,
-                          item: service,
-                        ),
-                      ),
-                    ),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF078D92),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(7),
-                      ),
-                    ),
-                    child: const FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'View service',
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          SizedBox(width: 6),
-                          Icon(LucideIcons.chevronRight, size: 17),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1187,88 +1048,105 @@ class _ProductCard extends StatelessWidget {
     return InkWell(
       onTap: () => _openDetail(context),
       borderRadius: BorderRadius.circular(14),
-      child: Container(
-        decoration: storeSoftCardDecoration(radius: 14),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Stack(
-              children: [
-                _CatalogImage(item: item, height: 108),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: WishlistHeartButton(productId: item.id),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 11, 10, 11),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+      child: SizedBox.expand(
+        child: Container(
+          decoration: storeSoftCardDecoration(radius: 14),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Stack(
                 children: [
-                  Text(
-                    item.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF060D35),
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    formatCompactStoreMoney(item.price),
-                    style: const TextStyle(
-                      color: Color(0xFF078D92),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 7),
-                  Row(
-                    children: [
-                      const Icon(
-                        LucideIcons.star,
-                        color: Color(0xFF078D92),
-                        size: 13,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        item.rating,
-                        style: const TextStyle(
-                          color: Color(0xFF060D35),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(width: 5),
-                      Flexible(
-                        child: Text(
-                          '(${item.reviews})',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF29304D),
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    height: 34,
-                    width: double.infinity,
-                    child: _InlineCartStepper(item: item),
+                  _CatalogImage(item: item, height: 104),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: WishlistHeartButton(productId: item.id),
                   ),
                 ],
               ),
-            ),
-          ],
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF060D35),
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text(
+                            formatCompactStoreMoney(item.price),
+                            style: const TextStyle(
+                              color: Color(0xFF078D92),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'From',
+                            style: TextStyle(
+                              color: Color(0xFF29304D),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          const Icon(
+                            LucideIcons.star,
+                            color: Color(0xFF078D92),
+                            size: 13,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            item.rating,
+                            style: const TextStyle(
+                              color: Color(0xFF060D35),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              '(${item.reviews})',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF29304D),
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 32,
+                        width: double.infinity,
+                        child: _InlineCartStepper(item: item),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1319,14 +1197,19 @@ class _VisitorProductGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         const gap = 12.0;
-        final columnWidth = (constraints.maxWidth - gap) / 2;
-        return Wrap(
-          spacing: gap,
-          runSpacing: 12,
-          children: [
-            for (final child in children)
-              SizedBox(width: columnWidth, child: child),
-          ],
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width - 20;
+        final columnWidth = ((width - gap) / 2).clamp(120.0, 260.0);
+        return GridView.count(
+          padding: EdgeInsets.zero,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          crossAxisSpacing: gap,
+          mainAxisSpacing: 12,
+          childAspectRatio: columnWidth / 260,
+          children: children,
         );
       },
     );
@@ -1360,89 +1243,93 @@ class _VisitorProductGridCard extends StatelessWidget {
     return InkWell(
       onTap: () => _openDetail(context),
       borderRadius: BorderRadius.circular(14),
-      child: Container(
-        decoration: storeSoftCardDecoration(radius: 14),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Stack(
-              children: [
-                _CatalogImage(item: item, height: 132),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: WishlistHeartButton(productId: item.id),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+      child: SizedBox.expand(
+        child: Container(
+          decoration: storeSoftCardDecoration(radius: 14),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Stack(
                 children: [
-                  Text(
-                    item.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF060D35),
-                      fontSize: 14.5,
-                      height: 1.15,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    formatCompactStoreMoney(item.price),
-                    style: const TextStyle(
-                      color: Color(0xFF078D92),
-                      fontSize: 15.5,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 7),
-                  Row(
-                    children: [
-                      const Icon(
-                        LucideIcons.star,
-                        color: Color(0xFF078D92),
-                        size: 13,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        item.rating,
-                        style: const TextStyle(
-                          color: Color(0xFF060D35),
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(width: 5),
-                      Flexible(
-                        child: Text(
-                          '(${item.reviews})',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF29304D),
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    height: 34,
-                    width: double.infinity,
-                    child: _InlineCartStepper(item: item),
+                  _CatalogImage(item: item, height: 104),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: WishlistHeartButton(productId: item.id),
                   ),
                 ],
               ),
-            ),
-          ],
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF060D35),
+                          fontSize: 14.5,
+                          height: 1.15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        formatCompactStoreMoney(item.price),
+                        style: const TextStyle(
+                          color: Color(0xFF078D92),
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          const Icon(
+                            LucideIcons.star,
+                            color: Color(0xFF078D92),
+                            size: 13,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            item.rating,
+                            style: const TextStyle(
+                              color: Color(0xFF060D35),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              '(${item.reviews})',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF29304D),
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 32,
+                        width: double.infinity,
+                        child: _InlineCartStepper(item: item),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1460,9 +1347,12 @@ class _InlineCartStepper extends StatelessWidget {
       animation: StoreMockState.instance,
       builder: (context, _) {
         final quantity = StoreMockState.instance.quantityFor(item.id);
+        final maxQuantity = StoreMockState.instance.maxQuantityFor(item);
         if (quantity == 0) {
           return OutlinedButton(
-            onPressed: () => StoreMockState.instance.addToCart(item),
+            onPressed: maxQuantity <= 0
+                ? null
+                : () => StoreMockState.instance.addToCart(item),
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFF078D92),
               side: const BorderSide(color: Color(0xFFD5DEE4)),
@@ -1522,10 +1412,13 @@ class _InlineCartStepper extends StatelessWidget {
               Expanded(
                 child: _StepperTapTarget(
                   icon: LucideIcons.plus,
-                  onTap: () => StoreMockState.instance.updateQuantity(
-                    item.id,
-                    quantity + 1,
-                  ),
+                  enabled: quantity < maxQuantity,
+                  onTap: quantity >= maxQuantity
+                      ? null
+                      : () => StoreMockState.instance.updateQuantity(
+                            item.id,
+                            quantity + 1,
+                          ),
                 ),
               ),
             ],
@@ -1538,20 +1431,26 @@ class _InlineCartStepper extends StatelessWidget {
 
 class _StepperTapTarget extends StatelessWidget {
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final bool enabled;
 
   const _StepperTapTarget({
     required this.icon,
     required this.onTap,
+    this.enabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: onTap,
+      onTap: enabled ? onTap : null,
       borderRadius: BorderRadius.circular(7),
       child: Center(
-        child: Icon(icon, color: Colors.white, size: 16),
+        child: Icon(
+          icon,
+          color: enabled ? Colors.white : Colors.white54,
+          size: 16,
+        ),
       ),
     );
   }

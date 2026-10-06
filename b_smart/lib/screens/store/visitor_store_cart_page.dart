@@ -16,6 +16,7 @@ class VisitorStoreCartPage extends StatefulWidget {
   final String? ownerUserId;
   final bool showBackButton;
   final bool showContinueShopping;
+  final bool showHeader;
   final void Function(BuildContext context)? onBack;
   final void Function(BuildContext context)? onContinueShopping;
 
@@ -24,6 +25,7 @@ class VisitorStoreCartPage extends StatefulWidget {
     this.ownerUserId,
     this.showBackButton = false,
     this.showContinueShopping = false,
+    this.showHeader = true,
     this.onBack,
     this.onContinueShopping,
   });
@@ -159,21 +161,24 @@ class _VisitorStoreCartPageState extends State<VisitorStoreCartPage> {
           );
           return Column(
             children: [
-              _CartHeader(
-                showBackButton: widget.showBackButton,
-                onBack: widget.onBack,
-              ),
+              if (widget.showHeader)
+                _CartHeader(
+                  showBackButton: widget.showBackButton,
+                  onBack: widget.onBack,
+                ),
+              if (widget.showHeader)
+                FutureBuilder<_CartOwner?>(
+                  future: _ownerFuture,
+                  builder: (context, snapshot) {
+                    return _CartStoreCard(
+                      owner: snapshot.data,
+                      isLoading:
+                          snapshot.connectionState != ConnectionState.done,
+                    );
+                  },
+                ),
               if (cartLines.isNotEmpty)
                 _SelectionCard(itemCount: StoreMockState.instance.cartCount),
-              FutureBuilder<_CartOwner?>(
-                future: _ownerFuture,
-                builder: (context, snapshot) {
-                  return _CartStoreCard(
-                    owner: snapshot.data,
-                    isLoading: snapshot.connectionState != ConnectionState.done,
-                  );
-                },
-              ),
               if (cartLines.isEmpty)
                 const Padding(
                   padding: EdgeInsets.fromLTRB(10, 18, 10, 0),
@@ -266,7 +271,7 @@ class VisitorStoreCartScreen extends StatelessWidget {
     return Theme(
       data: BStoreTheme.data(context),
       child: Scaffold(
-        backgroundColor: BStoreColors.background,
+        backgroundColor: BStoreColors.backgroundAlt,
         body: CustomScrollView(
           physics: const BouncingScrollPhysics(),
           slivers: [
@@ -588,21 +593,26 @@ class _CartItemCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    '${StoreMockState.instance.money(line.unitPrice)}'
-                    '${line.quantity > 1 ? ' x ${line.quantity}' : ''}'
-                    '${line.variantLabel.isEmpty ? '' : ' · ${line.variantLabel}'}',
-                    style: const TextStyle(
-                      color: BStoreColors.primary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const Spacer(),
-                  Row(
+                   Expanded(
+                     child: Text(
+                       '${StoreMockState.instance.money(line.unitPrice)}'
+                       '${line.quantity > 1 ? ' x ${line.quantity}' : ''}'
+                       '${line.variantLabel.isEmpty ? '' : ' · ${line.variantLabel}'}',
+                       style: const TextStyle(
+                         color: BStoreColors.primary,
+                         fontSize: 15,
+                         fontWeight: FontWeight.w900,
+                       ),
+                     ),
+                   ),
+                   Row(
                     children: [
                       _QuantityStepper(
                         quantity: line.quantity,
+                        maxQuantity: StoreMockState.instance.maxQuantityFor(
+                          line.item,
+                          variant: line.variant,
+                        ),
                         onMinus: () => StoreMockState.instance.updateQuantity(
                           line.item.id,
                           line.quantity - 1,
@@ -644,11 +654,13 @@ class _CartItemCard extends StatelessWidget {
 
 class _QuantityStepper extends StatelessWidget {
   final int quantity;
+  final int maxQuantity;
   final VoidCallback onMinus;
   final VoidCallback onPlus;
 
   const _QuantityStepper({
     required this.quantity,
+    required this.maxQuantity,
     required this.onMinus,
     required this.onPlus,
   });
@@ -682,10 +694,12 @@ class _QuantityStepper extends StatelessWidget {
             ),
           ),
           InkWell(
-            onTap: onPlus,
-            child: const Icon(
+            onTap: quantity >= maxQuantity ? null : onPlus,
+            child: Icon(
               LucideIcons.plus,
-              color: BStoreColors.primary,
+              color: quantity >= maxQuantity
+                  ? BStoreColors.textMuted
+                  : BStoreColors.primary,
               size: 16,
             ),
           ),

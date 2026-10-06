@@ -1,10 +1,8 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux';
-import { Star, Truck } from 'lucide-react';
-import { updateProduct } from '../store/productsSlice';
+import { AlertCircle, Loader2, Star, Truck } from 'lucide-react';
 import useMediaUploader from '../hooks/useMediaUploader';
-import { uploadInfluencerProductImages } from '../services/uploadService';
+import influencerProductService, { prepareProductImages, productFormToApiPayload } from '../services/influencerProductService';
 import {
   CATEGORIES, STATUS_OPTIONS, RETURN_POLICY_OPTIONS, WARRANTY_OPTIONS, COUNTRY_OPTIONS,
   MAX_IMAGES, MAX_HIGHLIGHTS, inputCls, labelCls,
@@ -13,15 +11,20 @@ import {
   emptyVariant, WeightInput, parseWeight,
 } from '../components/productForm/ProductFormFields';
 
-const EditProduct = () => {
-  const { productId } = useParams();
-  const navigate = useNavigate();
-  const dispatch = useDispatch();
-  const product = useSelector((state) => state.products.items.find((p) => String(p.id) === String(productId)));
+const emptyProductForm = () => ({
+  name: '', brand: '', category: 'Fashion', shortDescription: '',
+  mrp: '', sellingPrice: '', stockQuantity: '', sku: '',
+  trackInventory: true, status: 'Draft',
+  packageWeight: '', weightUnit: 'kg', dimLength: '', dimWidth: '', dimHeight: '',
+  dispatchTime: '', hsnGst: '', countryOfOrigin: 'India',
+  useStoreDelivery: true, returnPolicy: RETURN_POLICY_OPTIONS[0],
+  useStoreReturnPolicy: true, warranty: WARRANTY_OPTIONS[0],
+});
 
-  const [activeStep, setActiveStep] = useState(1);
-  const [mainImageIndex, setMainImageIndex] = useState(0);
-  const [form, setForm] = useState(() => ({
+const productToForm = (product) => {
+  const { value, unit } = parseWeight(product?.packageWeight);
+  const { length, width, height } = parseDimensions(product?.dimensions);
+  return {
     name: product?.name || '',
     brand: product?.vendor || '',
     category: product?.category || 'Fashion',
@@ -32,14 +35,11 @@ const EditProduct = () => {
     sku: product?.sku || '',
     trackInventory: product?.trackInventory ?? true,
     status: product?.status || 'Draft',
-    ...(() => {
-      const { value, unit } = parseWeight(product?.packageWeight);
-      return { packageWeight: value, weightUnit: unit };
-    })(),
-    ...(() => {
-      const { length, width, height } = parseDimensions(product?.dimensions);
-      return { dimLength: length, dimWidth: width, dimHeight: height };
-    })(),
+    packageWeight: value,
+    weightUnit: unit,
+    dimLength: length,
+    dimWidth: width,
+    dimHeight: height,
     dispatchTime: product?.dispatchTime || '',
     hsnGst: product?.hsnGst || '',
     countryOfOrigin: product?.countryOfOrigin || 'India',
@@ -47,29 +47,52 @@ const EditProduct = () => {
     returnPolicy: product?.returnPolicy || RETURN_POLICY_OPTIONS[0],
     useStoreReturnPolicy: product?.useStoreReturnPolicy ?? true,
     warranty: product?.warranty || WARRANTY_OPTIONS[0],
-  }));
-  const [highlights, setHighlights] = useState(product?.highlights?.length ? product.highlights : ['', '', '']);
-  const [variants, setVariants] = useState(product?.variants?.length ? product.variants : [emptyVariant()]);
+  };
+};
+
+const EditProduct = () => {
+  const { productId } = useParams();
+  const navigate = useNavigate();
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const [activeStep, setActiveStep] = useState(1);
+  const [mainImageIndex, setMainImageIndex] = useState(0);
+  const [form, setForm] = useState(emptyProductForm);
+  const [highlights, setHighlights] = useState(['', '', '']);
+  const [variants, setVariants] = useState([emptyVariant()]);
   const {
-    images, isDragging, fileInputRef,
+    images, setImages, isDragging, fileInputRef,
     handleFileInput, handleDrop, handleDragOver, handleDragLeave, removeImage,
-    isUploading, uploadError, clearUploadError, uploadedUrls,
-  } = useMediaUploader(product?.images || [], MAX_IMAGES, { uploadFn: uploadInfluencerProductImages });
-  const [submitError, setSubmitError] = useState('');
+  } = useMediaUploader([], MAX_IMAGES);
 
   const step1Ref = useRef(null);
   const step2Ref = useRef(null);
   const step3Ref = useRef(null);
   const stepRefs = { 1: step1Ref, 2: step2Ref, 3: step3Ref };
 
-  if (!product) {
-    return (
-      <div className="min-h-screen bg-white dark:bg-black flex flex-col items-center justify-center gap-3">
-        <p className="text-gray-500 dark:text-gray-400">Product not found.</p>
-        <Link to="/market/my-store/products" className="text-[#fa3f5e] font-semibold text-sm">Back to My Store</Link>
-      </div>
-    );
-  }
+  useEffect(() => {
+    let alive = true;
+    influencerProductService.get(productId)
+      .then((item) => {
+        if (!alive) return;
+        setProduct(item);
+        setForm(productToForm(item));
+        setHighlights(item.highlights?.length ? item.highlights : ['', '', '']);
+        setVariants(item.variants?.length ? item.variants : [emptyVariant()]);
+        setImages((item.images || []).map((url, index) => ({ id: `${item.id || productId}-${index}`, url, existing: true })));
+        setError('');
+      })
+      .catch((err) => {
+        if (alive) setError(err?.response?.data?.message || 'Product not found.');
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => { alive = false; };
+  }, [productId, setImages]);
 
   const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
   const setField = (field, value) => setForm((f) => ({ ...f, [field]: value }));
@@ -109,60 +132,49 @@ const EditProduct = () => {
     setActiveStep(autoTargetStep);
   }
 
-  const buildPayload = (status) => ({
-    id: product.id,
-    name: form.name,
-    vendor: form.brand,
-    category: form.category,
-    description: form.shortDescription,
-    price: parseInt(form.sellingPrice, 10) || 0,
-    mrp: parseInt(form.mrp, 10) || 0,
-    stockQuantity: parseInt(form.stockQuantity, 10) || 0,
-    sku: form.sku,
-    trackInventory: form.trackInventory,
-    status,
-    packageWeight: form.packageWeight ? `${form.packageWeight} ${form.weightUnit}` : '',
-    dimensions: (form.dimLength && form.dimWidth && form.dimHeight) ? `${form.dimLength} x ${form.dimWidth} x ${form.dimHeight} cm` : '',
-    dispatchTime: form.dispatchTime,
-    hsnGst: form.hsnGst,
-    countryOfOrigin: form.countryOfOrigin,
-    useStoreDelivery: form.useStoreDelivery,
-    returnPolicy: form.returnPolicy,
-    useStoreReturnPolicy: form.useStoreReturnPolicy,
-    warranty: form.warranty,
-    highlights: highlights.filter(Boolean),
-    images: uploadedUrls,
-    variants: variants.map((v) => ({
-      ...v,
-      stock: parseInt(v.stock, 10) || 0,
-      price: parseInt(v.price, 10) || 0,
-    })),
-  });
-
-  const guardUploads = () => {
-    if (isUploading) {
-      setSubmitError('Please wait for images to finish uploading.');
-      return false;
+  const submitProduct = async (e, status) => {
+    e.preventDefault();
+    if (saving || !product) return;
+    if (images.length === 0) {
+      setError('At least one product image is required.');
+      return;
     }
-    setSubmitError('');
-    return true;
+    setSaving(true);
+    setError('');
+    try {
+      const uploadedImages = await prepareProductImages(images);
+      const payload = productFormToApiPayload({ form, highlights, variants, images: uploadedImages, status });
+      await influencerProductService.update(product.id, payload);
+      navigate('/market/my-store/products');
+    } catch (err) {
+      setError(err?.response?.data?.message || err?.message || 'Failed to update product. Try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleSaveDraft = (e) => {
-    e.preventDefault();
-    if (!guardUploads()) return;
-    dispatch(updateProduct(buildPayload('Draft')));
-    navigate('/market/my-store/products');
-  };
-
-  const handlePublish = (e) => {
-    e.preventDefault();
-    if (!guardUploads()) return;
-    dispatch(updateProduct(buildPayload(form.status === 'Draft' ? 'Active' : form.status)));
-    navigate('/market/my-store/products');
-  };
+  const handleSaveDraft = (e) => submitProduct(e, 'Draft');
+  const handlePublish = (e) => submitProduct(e, form.status === 'Draft' ? 'Active' : form.status);
 
   const stockNum = parseInt(form.stockQuantity, 10) || 0;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-black flex flex-col items-center justify-center gap-3">
+        <Loader2 size={24} className="animate-spin text-[#fa3f5e]" />
+        <p className="text-gray-500 dark:text-gray-400">Loading product...</p>
+      </div>
+    );
+  }
+
+  if (!product) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-black flex flex-col items-center justify-center gap-3">
+        <p className="text-gray-500 dark:text-gray-400">{error || 'Product not found.'}</p>
+        <Link to="/market/my-store/products" className="text-[#fa3f5e] font-semibold text-sm">Back to My Store</Link>
+      </div>
+    );
+  }
 
   return (
      <div className="min-h-screen bg-gray-50 dark:bg-black pb-24 max-w-[1280px] ml-auto px-4 pt-6">
@@ -171,20 +183,27 @@ const EditProduct = () => {
         <div className="flex gap-2">
           <button
             onClick={handleSaveDraft}
+            disabled={saving}
             className="px-4 py-2 rounded-lg text-sm font-bold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900"
           >
-            Save Draft
+            {saving ? 'Saving...' : 'Save Draft'}
           </button>
           <button
             onClick={handlePublish}
-            disabled={isUploading}
-            className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange disabled:opacity-50 disabled:cursor-wait"
+            disabled={saving}
+            className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange"
           >
-            {isUploading ? 'Uploading images…' : 'Publish Product'}
+            {saving ? <span className="inline-flex items-center gap-1.5"><Loader2 size={14} className="animate-spin" /> Saving</span> : 'Publish Product'}
           </button>
         </div>
       </div>
       <Link to="/market/my-store/products" className="text-xs text-gray-400 hover:text-[#fa3f5e]">← Back to My Store</Link>
+
+      {error && (
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">
+          <AlertCircle size={15} className="shrink-0" /> {error}
+        </div>
+      )}
 
       <div className="mt-5">
         <Stepper
@@ -214,8 +233,6 @@ const EditProduct = () => {
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 isDragging={isDragging}
-                uploadError={uploadError || submitError}
-                onClearUploadError={() => { clearUploadError(); setSubmitError(''); }}
               />
 
               <div className="space-y-4">

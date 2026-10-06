@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../api/phase2_store_api.dart';
 import '../../services/auth/auth_service.dart';
 import '../../services/wallet_service.dart';
+import '../../utils/url_helper.dart';
 import 'self_store_products_page.dart';
 import 'self_store_services_manage_page.dart';
 import 'shared/store_shared_widgets.dart';
@@ -13,7 +14,12 @@ import 'store_role_setup_screen.dart';
 import 'store_role_switch_sheet.dart';
 
 class SelfStoreDashboardPage extends StatefulWidget {
-  const SelfStoreDashboardPage({super.key});
+  final bool showHeader;
+
+  const SelfStoreDashboardPage({
+    super.key,
+    this.showHeader = true,
+  });
 
   @override
   State<SelfStoreDashboardPage> createState() => _SelfStoreDashboardPageState();
@@ -68,13 +74,10 @@ class _SelfStoreDashboardPageState extends State<SelfStoreDashboardPage> {
       api.sellerServiceBookings().catchError((_) => <Map<String, dynamic>>[]),
       WalletService().getCoinBalance().catchError((_) => 0),
     ]);
-    final products =
-        List<Map<String, dynamic>>.from(results[0] as List);
-    final services =
-        List<Map<String, dynamic>>.from(results[1] as List);
+    final products = List<Map<String, dynamic>>.from(results[0] as List);
+    final services = List<Map<String, dynamic>>.from(results[1] as List);
     final orders = List<Map<String, dynamic>>.from(results[2] as List);
-    final bookings =
-        List<Map<String, dynamic>>.from(results[3] as List);
+    final bookings = List<Map<String, dynamic>>.from(results[3] as List);
     final coins = (results[4] as num?)?.toInt() ?? 0;
 
     var openOrders = 0;
@@ -88,9 +91,7 @@ class _SelfStoreDashboardPageState extends State<SelfStoreDashboardPage> {
     var newBookings = 0;
     for (final booking in bookings) {
       final status = StoreMockState.statusOf(booking);
-      if (status == 'pending' ||
-          status == 'confirmed' ||
-          status == 'paid') {
+      if (status == 'pending' || status == 'confirmed' || status == 'paid') {
         newBookings++;
       }
     }
@@ -132,7 +133,7 @@ class _SelfStoreDashboardPageState extends State<SelfStoreDashboardPage> {
   Widget build(BuildContext context) {
     return SliverList.list(
       children: [
-        const _SelfDashboardHeader(),
+        if (widget.showHeader) const _SelfDashboardHeader(),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
           child: _RevenueCard(dataFuture: _dataFuture),
@@ -180,10 +181,10 @@ class _SelfStoreDashboardPageState extends State<SelfStoreDashboardPage> {
             ],
           ),
         ),
-        const _DashboardSectionHeading('Recent activity'),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: _ActivityCard(dataFuture: _dataFuture),
+        const _DashboardSectionHeading('My listings'),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: _StoreProductsServicesToggle(),
         ),
       ],
     );
@@ -373,7 +374,6 @@ class _SelfDashboardHeader extends StatelessWidget {
   }
 }
 
-
 class _StatsGrid extends StatelessWidget {
   final Future<_DashboardData> dataFuture;
 
@@ -434,8 +434,7 @@ class _RevenueCard extends StatelessWidget {
 
   const _RevenueCard({required this.dataFuture});
 
-  static String _money(double amount) =>
-      formatStoreMoney(amount);
+  static String _money(double amount) => formatStoreMoney(amount);
 
   @override
   Widget build(BuildContext context) {
@@ -443,12 +442,10 @@ class _RevenueCard extends StatelessWidget {
       future: dataFuture,
       builder: (context, snapshot) {
         final data = snapshot.data ?? _DashboardData.empty;
-        final loading =
-            snapshot.connectionState != ConnectionState.done;
+        final loading = snapshot.connectionState != ConnectionState.done;
         return Container(
           constraints: const BoxConstraints(minHeight: 132),
-          padding:
-              const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(22),
@@ -525,7 +522,8 @@ class _RevenueCard extends StatelessWidget {
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.centerLeft,
                             child: Text(
-                              formatStoreMoney(data.walletCoins.toDouble(), decimals: 0),
+                              formatStoreMoney(data.walletCoins.toDouble(),
+                                  decimals: 0),
                               style: const TextStyle(
                                 color: Color(0xFF078D92),
                                 fontSize: 31,
@@ -785,6 +783,421 @@ class _RecentActivityRow extends StatelessWidget {
               color: Color(0xFF29304D), size: 21),
           const SizedBox(width: 12),
         ],
+      ),
+    );
+  }
+}
+
+class _StoreProductsServicesToggle extends StatefulWidget {
+  const _StoreProductsServicesToggle();
+
+  @override
+  State<_StoreProductsServicesToggle> createState() =>
+      _StoreProductsServicesToggleState();
+}
+
+class _StoreProductsServicesToggleState
+    extends State<_StoreProductsServicesToggle> {
+  bool _showProducts = true;
+  late Future<List<Map<String, dynamic>>> _itemsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _itemsFuture = _load();
+  }
+
+  Future<List<Map<String, dynamic>>> _load() async {
+    if (_showProducts) {
+      return Phase2StoreApi().myProducts();
+    }
+    return Phase2StoreApi().myServices();
+  }
+
+  void _switchToProducts() {
+    setState(() {
+      _showProducts = true;
+      _itemsFuture = _load();
+    });
+  }
+
+  void _switchToServices() {
+    setState(() {
+      _showProducts = false;
+      _itemsFuture = _load();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF5F6F8),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: _ToggleTab(
+                  label: 'Products',
+                  active: _showProducts,
+                  onTap: _switchToProducts,
+                ),
+              ),
+              Expanded(
+                child: _ToggleTab(
+                  label: 'Services',
+                  active: !_showProducts,
+                  onTap: _switchToServices,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        FutureBuilder<List<Map<String, dynamic>>>(
+          future: _itemsFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const SizedBox(
+                height: 120,
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final items = snapshot.data ?? const <Map<String, dynamic>>[];
+            if (items.isEmpty) {
+              return Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  _showProducts
+                      ? 'No products yet. Add your first product to get started.'
+                      : 'No services yet. Add your first service to get started.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF333956),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              );
+            }
+            final previewItems = items.take(2).toList();
+            return Column(
+              children: [
+                for (var i = 0; i < previewItems.length; i++) ...[
+                  _DashboardListingPreviewCard(
+                    item: previewItems[i],
+                    isProduct: _showProducts,
+                    onTap: _openFullManager,
+                  ),
+                  if (i != previewItems.length - 1) const SizedBox(height: 8),
+                ],
+                if (items.length > 2) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: OutlinedButton.icon(
+                      onPressed: _openFullManager,
+                      icon: const Icon(LucideIcons.list, size: 17),
+                      label: Text(
+                        'View more ${_showProducts ? 'products' : 'services'}',
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF29304D),
+                        backgroundColor: const Color(0xFFF5F6F8),
+                        side: BorderSide.none,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  void _openFullManager() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _showProducts
+            ? const SelfStoreProductsScreen()
+            : const SelfStoreServicesManageScreen(),
+      ),
+    );
+  }
+}
+
+class _DashboardListingPreviewCard extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final bool isProduct;
+  final VoidCallback onTap;
+
+  const _DashboardListingPreviewCard({
+    required this.item,
+    required this.isProduct,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final title = _listingText(item, const ['name', 'title'], 'Item');
+    final amount = _listingNumber(
+      item,
+      isProduct
+          ? const ['selling_price', 'price', 'amount']
+          : const ['price', 'amount'],
+    );
+    final status = _listingStatus(item, isProduct);
+    final detail = isProduct ? _productDetail(item) : _serviceDetail(item);
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE9ECEF)),
+          ),
+          child: Row(
+            children: [
+              StoreItemImage(
+                imageUrl: _listingImageUrl(item),
+                icon: isProduct
+                    ? LucideIcons.package
+                    : LucideIcons.briefcaseBusiness,
+                width: 66,
+                height: 66,
+                debugLabel: isProduct
+                    ? 'dashboard-product-preview'
+                    : 'dashboard-service-preview',
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF060D35),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      formatCompactStoreMoney(amount),
+                      style: const TextStyle(
+                        color: Color(0xFF078D92),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      detail,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF596174),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _ListingStatusPill(label: status.$1, color: status.$2),
+                  const SizedBox(height: 16),
+                  const Icon(
+                    LucideIcons.chevronRight,
+                    color: Color(0xFF29304D),
+                    size: 20,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _productDetail(Map<String, dynamic> item) {
+    final stock = _listingNumber(item, const ['stock_quantity']);
+    final category = _listingText(item, const ['category'], 'Product');
+    return '${stock.round()} in stock · $category';
+  }
+
+  static String _serviceDetail(Map<String, dynamic> item) {
+    final rateType = _listingText(item, const ['rate_type'], '');
+    final category = _listingText(item, const ['category'], 'Service');
+    final suffix = switch (rateType) {
+      'per_hour' => 'Per hour',
+      'per_session' => 'Per session',
+      'starting_from' => 'Starting from',
+      _ => 'Service',
+    };
+    return '$suffix · $category';
+  }
+
+  static (String, Color) _listingStatus(
+    Map<String, dynamic> item,
+    bool isProduct,
+  ) {
+    if (isProduct) {
+      final status =
+          _listingText(item, const ['status'], 'active').toLowerCase();
+      if (status == 'draft') return ('Draft', const Color(0xFF8A6B11));
+      final stock = _listingNumber(item, const ['stock_quantity']);
+      if (stock <= 0) return ('Out', const Color(0xFFE87822));
+      return ('Live', const Color(0xFF139B54));
+    }
+    if (item['visible_to_customers'] == false) {
+      return ('Draft', const Color(0xFF8A6B11));
+    }
+    return ('Live', const Color(0xFF139B54));
+  }
+}
+
+class _ListingStatusPill extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _ListingStatusPill({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+String _listingText(
+  Map<String, dynamic> source,
+  List<String> keys,
+  String fallback,
+) {
+  for (final key in keys) {
+    final value = source[key]?.toString().trim();
+    if (value != null && value.isNotEmpty && value != 'null') return value;
+  }
+  return fallback;
+}
+
+double _listingNumber(Map<String, dynamic> source, List<String> keys) {
+  for (final key in keys) {
+    final value = source[key];
+    if (value is num) return value.toDouble();
+    final parsed = double.tryParse(value?.toString() ?? '');
+    if (parsed != null) return parsed;
+  }
+  return 0;
+}
+
+String _listingImageUrl(Map<String, dynamic> item) {
+  for (final key in ['image_url', 'imageUrl', 'thumbnail', 'cover_image']) {
+    final value = item[key]?.toString().trim();
+    if (value != null && value.isNotEmpty && value != 'null') {
+      return UrlHelper.absoluteUrl(value);
+    }
+  }
+  final images = item['images'];
+  if (images is List && images.isNotEmpty) {
+    final first = images.first;
+    if (first is String && first.trim().isNotEmpty) {
+      return UrlHelper.absoluteUrl(first.trim());
+    }
+    if (first is Map) {
+      for (final key in ['url', 'fileName', 'filename', 'path', 'src']) {
+        final value = first[key]?.toString().trim();
+        if (value != null && value.isNotEmpty && value != 'null') {
+          return UrlHelper.absoluteUrl(value);
+        }
+      }
+    }
+  }
+  return '';
+}
+
+class _ToggleTab extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _ToggleTab({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: active ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: active
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: active ? const Color(0xFF060D35) : const Color(0xFF596174),
+              fontSize: 13,
+              fontWeight: active ? FontWeight.w900 : FontWeight.w600,
+            ),
+          ),
+        ),
       ),
     );
   }

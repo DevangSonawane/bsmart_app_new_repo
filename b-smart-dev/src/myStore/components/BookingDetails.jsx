@@ -8,7 +8,7 @@ import { bookingDate, bookingTime, bookingStatus, localDate, validProposal } fro
 import { money } from '../data/orderFilters';
 import { CustomerAvatar, BookingBadge } from './BookingUI';
 
-export default function BookingDetails({ booking, closeTo }) {
+export default function BookingDetails({ booking, closeTo, onStatusChange, updating = false, apiEnabled = false }) {
   const dispatch = useDispatch();
   const headingRef = useRef(null);
   const [showProposal, setShowProposal] = useState(false);
@@ -18,7 +18,14 @@ export default function BookingDetails({ booking, closeTo }) {
   useEffect(() => { headingRef.current?.focus({ preventScroll: true }); }, []);
   if (!booking) return <aside className="rounded-2xl border border-gray-200 dark:border-gray-800 p-5 bg-white dark:bg-gray-900"><h2 ref={headingRef} tabIndex={-1} className="font-bold text-gray-900 dark:text-white">Booking not found</h2><Link to={closeTo} className="text-sm text-[#fa3f5e] inline-block mt-3">Back to bookings</Link></aside>;
   const actionable = ['New', 'Proposed'].includes(booking.status);
+  const canStart = booking.status === 'Confirmed';
+  const canComplete = booking.status === 'In Progress';
   const earnings = Math.round(booking.amount * 0.9 * 100) / 100;
+  const setStatus = (status) => {
+    if (apiEnabled) onStatusChange?.(booking.id, status);
+    else if (status === 'Confirmed') dispatch(acceptBooking(booking.id));
+    else if (status === 'Completed') dispatch(completeBooking(booking.id));
+  };
   const submitProposal = (event) => {
     event.preventDefault();
     if (!validProposal(date, time)) { setError('Choose a date and time in the future.'); return; }
@@ -47,12 +54,13 @@ export default function BookingDetails({ booking, closeTo }) {
         {booking.status !== 'New' && <div role="status" className="rounded-xl bg-gray-50 dark:bg-gray-800/60 p-3"><BookingBadge status={booking.status} />{booking.status === 'Proposed' && <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">{bookingDate(booking.proposedDate)} · {bookingTime(booking.proposedTime)} — awaiting customer confirmation</p>}</div>}
       </div>
       {actionable && <div className="space-y-2 mt-5">
-        {booking.status === 'New' && <button type="button" onClick={() => dispatch(acceptBooking(booking.id))} className="w-full py-2.5 rounded-lg text-sm font-bold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange">Accept</button>}
+        {booking.status === 'New' && <button type="button" disabled={updating} onClick={() => setStatus('Confirmed')} className="w-full py-2.5 rounded-lg text-sm font-bold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange disabled:opacity-40">{updating ? 'Updating...' : 'Accept'}</button>}
         <button type="button" aria-expanded={showProposal} onClick={() => setShowProposal(!showProposal)} className="w-full py-2.5 rounded-lg text-sm font-semibold border border-[#fa3f5e]/50 text-[#fa3f5e] hover:bg-pink-50 dark:hover:bg-pink-900/10">{booking.status === 'Proposed' ? 'Update proposed time' : 'Propose new time'}</button>
         {showProposal && <form onSubmit={submitProposal} className="rounded-xl border border-gray-200 dark:border-gray-800 p-3 space-y-3"><div><label htmlFor="proposed-date" className={labelCls}>Date</label><input id="proposed-date" type="date" required min={localDate()} value={date} onChange={(event) => setDate(event.target.value)} className={inputCls} /></div><div><label htmlFor="proposed-time" className={labelCls}>Time</label><input id="proposed-time" type="time" required value={time} onChange={(event) => setTime(event.target.value)} className={inputCls} /></div>{error && <p role="alert" className="text-xs text-red-500">{error}</p>}<button type="submit" className="w-full rounded-lg bg-[#fa3f5e] text-white text-xs font-semibold py-2.5">Save proposed time</button></form>}
-        <button type="button" onClick={() => { if (window.confirm(`Decline the booking from ${booking.customer}?`)) dispatch(declineBooking(booking.id)); }} className="w-full py-2.5 rounded-lg text-sm font-semibold border border-red-300 dark:border-red-900 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10">Decline</button>
+        {!apiEnabled && <button type="button" onClick={() => { if (window.confirm(`Decline the booking from ${booking.customer}?`)) dispatch(declineBooking(booking.id)); }} className="w-full py-2.5 rounded-lg text-sm font-semibold border border-red-300 dark:border-red-900 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10">Decline</button>}
       </div>}
-      {booking.status === 'Confirmed' && <button type="button" onClick={() => dispatch(completeBooking(booking.id))} className="w-full mt-5 py-2.5 rounded-lg text-sm font-bold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange">Mark as completed</button>}
+      {apiEnabled && canStart && <button type="button" disabled={updating} onClick={() => setStatus('In Progress')} className="w-full mt-5 py-2.5 rounded-lg text-sm font-bold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange disabled:opacity-40">{updating ? 'Updating...' : 'Start service'}</button>}
+      {(apiEnabled ? canComplete : booking.status === 'Confirmed') && <button type="button" disabled={updating} onClick={() => setStatus('Completed')} className="w-full mt-3 py-2.5 rounded-lg text-sm font-bold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange disabled:opacity-40">{updating ? 'Updating...' : 'Mark as completed'}</button>}
       <p className="text-[10px] text-gray-400 mt-4">Booking #{booking.id} · {bookingStatus(booking.status)}</p>
     </aside>
   );

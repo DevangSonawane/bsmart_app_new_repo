@@ -1,10 +1,8 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useDispatch } from 'react-redux';
-import { Star, Truck } from 'lucide-react';
-import { addProduct } from '../store/productsSlice';
+import { AlertCircle, Loader2, Star, Truck } from 'lucide-react';
 import useMediaUploader from '../hooks/useMediaUploader';
-import { uploadInfluencerProductImages } from '../services/uploadService';
+import influencerProductService, { prepareProductImages, productFormToApiPayload } from '../services/influencerProductService';
 import {
   CATEGORIES, STATUS_OPTIONS, RETURN_POLICY_OPTIONS, WARRANTY_OPTIONS, COUNTRY_OPTIONS,
   MAX_IMAGES, MAX_HIGHLIGHTS, inputCls, labelCls,
@@ -15,10 +13,11 @@ import {
 
 const AddProduct = () => {
   const navigate = useNavigate();
-  const dispatch = useDispatch();
 
   const [activeStep, setActiveStep] = useState(1);
   const [mainImageIndex, setMainImageIndex] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const [form, setForm] = useState({
     name: '', brand: '', category: 'Fashion', shortDescription: '',
     mrp: '', sellingPrice: '', stockQuantity: '', sku: '',
@@ -33,9 +32,7 @@ const AddProduct = () => {
   const {
     images, isDragging, fileInputRef,
     handleFileInput, handleDrop, handleDragOver, handleDragLeave, removeImage,
-    isUploading, uploadError, clearUploadError, uploadedUrls,
-  } = useMediaUploader([], MAX_IMAGES, { uploadFn: uploadInfluencerProductImages });
-  const [submitError, setSubmitError] = useState('');
+  } = useMediaUploader([], MAX_IMAGES);
 
   const step1Ref = useRef(null);
   const step2Ref = useRef(null);
@@ -80,57 +77,29 @@ const AddProduct = () => {
     setActiveStep(autoTargetStep);
   }
 
-  const buildPayload = (status) => ({
-    name: form.name,
-    vendor: form.brand,
-    category: form.category,
-    description: form.shortDescription,
-    price: parseInt(form.sellingPrice, 10) || 0,
-    mrp: parseInt(form.mrp, 10) || 0,
-    stockQuantity: parseInt(form.stockQuantity, 10) || 0,
-    sku: form.sku,
-    trackInventory: form.trackInventory,
-    status,
-    packageWeight: form.packageWeight ? `${form.packageWeight} ${form.weightUnit}` : '',
-    dimensions: (form.dimLength && form.dimWidth && form.dimHeight) ? `${form.dimLength} x ${form.dimWidth} x ${form.dimHeight} cm` : '',
-    dispatchTime: form.dispatchTime,
-    hsnGst: form.hsnGst,
-    countryOfOrigin: form.countryOfOrigin,
-    useStoreDelivery: form.useStoreDelivery,
-    returnPolicy: form.returnPolicy,
-    useStoreReturnPolicy: form.useStoreReturnPolicy,
-    warranty: form.warranty,
-    highlights: highlights.filter(Boolean),
-    images: uploadedUrls,
-    variants: variants.map((v) => ({
-      ...v,
-      stock: parseInt(v.stock, 10) || 0,
-      price: parseInt(v.price, 10) || 0,
-    })),
-  });
-
-  const guardUploads = () => {
-    if (isUploading) {
-      setSubmitError('Please wait for images to finish uploading.');
-      return false;
+  const submitProduct = async (e, status) => {
+    e.preventDefault();
+    if (saving) return;
+    if (images.length === 0) {
+      setError('At least one product image is required.');
+      return;
     }
-    setSubmitError('');
-    return true;
+    setSaving(true);
+    setError('');
+    try {
+      const uploadedImages = await prepareProductImages(images);
+      const payload = productFormToApiPayload({ form, highlights, variants, images: uploadedImages, status });
+      await influencerProductService.create(payload);
+      navigate('/market/my-store/products');
+    } catch (err) {
+      setError(err?.response?.data?.message || err?.message || 'Failed to save product. Try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleSaveDraft = (e) => {
-    e.preventDefault();
-    if (!guardUploads()) return;
-    dispatch(addProduct(buildPayload('Draft')));
-    navigate('/market/my-store/products');
-  };
-
-  const handlePublish = (e) => {
-    e.preventDefault();
-    if (!guardUploads()) return;
-    dispatch(addProduct(buildPayload(form.status === 'Draft' ? 'Active' : form.status)));
-    navigate('/market/my-store/products');
-  };
+  const handleSaveDraft = (e) => submitProduct(e, 'Draft');
+  const handlePublish = (e) => submitProduct(e, form.status === 'Draft' ? 'Active' : form.status);
 
   const stockNum = parseInt(form.stockQuantity, 10) || 0;
 
@@ -141,20 +110,27 @@ const AddProduct = () => {
         <div className="flex gap-2">
           <button
             onClick={handleSaveDraft}
+            disabled={saving}
             className="px-4 py-2 rounded-lg text-sm font-bold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900"
           >
-            Save Draft
+            {saving ? 'Saving...' : 'Save Draft'}
           </button>
           <button
             onClick={handlePublish}
-            disabled={isUploading}
-            className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange disabled:opacity-50 disabled:cursor-wait"
+            disabled={saving}
+            className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange"
           >
-            {isUploading ? 'Uploading images…' : 'Publish Product'}
+            {saving ? <span className="inline-flex items-center gap-1.5"><Loader2 size={14} className="animate-spin" /> Saving</span> : 'Publish Product'}
           </button>
         </div>
       </div>
       <Link to="/market/my-store/products" className="text-xs text-gray-400 hover:text-[#fa3f5e]">← Back to My Store</Link>
+
+      {error && (
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">
+          <AlertCircle size={15} className="shrink-0" /> {error}
+        </div>
+      )}
 
       <div className="mt-5">
         <Stepper
@@ -184,8 +160,6 @@ const AddProduct = () => {
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 isDragging={isDragging}
-                uploadError={uploadError || submitError}
-                onClearUploadError={() => { clearUploadError(); setSubmitError(''); }}
               />
 
               <div className="space-y-4">

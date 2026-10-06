@@ -4,9 +4,15 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../utils/url_helper.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_models.dart';
+import 'store_theme.dart';
 
 class SelfStoreOrdersPage extends StatefulWidget {
-  const SelfStoreOrdersPage({super.key});
+  final bool showHeader;
+
+  const SelfStoreOrdersPage({
+    super.key,
+    this.showHeader = true,
+  });
 
   @override
   State<SelfStoreOrdersPage> createState() => _SelfStoreOrdersPageState();
@@ -14,13 +20,14 @@ class SelfStoreOrdersPage extends StatefulWidget {
 
 enum _OrderManagerPage { list, details, fulfill }
 
-typedef _SelfOrderStatus = StoreMockOrderStatus;
+enum _OrderMode { buy, sell }
+
 typedef _SelfOrder = StoreMockOrder;
 typedef _SelfOrderProduct = StoreMockCartLine;
 
 class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
   _OrderManagerPage _page = _OrderManagerPage.list;
-  _SelfOrderStatus _selectedStatus = StoreMockOrderStatus.newOrder;
+  _OrderMode _orderMode = _OrderMode.buy;
   _SelfOrder? _selectedLiveOrder;
   String? _selectedLiveId;
   bool _updating = false;
@@ -29,12 +36,16 @@ class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      StoreMockState.instance.refreshBuyerOrders();
       StoreMockState.instance.refreshSellerOrders();
     });
   }
 
   List<_SelfOrder> get _liveOrders =>
       StoreMockState.instance.sellerOrders.map(_mockFromApi).toList();
+
+  List<_SelfOrder> get _buyerOrders =>
+      StoreMockState.instance.buyerOrders.map(_mockFromApi).toList();
 
   _SelfOrder? get _selectedOrder => _selectedLiveOrder;
 
@@ -58,9 +69,7 @@ class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
             ship['name'],
             ship['address_line1'],
             '${ship['city'] ?? ''}, ${ship['state'] ?? ''} ${ship['pincode'] ?? ''}'
-          ]
-            .where((e) => (e?.toString().trim().isNotEmpty ?? false))
-            .join('\n')
+          ].where((e) => (e?.toString().trim().isNotEmpty ?? false)).join('\n')
         : '';
     final amount = StoreMockState.amountOf(m);
     final rawItems = m['items'];
@@ -68,10 +77,13 @@ class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
     if (rawItems is List) {
       for (final r in rawItems.whereType<Map>()) {
         final map = r.map((k, v) => MapEntry(k.toString(), v));
-        final prod = map['product'];
-        final pm = prod is Map
-            ? prod.map((k, v) => MapEntry(k.toString(), v))
-            : map;
+        final prod = map['product'] ??
+            map['product_details'] ??
+            map['productDetail'] ??
+            map['item'] ??
+            map['listing'];
+        final pm =
+            prod is Map ? prod.map((k, v) => MapEntry(k.toString(), v)) : map;
         final title = (pm['name'] ?? pm['title'] ?? 'Item').toString();
         final price = StoreMockState.amountOf(pm);
         final qty = (map['quantity'] is num)
@@ -84,7 +96,7 @@ class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
             title: title,
             category: (pm['category'] ?? 'Product').toString(),
             description: '',
-            imageUrl: _orderImageOf(pm),
+            imageUrl: _orderImageOf(pm, fallback: map),
             icon: LucideIcons.package,
             price: price,
             duration: '2-3 days',
@@ -108,20 +120,32 @@ class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
     );
   }
 
-  static String _orderImageOf(Map<String, dynamic> pm) {
-    final images = pm['images'];
-    if (images is List && images.isNotEmpty) {
-      final first = images.first;
-      if (first is Map) {
-        for (final key in ['url', 'fileName', 'filename', 'path', 'src']) {
-          final value = first[key]?.toString().trim() ?? '';
-          if (value.isNotEmpty) return UrlHelper.absoluteUrl(value);
-        }
-      } else if (first is String && first.trim().isNotEmpty) {
-        return UrlHelper.absoluteUrl(first.trim());
+  static String _orderImageOf(
+    Map<String, dynamic> pm, {
+    Map<String, dynamic>? fallback,
+  }) {
+    final primary = StoreMockState.firstImageUrl(pm);
+    if (primary.isNotEmpty) return primary;
+
+    final source = fallback;
+    if (source == null) return '';
+    for (final key in const [
+      'product_image',
+      'productImage',
+      'item_image',
+      'itemImage',
+      'image_url',
+      'imageUrl',
+      'thumbnail',
+      'cover_image',
+      'coverImage',
+    ]) {
+      final value = source[key]?.toString().trim();
+      if (value != null && value.isNotEmpty && value != 'null') {
+        return UrlHelper.absoluteUrl(value);
       }
     }
-    return '';
+    return StoreMockState.firstImageUrl(source);
   }
 
   String _nextStatusFor(_SelfOrder order) {
@@ -172,21 +196,42 @@ class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
     return AnimatedBuilder(
       animation: StoreMockState.instance,
       builder: (context, _) {
-        final liveOrders = _liveOrders;
-        final filteredOrders = liveOrders
-            .where((order) => order.status == _selectedStatus)
-            .toList();
+        final liveOrders =
+            _orderMode == _OrderMode.sell ? _liveOrders : _buyerOrders;
         final loading = StoreMockState.instance.ordersLoading;
-        final error =
-            !loading && liveOrders.isEmpty
-                ? StoreMockState.instance.lastError
-                : null;
+        final error = !loading && liveOrders.isEmpty
+            ? StoreMockState.instance.lastError
+            : null;
         return SliverList.list(
           children: [
-            const _OrdersTopBar(showBack: false, title: 'Orders'),
-            _OrderStatusTabs(
-              selectedStatus: _selectedStatus,
-              onSelected: (status) => setState(() => _selectedStatus = status),
+            if (widget.showHeader)
+              const _OrdersTopBar(showBack: false, title: 'Orders'),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+              child: Container(
+                height: 40,
+                decoration: storeSoftCardDecoration(radius: 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _OrderModeTab(
+                        label: 'Buy',
+                        selected: _orderMode == _OrderMode.buy,
+                        onTap: () =>
+                            setState(() => _orderMode = _OrderMode.buy),
+                      ),
+                    ),
+                    Expanded(
+                      child: _OrderModeTab(
+                        label: 'Sell',
+                        selected: _orderMode == _OrderMode.sell,
+                        onTap: () =>
+                            setState(() => _orderMode = _OrderMode.sell),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
             if (loading)
               const Padding(
@@ -194,7 +239,7 @@ class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
                 child: LinearProgressIndicator(),
               ),
             const SizedBox(height: 8),
-            for (final order in filteredOrders)
+            for (final order in liveOrders)
               _OrderSummaryCard(
                 order: order,
                 onViewOrder: () => setState(() {
@@ -203,27 +248,30 @@ class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
                   _page = _OrderManagerPage.details;
                 }),
               ),
-            if (filteredOrders.isEmpty && !loading)
+            if (liveOrders.isEmpty && !loading)
               Padding(
                 padding: const EdgeInsets.fromLTRB(18, 24, 18, 0),
-                child: error == null
-                    ? const StoreEmptyState(
-                        icon: LucideIcons.shoppingBag,
-                        title: 'No orders here',
-                        body: 'Orders for this status will appear here.',
-                      )
-                    : StoreEmptyState(
-                        icon: LucideIcons.cloudOff,
-                        title: "Couldn't load orders",
-                        body: '$error',
-                      ),
+                child: StoreEmptyState(
+                  icon: _orderMode == _OrderMode.buy
+                      ? LucideIcons.shoppingBag
+                      : LucideIcons.store,
+                  title: 'No orders here',
+                  body: _orderMode == _OrderMode.buy
+                      ? 'Orders you place will appear here.'
+                      : 'Orders for this status will appear here.',
+                ),
               ),
             if (error != null && !loading)
               Padding(
                 padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
                 child: OutlinedButton.icon(
-                  onPressed: () => StoreMockState.instance
-                      .refreshSellerOrders(),
+                  onPressed: () {
+                    if (_orderMode == _OrderMode.buy) {
+                      StoreMockState.instance.refreshBuyerOrders();
+                    } else {
+                      StoreMockState.instance.refreshSellerOrders();
+                    }
+                  },
                   icon: const Icon(LucideIcons.refreshCw, size: 16),
                   label: const Text('Retry'),
                 ),
@@ -385,36 +433,46 @@ class _OrdersTopBar extends StatelessWidget {
   }
 }
 
-class _OrderStatusTabs extends StatelessWidget {
-  final _SelfOrderStatus selectedStatus;
-  final ValueChanged<_SelfOrderStatus> onSelected;
+class _OrderModeTab extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
 
-  const _OrderStatusTabs({
-    required this.selectedStatus,
-    required this.onSelected,
+  const _OrderModeTab({
+    required this.label,
+    required this.selected,
+    required this.onTap,
   });
-
-  static const _tabs = [
-    (StoreMockOrderStatus.newOrder, 'New'),
-    (StoreMockOrderStatus.processing, 'Processing'),
-    (StoreMockOrderStatus.shipped, 'Shipped'),
-    (StoreMockOrderStatus.completed, 'Completed'),
-  ];
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 22, 18, 0),
-      child: StoreUnderlineTabs(
-        tabs: _tabs.map((t) => t.$2).toList(growable: false),
-        selectedIndex: _tabs.indexWhere((t) => t.$1 == selectedStatus),
-        onSelected: (index) => onSelected(_tabs[index].$1),
+    final color = selected ? Colors.white : BStoreColors.textSecondary;
+    final bg = selected ? BStoreColors.primary : Colors.transparent;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        margin: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
-  class _OrderSummaryCard extends StatelessWidget {
+class _OrderSummaryCard extends StatelessWidget {
   final StoreMockOrder order;
   final VoidCallback onViewOrder;
 

@@ -343,97 +343,86 @@ class _OwnerProductCard extends StatelessWidget {
         : const Color(0xFF139B54);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 18),
-      child: Container(
-        height: 112,
-        decoration: storeSoftCardDecoration(radius: 9),
-        clipBehavior: Clip.antiAlias,
-        child: Row(
-          children: [
-            StoreItemImage(
-              imageUrl: imageUrl,
-              icon: LucideIcons.package,
-              width: 120,
-              height: 112,
-              debugLabel: 'self-store-product',
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Color(0xFF060D35),
-                              fontSize: 15,
-                              fontWeight: FontWeight.w900,
-                              fontFamily: 'Georgia',
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            price,
-                            style: const TextStyle(
-                              color: Color(0xFF078D92),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          if (stockState == _StockState.ok)
+      child: GestureDetector(
+        onTap: () => _showEditProductSheet(context),
+        child: Container(
+          height: 112,
+          decoration: storeSoftCardDecoration(radius: 9),
+          clipBehavior: Clip.antiAlias,
+          child: Row(
+            children: [
+              StoreItemImage(
+                imageUrl: imageUrl,
+                icon: LucideIcons.package,
+                width: 120,
+                height: 112,
+                debugLabel: 'self-store-product',
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                             Text(
-                              stockLabel,
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                color: Color(0xFF29304D),
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF060D35),
+                                fontSize: 15,
+                                fontWeight: FontWeight.w900,
+                                fontFamily: 'Georgia',
                               ),
-                            )
-                          else
-                            _StatusDot(label: stockLabel, color: stockColor),
-                          const Spacer(),
-                          const _StatusDot(
-                            label: 'Visible',
-                            color: Color(0xFF139B54),
-                          ),
-                        ],
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: productId.isEmpty
-                          ? null
-                          : () => _showEditProductSheet(context),
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF078D92),
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(54, 34),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Edit',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w900,
                             ),
-                          ),
-                          SizedBox(width: 5),
-                          Icon(LucideIcons.chevronRight, size: 16),
-                        ],
+                            const SizedBox(height: 6),
+                            Text(
+                              price,
+                              style: const TextStyle(
+                                color: Color(0xFF078D92),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            if (stockState == _StockState.ok)
+                              Text(
+                                stockLabel,
+                                style: const TextStyle(
+                                  color: Color(0xFF29304D),
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              )
+                            else
+                              _StatusDot(label: stockLabel, color: stockColor),
+                            const Spacer(),
+                            const _StatusDot(
+                              label: 'Visible',
+                              color: Color(0xFF139B54),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      _ProductActionsMenu(
+                        productId: productId,
+                        currentStatus:
+                            _text(raw, const ['status'], fallback: 'active'),
+                        title: title,
+                        onEdit: () => _showEditProductSheet(context),
+                        onDelete: () => _confirmDeleteProduct(context),
+                        onToggleDraft: () => _toggleDraftStatus(context),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -639,6 +628,75 @@ class _OwnerProductCard extends StatelessWidget {
           .showSnackBar(SnackBar(content: Text('Update failed: $e')));
     }
   }
+
+  Future<void> _confirmDeleteProduct(BuildContext context) async {
+    if (productId.isEmpty) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text(
+          'Delete product?',
+          style: TextStyle(
+            color: Color(0xFF060D35),
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        content: Text(
+          'Remove "$title" from your store?',
+          style: const TextStyle(color: Color(0xFF29304D)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(d).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(d).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !context.mounted) return;
+    try {
+      await Phase2StoreApi().deleteProduct(productId);
+      await StoreMockState.instance.refreshMarketplace();
+      onChanged?.call();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Product deleted.')));
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+    }
+  }
+
+  Future<void> _toggleDraftStatus(BuildContext context) async {
+    if (productId.isEmpty) return;
+    final current = _text(raw, const ['status'], fallback: 'active');
+    final next = current == 'draft' ? 'active' : 'draft';
+    try {
+      await Phase2StoreApi().updateProduct(productId, {'status': next});
+      await StoreMockState.instance.refreshMarketplace();
+      onChanged?.call();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(next == 'draft'
+              ? 'Product marked as draft.'
+              : 'Product marked active.'),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Update failed: $e')));
+    }
+  }
 }
 
 class _StatusDot extends StatelessWidget {
@@ -667,6 +725,108 @@ class _StatusDot extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ProductActionsMenu extends StatelessWidget {
+  final String productId;
+  final String currentStatus;
+  final String title;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final VoidCallback onToggleDraft;
+
+  const _ProductActionsMenu({
+    required this.productId,
+    required this.currentStatus,
+    required this.title,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onToggleDraft,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (productId.isEmpty) return const SizedBox.shrink();
+
+    return PopupMenuButton<String>(
+      color: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.black.withValues(alpha: 0.16),
+      icon: const Icon(
+        LucideIcons.ellipsisVertical,
+        color: Color(0xFF060D35),
+        size: 20,
+      ),
+      padding: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'edit',
+          child: Row(
+            children: [
+              const Icon(LucideIcons.pencil,
+                  size: 17, color: Color(0xFF060D35)),
+              const SizedBox(width: 10),
+              const Text('Edit',
+                  style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF060D35))),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'toggle_draft',
+          child: Row(
+            children: [
+              Icon(
+                currentStatus == 'draft'
+                    ? LucideIcons.eye
+                    : LucideIcons.archive,
+                size: 17,
+                color: const Color(0xFF060D35),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                currentStatus == 'draft' ? 'Mark Active' : 'Mark as Draft',
+                style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF060D35)),
+              ),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'delete',
+          child: Row(
+            children: [
+              const Icon(LucideIcons.trash2, size: 17, color: Colors.red),
+              const SizedBox(width: 10),
+              const Text('Delete',
+                  style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.red)),
+            ],
+          ),
+        ),
+      ],
+      onSelected: (value) {
+        switch (value) {
+          case 'edit':
+            onEdit();
+            break;
+          case 'toggle_draft':
+            onToggleDraft();
+            break;
+          case 'delete':
+            onDelete();
+            break;
+        }
+      },
     );
   }
 }

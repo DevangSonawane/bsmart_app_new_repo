@@ -6,13 +6,13 @@ import '../../services/auth/auth_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'self_store_dashboard_page.dart';
-import 'self_store_bookings_page.dart';
 import 'self_store_orders_page.dart';
 import 'self_store_products_page.dart';
 import 'self_store_services_manage_page.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_bcoins_page.dart';
 import 'store_order_tracking_page.dart';
+import 'store_profile_page.dart';
 import 'store_role_setup_screen.dart';
 import 'store_role_switch_sheet.dart';
 import 'store_theme.dart';
@@ -20,61 +20,506 @@ import 'store_saved_address_page.dart';
 import 'store_floating_cart_button.dart';
 import 'store_models.dart';
 import 'store_wishlist.dart';
-import 'store_wishlist_screen.dart';
+import 'visitor_marketplace_home_page.dart';
 import 'visitor_store_cart_page.dart';
-import 'visitor_store_home_page.dart';
 
-class StoreHomeScreen extends StatefulWidget {
+class StoreScreen extends StatefulWidget {
   final bool isSelfStore;
   final String? ownerUserId;
 
-  const StoreHomeScreen({
+  const StoreScreen({
     super.key,
     this.isSelfStore = true,
     this.ownerUserId,
   });
 
-  static StoreHomeScreen fromRouteArgs(Object? args) {
-    if (args is StoreHomeScreenArgs) {
-      return StoreHomeScreen(
+  static StoreScreen fromRouteArgs(Object? args) {
+    if (args is StoreScreenArgs) {
+      return StoreScreen(
         isSelfStore: args.isSelfStore,
         ownerUserId: args.ownerUserId,
       );
     }
     if (args is Map) {
       final rawIsSelf = args['isSelfStore'];
-      return StoreHomeScreen(
+      return StoreScreen(
         isSelfStore: rawIsSelf is bool ? rawIsSelf : true,
         ownerUserId: args['ownerUserId']?.toString(),
       );
     }
-    return const StoreHomeScreen();
+    return const StoreScreen();
   }
 
   @override
-  State<StoreHomeScreen> createState() => _StoreHomeScreenState();
+  State<StoreScreen> createState() => _StoreScreenState();
 }
 
-class StoreHomeScreenArgs {
+class _StoreAddManagePage extends StatelessWidget {
+  const _StoreAddManagePage();
+
+  @override
+  Widget build(BuildContext context) {
+    Future<void> addProduct() async {
+      if (!await StoreRoleGate.ensureInfluencer(context)) return;
+      if (!context.mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const StoreAddProductFlowScreen(),
+        ),
+      );
+    }
+
+    Future<void> addService() async {
+      if (!await StoreRoleGate.ensureInfluencer(context)) return;
+      if (!context.mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const StoreAddServiceFlowScreen(),
+        ),
+      );
+    }
+
+    return SliverList.list(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: _StoreAddHero(
+            onAddProduct: addProduct,
+            onAddService: addService,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: _StoreAddChoiceCard(
+                  icon: LucideIcons.packagePlus,
+                  title: 'Product',
+                  subtitle: 'Photos, price, stock, delivery',
+                  color: BStoreColors.primary,
+                  onTap: addProduct,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _StoreAddChoiceCard(
+                  icon: LucideIcons.calendarPlus,
+                  title: 'Service',
+                  subtitle: 'Availability, sessions, pricing',
+                  color: BStoreColors.accentPurple,
+                  onTap: addService,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _StoreAddManageSection(
+          title: 'My Products',
+          icon: LucideIcons.package,
+          addLabel: 'Add Product',
+          onAdd: addProduct,
+          api: const _ProductApi(),
+        ),
+        const SizedBox(height: 18),
+        _StoreAddManageSection(
+          title: 'My Services',
+          icon: LucideIcons.briefcaseBusiness,
+          addLabel: 'Add Service',
+          onAdd: addService,
+          api: const _ServiceApi(),
+        ),
+      ],
+    );
+  }
+}
+
+class _StoreAddHero extends StatelessWidget {
+  final VoidCallback onAddProduct;
+  final VoidCallback onAddService;
+
+  const _StoreAddHero({
+    required this.onAddProduct,
+    required this.onAddService,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      decoration: BoxDecoration(
+        color: BStoreColors.textPrimary,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(LucideIcons.sparkles, color: Colors.white, size: 22),
+              SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  'Create a listing',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Add something customers can buy or book from your store.',
+            style: TextStyle(
+              color: Color(0xFFD9DEE8),
+              fontSize: 12.5,
+              height: 1.35,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: onAddProduct,
+                  icon: const Icon(LucideIcons.packagePlus, size: 17),
+                  label: const Text('Product'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: BStoreColors.primary,
+                    foregroundColor: Colors.white,
+                    fixedSize: const Size.fromHeight(44),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: onAddService,
+                  icon: const Icon(LucideIcons.calendarPlus, size: 17),
+                  label: const Text('Service'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: BStoreColors.accentPurple,
+                    foregroundColor: Colors.white,
+                    fixedSize: const Size.fromHeight(44),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StoreAddChoiceCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _StoreAddChoiceCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 118),
+          padding: const EdgeInsets.all(14),
+          decoration: BStoreDecorations.card(radius: 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(icon, color: color, size: 21),
+              ),
+              const Spacer(),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: BStoreColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: BStoreColors.textMuted,
+                  fontSize: 11.5,
+                  height: 1.25,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StoreAddManageSection extends StatefulWidget {
+  final String title;
+  final IconData icon;
+  final String addLabel;
+  final VoidCallback onAdd;
+  final _StoreManageApi api;
+
+  const _StoreAddManageSection({
+    required this.title,
+    required this.icon,
+    required this.addLabel,
+    required this.onAdd,
+    required this.api,
+  });
+
+  @override
+  State<_StoreAddManageSection> createState() => _StoreAddManageSectionState();
+}
+
+class _StoreAddManageSectionState extends State<_StoreAddManageSection> {
+  late Future<List<Map<String, dynamic>>> _itemsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _itemsFuture = widget.api.load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5F5F3),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(widget.icon, color: BStoreColors.primary, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  widget.title,
+                  style: const TextStyle(
+                    color: BStoreColors.textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: widget.onAdd,
+                icon: const Icon(LucideIcons.plus, size: 16),
+                label: Text(widget.addLabel),
+                style: TextButton.styleFrom(
+                  foregroundColor: BStoreColors.primary,
+                  textStyle: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: _itemsFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const SizedBox(
+                  height: 100,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              final items = snapshot.data ?? const <Map<String, dynamic>>[];
+              if (items.isEmpty) {
+                return Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: BStoreColors.borderSoft),
+                  ),
+                  child: Text(
+                    'No ${widget.title.toLowerCase()} yet. Tap ${widget.addLabel} to create your first.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: BStoreColors.textMuted,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                );
+              }
+              return ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  final title =
+                      (item['name'] ?? item['title'] ?? 'Item').toString();
+                  final price = item['price'] ?? item['amount'] ?? 0;
+                  final imageUrl = StoreMockState.firstImageUrl(item);
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: BStoreColors.borderSoft),
+                    ),
+                    child: Row(
+                      children: [
+                        if (imageUrl.isNotEmpty)
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: SafeNetworkImage(
+                              url: imageUrl,
+                              width: 48,
+                              height: 48,
+                              fit: BoxFit.cover,
+                              debugLabel: 'my-listing-thumbnail',
+                              placeholder: _placeholder(),
+                              errorWidget: _placeholder(),
+                            ),
+                          )
+                        else
+                          _placeholder(),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: BStoreColors.textPrimary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '$price',
+                                style: const TextStyle(
+                                  color: BStoreColors.primary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _placeholder() {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F6F8),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Icon(LucideIcons.package, size: 20, color: Colors.grey.shade400),
+    );
+  }
+}
+
+abstract class _StoreManageApi {
+  Future<List<Map<String, dynamic>>> load();
+}
+
+class _ProductApi implements _StoreManageApi {
+  const _ProductApi();
+
+  @override
+  Future<List<Map<String, dynamic>>> load() => Phase2StoreApi().myProducts();
+}
+
+class _ServiceApi implements _StoreManageApi {
+  const _ServiceApi();
+
+  @override
+  Future<List<Map<String, dynamic>>> load() => Phase2StoreApi().myServices();
+}
+
+class StoreScreenArgs {
   final bool isSelfStore;
   final String? ownerUserId;
 
-  const StoreHomeScreenArgs({
+  const StoreScreenArgs({
     this.isSelfStore = true,
     this.ownerUserId,
   });
 }
 
 enum _StoreNavSection {
-  dashboard,
+  home,
+  myStore,
+  add,
   orders,
-  service,
-  inbox,
-  network,
-  store,
-  product,
   cart,
-  wishlist,
   profile,
 }
 
@@ -83,18 +528,14 @@ class _StoreNavItem {
   final String label;
   final _StoreNavSection section;
 
-  /// Shows a live badge with the wishlist count on this nav item.
-  final bool showsWishlistBadge;
-
   const _StoreNavItem({
     required this.icon,
     required this.label,
     required this.section,
-    this.showsWishlistBadge = false,
   });
 }
 
-class _StoreHomeScreenState extends State<StoreHomeScreen> {
+class _StoreScreenState extends State<StoreScreen> {
   int _selectedNav = 0;
   int _refreshTick = 0;
 
@@ -121,8 +562,18 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
       return const [
         _StoreNavItem(
           icon: LucideIcons.house,
-          label: 'Dashboard',
-          section: _StoreNavSection.dashboard,
+          label: 'Home',
+          section: _StoreNavSection.home,
+        ),
+        _StoreNavItem(
+          icon: LucideIcons.store,
+          label: 'My Store',
+          section: _StoreNavSection.myStore,
+        ),
+        _StoreNavItem(
+          icon: LucideIcons.squarePlus,
+          label: '',
+          section: _StoreNavSection.add,
         ),
         _StoreNavItem(
           icon: LucideIcons.shoppingBag,
@@ -130,49 +581,23 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
           section: _StoreNavSection.orders,
         ),
         _StoreNavItem(
-          icon: LucideIcons.briefcaseBusiness,
-          label: 'Service',
-          section: _StoreNavSection.service,
-        ),
-        _StoreNavItem(
-          icon: LucideIcons.store,
-          label: 'Store',
-          section: _StoreNavSection.store,
-        ),
-        _StoreNavItem(
-          icon: LucideIcons.circleUserRound,
-          label: 'Profile',
-          section: _StoreNavSection.profile,
+          icon: LucideIcons.shoppingCart,
+          label: 'Cart',
+          section: _StoreNavSection.cart,
         ),
       ];
     }
 
     return const [
       _StoreNavItem(
-        icon: LucideIcons.store,
-        label: 'Store',
-        section: _StoreNavSection.store,
-      ),
-      _StoreNavItem(
-        icon: LucideIcons.usersRound,
-        label: 'Network',
-        section: _StoreNavSection.network,
-      ),
-      _StoreNavItem(
-        icon: LucideIcons.messageCircle,
-        label: 'Inbox',
-        section: _StoreNavSection.inbox,
+        icon: LucideIcons.house,
+        label: 'Home',
+        section: _StoreNavSection.home,
       ),
       _StoreNavItem(
         icon: LucideIcons.shoppingCart,
         label: 'Cart',
         section: _StoreNavSection.cart,
-      ),
-      _StoreNavItem(
-        icon: LucideIcons.heart,
-        label: 'Wishlist',
-        section: _StoreNavSection.wishlist,
-        showsWishlistBadge: true,
       ),
       _StoreNavItem(
         icon: LucideIcons.circleUserRound,
@@ -187,19 +612,16 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     final navItems = _navItems;
     final selectedIndex = _selectedNav.clamp(0, navItems.length - 1);
     final section = navItems[selectedIndex].section;
-    if (!widget.isSelfStore && section == _StoreNavSection.store) {
+    if (section == _StoreNavSection.home) {
       await Future.wait([
         StoreMockState.instance.refreshMarketplace(),
         StoreMockState.instance.refreshCart(),
       ]);
       return;
     }
-    if (!widget.isSelfStore && section == _StoreNavSection.cart) {
+    if (section == _StoreNavSection.cart) {
       await StoreMockState.instance.refreshCart();
       return;
-    }
-    if (section == _StoreNavSection.wishlist) {
-      await WishlistState.instance.refresh();
     }
     await Future<void>.delayed(const Duration(milliseconds: 350));
   }
@@ -209,16 +631,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     final navItems = _navItems;
     final selectedIndex = _selectedNav.clamp(0, navItems.length - 1);
     final selectedItem = navItems[selectedIndex];
-    final usesCustomSelfHeader = widget.isSelfStore &&
-        (selectedItem.section == _StoreNavSection.dashboard ||
-            selectedItem.section == _StoreNavSection.orders ||
-            selectedItem.section == _StoreNavSection.service ||
-            selectedItem.section == _StoreNavSection.store ||
-            selectedItem.section == _StoreNavSection.profile);
-    final usesCustomVisitorHeader = !widget.isSelfStore &&
-        (selectedItem.section == _StoreNavSection.store ||
-            selectedItem.section == _StoreNavSection.cart ||
-            selectedItem.section == _StoreNavSection.wishlist);
+    final isHomeMarketplace = selectedItem.section == _StoreNavSection.home;
 
     return Theme(
       data: BStoreTheme.data(context),
@@ -240,12 +653,22 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                           parent: BouncingScrollPhysics(),
                         ),
                         slivers: [
-                          if (!usesCustomSelfHeader && !usesCustomVisitorHeader)
-                            _StoreHeader(
-                              isSelfStore: widget.isSelfStore,
-                              activeLabel: selectedItem.label,
-                              ownerUserId: widget.ownerUserId,
-                            ),
+                          _MarketplaceHeaderSliver(
+                            title: isHomeMarketplace
+                                ? 'Marketplace'
+                                : (selectedItem.label.isEmpty
+                                    ? 'Create'
+                                    : selectedItem.label),
+                            onProfileTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => StoreProfilePage(
+                                    ownerUserId: widget.ownerUserId,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                           _buildSection(selectedItem.section),
                           const SliverToBoxAdapter(child: SizedBox(height: 22)),
                         ],
@@ -286,40 +709,41 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
 
   Widget _buildSection(_StoreNavSection section) {
     return switch (section) {
-      _StoreNavSection.dashboard =>
-        const StoreRoleGateSliver(child: SelfStoreDashboardPage()),
-      _StoreNavSection.orders =>
-        const StoreRoleGateSliver(child: SelfStoreOrdersPage()),
-      _StoreNavSection.service => widget.isSelfStore
-          ? const StoreRoleGateSliver(child: SelfStoreBookingsPage())
-          : const _VisitorServiceSection(),
-      _StoreNavSection.inbox => const _InboxSection(),
-      _StoreNavSection.network => const _NetworkSection(),
+      _StoreNavSection.home => widget.isSelfStore
+          ? const StoreRoleGateSliver(
+              child: VisitorMarketplaceHomePage(
+                  showTopBar: false, showSellerHero: false),
+            )
+          : VisitorMarketplaceHomePage(
+              ownerUserId: widget.ownerUserId,
+              showTopBar: false,
+              showSellerHero: false,
+            ),
+      _StoreNavSection.myStore => const StoreRoleGateSliver(
+          child: SelfStoreDashboardPage(showHeader: false)),
+      _StoreNavSection.add => const _StoreAddManagePage(),
+      _StoreNavSection.orders => const StoreRoleGateSliver(
+          child: SelfStoreOrdersPage(showHeader: false)),
+      _StoreNavSection.cart => widget.isSelfStore
+          ? const StoreRoleGateSliver(
+              child: VisitorStoreCartPage(showHeader: false))
+          : VisitorStoreCartPage(
+              ownerUserId: widget.ownerUserId,
+              showHeader: false,
+            ),
       _StoreNavSection.profile =>
         _ProfileSection(isSelfStore: widget.isSelfStore),
-      _StoreNavSection.store => widget.isSelfStore
-          ? const _SelfStoreHubSection()
-          : VisitorStoreHomePage(ownerUserId: widget.ownerUserId),
-      _StoreNavSection.product => const _VisitorProductSection(),
-      _StoreNavSection.cart => widget.isSelfStore
-          ? const _CartSection()
-          : VisitorStoreCartPage(ownerUserId: widget.ownerUserId),
-      _StoreNavSection.wishlist => StoreWishlistSliver(
-          onExplore: () => setState(() => _selectedNav = 0),
-        ),
     };
   }
 }
 
-class _StoreHeader extends StatelessWidget {
-  final bool isSelfStore;
-  final String activeLabel;
-  final String? ownerUserId;
+class _MarketplaceHeaderSliver extends StatelessWidget {
+  final String title;
+  final VoidCallback onProfileTap;
 
-  const _StoreHeader({
-    required this.isSelfStore,
-    required this.activeLabel,
-    required this.ownerUserId,
+  const _MarketplaceHeaderSliver({
+    required this.title,
+    required this.onProfileTap,
   });
 
   @override
@@ -329,9 +753,9 @@ class _StoreHeader extends StatelessWidget {
         width: double.infinity,
         padding: EdgeInsets.fromLTRB(
           18,
-          MediaQuery.of(context).padding.top + 14,
+          MediaQuery.of(context).padding.top + 12,
           18,
-          18,
+          14,
         ),
         decoration: const BoxDecoration(
           color: Colors.white,
@@ -339,84 +763,73 @@ class _StoreHeader extends StatelessWidget {
             bottom: BorderSide(color: Color(0xFFE8EBF0)),
           ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Row(
-              children: [
-                IconButton(
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  icon: const Icon(LucideIcons.arrowLeft, size: 21),
-                  tooltip: 'Back',
-                  style: IconButton.styleFrom(
-                    backgroundColor: const Color(0xFFF1F4F8),
-                    foregroundColor: Colors.black87,
-                    fixedSize: const Size(40, 40),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    isSelfStore ? 'My Store' : 'Store',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.black87,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  onPressed: () =>
-                      Navigator.of(context).pushNamed('/store/search'),
-                  icon: const Icon(LucideIcons.search, size: 21),
-                  tooltip: 'Search',
-                  style: IconButton.styleFrom(
-                    backgroundColor: const Color(0xFFF1F4F8),
-                    foregroundColor: Colors.black87,
-                    fixedSize: const Size(40, 40),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Text(
-              activeLabel,
-              style: const TextStyle(
-                color: Colors.black54,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              isSelfStore
-                  ? 'Manage products, services, reach, and store identity.'
-                  : 'Browse this seller, track activity, and manage checkout.',
-              style: const TextStyle(
-                color: Colors.black87,
-                fontSize: 15,
-                height: 1.3,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            if (!isSelfStore && ownerUserId != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Store owner: $ownerUserId',
+            Expanded(
+              child: Text(
+                title,
+                textAlign: TextAlign.left,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  color: Colors.black45,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF060D35),
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-            ],
+            ),
+            const SizedBox(width: 12),
+            _MarketplaceHeaderIcon(
+              icon: LucideIcons.heart,
+              tooltip: 'Wishlist',
+              badgeCount: WishlistState.instance.count,
+              onTap: () => openWishlist(context),
+            ),
+            const SizedBox(width: 8),
+            _MarketplaceHeaderIcon(
+              icon: LucideIcons.circleUserRound,
+              tooltip: 'Profile',
+              onTap: onProfileTap,
+            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _MarketplaceHeaderIcon extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final int badgeCount;
+
+  const _MarketplaceHeaderIcon({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.badgeCount = 0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final button = IconButton(
+      onPressed: onTap,
+      tooltip: tooltip,
+      icon: Icon(icon, size: 21),
+      style: IconButton.styleFrom(
+        backgroundColor: const Color(0xFFF1F4F8),
+        foregroundColor: BStoreColors.textPrimary,
+        fixedSize: const Size(40, 40),
+      ),
+    );
+    if (badgeCount <= 0) return button;
+    return Badge.count(
+      count: badgeCount,
+      backgroundColor: BStoreColors.primary,
+      textColor: Colors.white,
+      textStyle: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900),
+      child: button,
     );
   }
 }
@@ -530,7 +943,7 @@ class _SelfStoreHubSection extends StatelessWidget {
             ),
           ),
         ),
-        ],
+      ],
     );
   }
 }
@@ -833,8 +1246,7 @@ class _HubCounts {
       return 0;
     }
   }
-
-  }
+}
 
 class _VisitorProductSection extends StatelessWidget {
   const _VisitorProductSection();
@@ -953,12 +1365,7 @@ class _ProfileSectionState extends State<_ProfileSection> {
     return SliverList.list(
       children: [
         Padding(
-          padding: EdgeInsets.fromLTRB(
-            16,
-            MediaQuery.of(context).padding.top + 16,
-            16,
-            0,
-          ),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
           child: FutureBuilder<_StoreProfileUser>(
             future: _profileFuture,
             builder: (context, snapshot) {
@@ -1277,40 +1684,39 @@ class _StoreFooterNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          top: BorderSide(color: Color(0xFFE1E4E8)),
-        ),
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: Theme.of(context).platform == TargetPlatform.iOS ? 4 : 0,
       ),
       child: SafeArea(
         top: false,
-        minimum: const EdgeInsets.fromLTRB(8, 6, 8, 7),
-        child: Container(
-          height: 58,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFE6E8EC)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 14,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
+        bottom: Theme.of(context).platform != TargetPlatform.iOS,
+        child: SizedBox(
+          height: 42,
+          child: Stack(
+            clipBehavior: Clip.none,
             children: [
-              for (var i = 0; i < items.length; i++)
-                Expanded(
-                  child: _FooterButton(
-                    item: items[i],
-                    selected: i == selectedIndex,
-                    onTap: () => onSelected(i),
+              const Positioned.fill(
+                child: CustomPaint(
+                  painter: _StoreFooterShapePainter(
+                    backgroundColor: BStoreColors.surface,
+                    borderColor: BStoreColors.borderSoft,
                   ),
                 ),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  for (var i = 0; i < items.length; i++)
+                    _StoreFooterIconButton(
+                      item: items[i],
+                      selected: i == selectedIndex,
+                      onTap: () => onSelected(i),
+                      isCenterAdd:
+                          i == 2 && items[i].section == _StoreNavSection.add,
+                    ),
+                ],
+              ),
             ],
           ),
         ),
@@ -1319,67 +1725,121 @@ class _StoreFooterNav extends StatelessWidget {
   }
 }
 
-class _FooterButton extends StatelessWidget {
+class _StoreFooterIconButton extends StatelessWidget {
   final _StoreNavItem item;
   final bool selected;
   final VoidCallback onTap;
+  final bool isCenterAdd;
 
-  const _FooterButton({
+  const _StoreFooterIconButton({
     required this.item,
     required this.selected,
     required this.onTap,
+    this.isCenterAdd = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final color = selected ? BStoreColors.primary : BStoreColors.textSecondary;
-    final icon = Icon(item.icon, color: color, size: selected ? 22 : 21);
-    return Tooltip(
-      message: item.label,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: selected ? null : onTap,
-          child: SizedBox.expand(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (item.showsWishlistBadge)
-                  ListenableBuilder(
-                    listenable: WishlistState.instance,
-                    builder: (context, _) {
-                      final count = WishlistState.instance.count;
-                      if (count == 0) return icon;
-                      return Badge.count(
-                        count: count,
-                        backgroundColor: BStoreColors.primary,
-                        textColor: Colors.white,
-                        textStyle: const TextStyle(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w900,
-                        ),
-                        child: icon,
-                      );
-                    },
+    final child = InkWell(
+      onTap: selected ? null : onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: SizedBox(
+          width: 34,
+          height: 34,
+          child: Center(
+            child: isCenterAdd
+                ? Transform.translate(
+                    offset: const Offset(0, -8),
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: BStoreColors.primary,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0x26000000),
+                            blurRadius: 10,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        LucideIcons.plus,
+                        color: Colors.white,
+                        size: 34,
+                      ),
+                    ),
                   )
-                else
-                  icon,
-                const SizedBox(height: 3),
-                Text(
-                  item.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 9.5,
-                    fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
+                : Icon(item.icon, color: color, size: 30),
           ),
         ),
       ),
     );
+
+    return child;
+  }
+}
+
+class _StoreFooterShapePainter extends CustomPainter {
+  final Color backgroundColor;
+  final Color borderColor;
+
+  const _StoreFooterShapePainter({
+    required this.backgroundColor,
+    required this.borderColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = backgroundColor
+      ..style = PaintingStyle.fill;
+    final borderPaint = Paint()
+      ..color = borderColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+
+    const notchWidth = 86.0;
+    const notchDepth = 36.0;
+    const shoulderWidth = 20.0;
+    final centerX = size.width / 2;
+    final notchLeft = centerX - notchWidth / 2;
+    final notchRight = centerX + notchWidth / 2;
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(notchLeft - shoulderWidth, 0)
+      ..cubicTo(
+        notchLeft + 2,
+        0,
+        centerX - 28,
+        notchDepth,
+        centerX,
+        notchDepth,
+      )
+      ..cubicTo(
+        centerX + 28,
+        notchDepth,
+        notchRight - 2,
+        0,
+        notchRight + shoulderWidth,
+        0,
+      )
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+
+    canvas.drawPath(path, paint);
+    canvas.drawPath(path, borderPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _StoreFooterShapePainter oldDelegate) {
+    return oldDelegate.backgroundColor != backgroundColor ||
+        oldDelegate.borderColor != borderColor;
   }
 }

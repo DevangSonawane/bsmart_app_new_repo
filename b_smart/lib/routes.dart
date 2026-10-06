@@ -116,7 +116,7 @@ final Map<String, WidgetBuilder> appRoutes = {
   '/wallet/voucher-details': (ctx) => const VoucherDetailsScreen(),
   '/notifications': (ctx) => const NotificationsScreen(),
   '/store': (ctx) =>
-      StoreHomeScreen.fromRouteArgs(ModalRoute.of(ctx)?.settings.arguments),
+      StoreScreen.fromRouteArgs(ModalRoute.of(ctx)?.settings.arguments),
   '/store/setup': (ctx) => const StoreRoleSetupScreen(),
   '/store/publish/add-product': (ctx) => const StoreAddProductFlowScreen(),
   '/store/publish/price-inventory': (ctx) => const StorePriceInventoryScreen(),

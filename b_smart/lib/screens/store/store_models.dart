@@ -236,6 +236,37 @@ class StoreMockState extends ChangeNotifier {
     return index == -1 ? 0 : _cartLines[index].quantity;
   }
 
+  int maxQuantityFor(
+    StoreMockCatalogItem item, {
+    Map<String, dynamic>? variant,
+  }) {
+    if (item.type != StoreMockItemType.product) return 99;
+    final variantLimit = _stockLimitFrom(_cleanVariant(variant));
+    if (variantLimit != null) return variantLimit.clamp(0, 99);
+    final itemLimit = _stockLimitFrom(item.raw);
+    return (itemLimit ?? 99).clamp(0, 99);
+  }
+
+  static int? _stockLimitFrom(Map<String, dynamic> source) {
+    for (final key in const [
+      'stock_quantity',
+      'stockQuantity',
+      'stock',
+      'quantity',
+      'available_quantity',
+      'availableQuantity',
+      'inventory',
+    ]) {
+      final value = source[key];
+      if (value is num) return value.toInt();
+      if (value is String) {
+        final parsed = int.tryParse(value.trim());
+        if (parsed != null) return parsed;
+      }
+    }
+    return null;
+  }
+
   static String _variantKey(Map<String, dynamic>? variant) {
     if (variant == null || variant.isEmpty) return '';
     final color = variant['color']?.toString().trim() ?? '';
@@ -274,30 +305,41 @@ class StoreMockState extends ChangeNotifier {
     Map<String, dynamic>? variant,
   }) {
     final cleanVariant = _cleanVariant(variant);
+    final maxQuantity = maxQuantityFor(item, variant: cleanVariant);
+    if (maxQuantity <= 0) return;
     final key = _variantKey(cleanVariant);
     final index = _cartLines.indexWhere(
       (line) => line.item.id == item.id && line.variantKey == key,
     );
+    var syncQuantity = 0;
     if (index == -1) {
+      final targetQuantity = quantity.clamp(1, maxQuantity);
       _cartLines.add(
         StoreMockCartLine(
           item: item,
-          quantity: quantity.clamp(1, 99),
+          quantity: targetQuantity,
           schedule: schedule,
           variant: cleanVariant,
         ),
       );
+      syncQuantity = targetQuantity;
     } else {
       final current = _cartLines[index];
+      final targetQuantity =
+          (current.quantity + quantity).clamp(1, maxQuantity);
+      if (targetQuantity == current.quantity &&
+          (schedule == null || schedule == current.schedule)) {
+        return;
+      }
       _cartLines[index] = current.copyWith(
-        quantity: (current.quantity + quantity).clamp(1, 99),
+        quantity: targetQuantity,
         schedule: schedule ?? current.schedule,
       );
+      syncQuantity = targetQuantity - current.quantity;
     }
     notifyListeners();
-    if (item.type == StoreMockItemType.product) {
-      unawaited(_syncAddCartItem(item.id, quantity.clamp(1, 99),
-          variant: cleanVariant));
+    if (item.type == StoreMockItemType.product && syncQuantity > 0) {
+      unawaited(_syncAddCartItem(item.id, syncQuantity, variant: cleanVariant));
     }
   }
 
@@ -308,6 +350,7 @@ class StoreMockState extends ChangeNotifier {
     Map<String, dynamic>? variant,
   }) {
     final cleanVariant = _cleanVariant(variant);
+    final maxQuantity = maxQuantityFor(item, variant: cleanVariant);
     final key = _variantKey(cleanVariant);
     final index = _cartLines.indexWhere(
       (line) => line.item.id == item.id && line.variantKey == key,
@@ -320,25 +363,31 @@ class StoreMockState extends ChangeNotifier {
       return;
     }
 
+    if (maxQuantity <= 0) return;
+    final targetQuantity = quantity.clamp(1, maxQuantity);
     if (index == -1) {
       _cartLines.add(
         StoreMockCartLine(
           item: item,
-          quantity: quantity.clamp(1, 99),
+          quantity: targetQuantity,
           schedule: schedule,
           variant: cleanVariant,
         ),
       );
     } else {
+      if (_cartLines[index].quantity == targetQuantity &&
+          (schedule == null || schedule == _cartLines[index].schedule)) {
+        return;
+      }
       _cartLines[index] = _cartLines[index].copyWith(
-        quantity: quantity.clamp(1, 99),
+        quantity: targetQuantity,
         schedule: schedule ?? _cartLines[index].schedule,
       );
     }
     notifyListeners();
     if (item.type == StoreMockItemType.product) {
-      unawaited(_syncUpdateCartItem(item.id, quantity.clamp(0, 99),
-          variant: cleanVariant));
+      unawaited(
+          _syncUpdateCartItem(item.id, targetQuantity, variant: cleanVariant));
     }
   }
 
@@ -352,9 +401,17 @@ class StoreMockState extends ChangeNotifier {
     if (quantity <= 0) {
       _cartLines.removeAt(index);
     } else {
-      _cartLines[index] = _cartLines[index].copyWith(
-        quantity: quantity.clamp(1, 99),
+      final maxQuantity = maxQuantityFor(
+        _cartLines[index].item,
+        variant: _cartLines[index].variant,
       );
+      if (maxQuantity <= 0) return;
+      final targetQuantity = quantity.clamp(1, maxQuantity);
+      if (_cartLines[index].quantity == targetQuantity) return;
+      _cartLines[index] = _cartLines[index].copyWith(
+        quantity: targetQuantity,
+      );
+      quantity = targetQuantity;
     }
     notifyListeners();
     unawaited(_syncUpdateCartItem(itemId, quantity.clamp(0, 99),
@@ -635,7 +692,6 @@ class StoreMockState extends ChangeNotifier {
     try {
       await _api.addCartItem(
           productId: productId, quantity: quantity, variant: variant);
-      await refreshCart();
     } catch (e) {
       _lastError = e;
       notifyListeners();
@@ -647,7 +703,6 @@ class StoreMockState extends ChangeNotifier {
     try {
       await _api.updateCartItem(
           productId: productId, quantity: quantity, variant: variant);
-      await refreshCart();
     } catch (e) {
       _lastError = e;
       notifyListeners();
@@ -657,7 +712,6 @@ class StoreMockState extends ChangeNotifier {
   Future<void> _syncRemoveCartItem(String productId) async {
     try {
       await _api.removeCartItem(productId);
-      await refreshCart();
     } catch (e) {
       _lastError = e;
       notifyListeners();

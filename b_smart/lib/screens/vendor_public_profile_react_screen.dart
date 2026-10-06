@@ -5,11 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../api/phase2_store_api.dart';
 import '../api/vendors_api.dart';
 import '../api/follow_requests_api.dart';
 import '../api/follows_api.dart';
 import '../api/notification_preferences_api.dart';
 import '../models/ad_model.dart';
+import '../models/store_profile.dart';
 import '../services/ads_service.dart';
 import '../services/content_sync_service.dart';
 import '../services/supabase_service.dart';
@@ -36,6 +38,7 @@ class _VendorPublicProfileReactScreenState
     extends State<VendorPublicProfileReactScreen>
     with SingleTickerProviderStateMixin {
   final VendorsApi _vendorsApi = VendorsApi();
+  final Phase2StoreApi _storeApi = Phase2StoreApi();
   final FollowsApi _followsApi = FollowsApi();
   final FollowRequestsApi _followRequestsApi = FollowRequestsApi();
   final AdsService _adsService = AdsService();
@@ -286,7 +289,7 @@ class _VendorPublicProfileReactScreenState
     });
 
     try {
-      final data = await _vendorsApi.getVendorPublicProfile(uid);
+      final data = await _loadVendorProfileData(uid);
       if (!mounted) return;
       final vendor = _map(data['vendor']);
       final user = _map(
@@ -327,13 +330,129 @@ class _VendorPublicProfileReactScreenState
       unawaited(_loadAds());
       unawaited(_loadGallery());
       unawaited(_loadFollowState());
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('Vendor profile load failed for $uid: $e');
+      debugPrint(st.toString());
       if (!mounted) return;
       setState(() {
         _error = 'Failed to load vendor profile. Please try again.';
         _loading = false;
       });
     }
+  }
+
+  Future<Map<String, dynamic>> _loadVendorProfileData(String uid) async {
+    try {
+      return await _vendorsApi.getVendorPublicProfile(uid);
+    } catch (_) {
+      try {
+        return await _vendorsApi.getVendorById(uid);
+      } catch (_) {
+        return _fallbackVendorProfile(uid);
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>> _fallbackVendorProfile(String uid) async {
+    final rawUser = await _tryLoadUser(uid);
+    final storeProfile = await _tryLoadStoreProfile(uid);
+    final user = rawUser == null
+        ? <String, dynamic>{}
+        : rawUser.map((key, value) => MapEntry(key.toString(), value));
+
+    final fullName = _firstText(user, const [
+      'full_name',
+      'fullName',
+      'displayName',
+      'name',
+      'username',
+    ]);
+    final avatarUrl = _firstText(user, const [
+      'avatar_url',
+      'avatarUrl',
+      'profile_picture',
+      'profilePicture',
+      'profile_image',
+      'profileImage',
+      'photoUrl',
+      'avatar',
+    ]);
+    final storeName = storeProfile?.storeName.trim() ?? '';
+    final about = storeProfile?.about.trim() ?? '';
+    final storeType = storeProfile?.storeType.trim() ?? '';
+    final followers = storeProfile?.followersCount ?? 0;
+    final following = storeProfile?.followingCount ?? 0;
+    final products = storeProfile?.productCount ?? 0;
+    final services = storeProfile?.serviceCount ?? 0;
+
+    return <String, dynamic>{
+      '_id': uid,
+      'id': uid,
+      'name': storeName.isNotEmpty ? storeName : (fullName ?? 'Store'),
+      'business_name': storeName.isNotEmpty ? storeName : fullName,
+      'avatar_url': avatarUrl,
+      'description': about,
+      'validated': false,
+      'user_id': <String, dynamic>{
+        ...user,
+        '_id': uid,
+        'id': uid,
+        if (avatarUrl != null) 'avatar_url': avatarUrl,
+      },
+      'user': <String, dynamic>{
+        ...user,
+        '_id': uid,
+        'id': uid,
+        if (avatarUrl != null) 'avatar_url': avatarUrl,
+      },
+      'vendor': <String, dynamic>{
+        '_id': uid,
+        'id': uid,
+        'user_id': uid,
+        if (storeType.isNotEmpty) 'category': storeType,
+      },
+      'company_details': <String, dynamic>{
+        'company_name': storeName.isNotEmpty ? storeName : fullName,
+        if (storeType.isNotEmpty) 'industry': storeType,
+      },
+      'business_details': <String, dynamic>{
+        if (storeType.isNotEmpty) 'industry_category': storeType,
+      },
+      'stats': <String, dynamic>{
+        'followers_count': followers,
+        'following_count': following,
+        'product_count': products,
+        'service_count': services,
+      },
+      'followers_count': followers,
+      'following_count': following,
+    };
+  }
+
+  Future<Map<String, dynamic>?> _tryLoadUser(String uid) async {
+    try {
+      return await _supabase.getUserById(uid);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<StoreProfile?> _tryLoadStoreProfile(String uid) async {
+    try {
+      return await _storeApi.getStoreProfile(uid);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _firstText(Map<String, dynamic> data, List<String> keys) {
+    for (final key in keys) {
+      final value = data[key]?.toString().trim();
+      if (value != null && value.isNotEmpty && value != 'null') {
+        return value;
+      }
+    }
+    return null;
   }
 
   Future<void> _loadGallery() async {

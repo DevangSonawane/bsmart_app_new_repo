@@ -36,10 +36,20 @@ class _StoreProfilePageState extends State<StoreProfilePage> {
     final id = await CurrentUser.id;
     if (!mounted) return;
     StoreProfileState.instance.setSelfId(id);
+    final ownerId = _effectiveOwnerId(id);
+    if (ownerId != null) {
+      unawaited(StoreProfileState.instance.ensureLoaded(ownerId));
+    }
     setState(() {
       _selfId = id;
-      _isSelf = id != null && id == widget.ownerUserId?.trim();
+      _isSelf = id != null && id == ownerId;
     });
+  }
+
+  String? _effectiveOwnerId([String? selfId]) {
+    final ownerId = widget.ownerUserId?.trim();
+    if (ownerId != null && ownerId.isNotEmpty) return ownerId;
+    return selfId ?? _selfId;
   }
 
   void _openEditor(StoreProfile profile) {
@@ -52,7 +62,7 @@ class _StoreProfilePageState extends State<StoreProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    final ownerId = widget.ownerUserId;
+    final ownerId = _effectiveOwnerId();
     return Theme(
       data: BStoreTheme.data(context),
       child: Scaffold(
@@ -106,8 +116,8 @@ class _StoreProfilePageState extends State<StoreProfilePage> {
                     SliverToBoxAdapter(
                       child: _ProfileNotice(
                         title: "Couldn't load store profile",
-                        body: state.errorMessage(ownerId) ??
-                            'Please try again.',
+                        body:
+                            state.errorMessage(ownerId) ?? 'Please try again.',
                         actionLabel: 'Retry',
                         onAction: () => state.load(ownerId!, force: true),
                       ),
@@ -117,9 +127,8 @@ class _StoreProfilePageState extends State<StoreProfilePage> {
                       child: _ProfileBody(
                         profile: profile,
                         isSelf: isSelf,
-                        onEdit: profile == null
-                            ? null
-                            : () => _openEditor(profile),
+                        onEdit:
+                            profile == null ? null : () => _openEditor(profile),
                       ),
                     ),
                   const SliverToBoxAdapter(child: SizedBox(height: 28)),
@@ -888,8 +897,7 @@ class _ListEditorState extends State<_ListEditor> {
             children: [
               for (final value in widget.values)
                 Container(
-                  padding:
-                      const EdgeInsets.fromLTRB(11, 6, 5, 6),
+                  padding: const EdgeInsets.fromLTRB(11, 6, 5, 6),
                   decoration: BoxDecoration(
                     color: BStoreColors.primarySoft,
                     borderRadius: BorderRadius.circular(999),

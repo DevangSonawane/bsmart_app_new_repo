@@ -9,7 +9,7 @@ import { InterestsModal, InterestedSection } from '../../components/InterestsPic
 import { AD_CATEGORIES_FALLBACK } from '../../constants/interestCategories';
 import {
   ArrowLeft, Camera, Loader2, Check, AlertCircle, CheckCircle2,
-  Pencil, X, Mail, Phone, RefreshCw,
+  Pencil, X, Mail, Phone, RefreshCw, Store, UserRound,
 } from 'lucide-react';
 
 const GENDER_OPTIONS = [
@@ -22,6 +22,14 @@ const GENDER_OPTIONS = [
 const EDIT_CLS = 'w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-[#fa3f5e]/20 focus:border-[#fa3f5e] placeholder-gray-400 dark:placeholder-gray-600 transition-all';
 const VIEW_CLS = 'w-full px-3.5 py-2.5 rounded-xl text-sm text-gray-800 dark:text-gray-200 bg-gray-50 dark:bg-gray-800/50 border border-transparent cursor-default pointer-events-none select-text';
 
+const EMPTY_ROLE_FORM = {
+  business_type: '',
+  store_name: '',
+  store_description: '',
+  products_type: '',
+  service_type: '',
+};
+
 // The location API can return either a plain string or { name, lat, lng } — always
 // resolve down to plain display text so it's safe to store on the form / render.
 const toLocationText = (val) => {
@@ -30,6 +38,17 @@ const toLocationText = (val) => {
   if (typeof val === 'object') return val.name || val.display_name || '';
   return String(val);
 };
+
+const listToText = (value) => {
+  if (Array.isArray(value)) return value.join(', ');
+  if (typeof value === 'string') return value;
+  return '';
+};
+
+const textToList = (value) => String(value || '')
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean);
 
 /* ── OTP 6-box input ──────────────────────────────────────────── */
 const OtpInput = ({ value, onChange }) => {
@@ -214,6 +233,11 @@ const AccountSettings = () => {
     full_name: '', username: '', bio: '', website: '',
     date_of_birth: '', gender: '', location: '', email: '', phone: '',
   });
+  const [accountRole, setAccountRole] = useState(userObject?.role || 'member');
+  const [roleForm, setRoleForm] = useState(EMPTY_ROLE_FORM);
+  const [roleSaving, setRoleSaving] = useState(false);
+  const [roleError, setRoleError] = useState('');
+  const [roleSaved, setRoleSaved] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [isPhoneVerified, setIsPhoneVerified] = useState(false);
@@ -231,6 +255,7 @@ const AccountSettings = () => {
 
   const fileInputRef = useRef(null);
   const upd = (key, val) => setForm(p => ({ ...p, [key]: val }));
+  const updRole = (key, val) => setRoleForm(p => ({ ...p, [key]: val }));
   const ic = isEditing ? EDIT_CLS : VIEW_CLS;
 
   useEffect(() => {
@@ -247,6 +272,7 @@ const AccountSettings = () => {
 
       if (userRes.status === 'fulfilled') {
         const u = userRes.value.data?.user || userRes.value.data;
+        const influencerProfile = u.influencer_profile || u.influencerProfile || {};
         loadedForm = {
           full_name: u.full_name || '',
           username: u.username || '',
@@ -259,6 +285,14 @@ const AccountSettings = () => {
           phone: u.phone || u.mobile_number || '',
         };
         loadedAvatar = u.avatar_url || '';
+        setAccountRole(u.role || 'member');
+        setRoleForm({
+          business_type: influencerProfile.business_type || '',
+          store_name: influencerProfile.store_name || '',
+          store_description: influencerProfile.store_description || '',
+          products_type: listToText(influencerProfile.products_type),
+          service_type: listToText(influencerProfile.service_type),
+        });
         setIsEmailVerified(!!u.is_email_verified);
         setIsPhoneVerified(!!u.is_phone_verified);
         originalEmail.current = loadedForm.email;
@@ -268,6 +302,7 @@ const AccountSettings = () => {
           lng: typeof u.location?.lng === 'number' ? u.location.lng : null,
         };
       } else if (userObject) {
+        const influencerProfile = userObject.influencer_profile || userObject.influencerProfile || {};
         loadedForm = {
           full_name: userObject.full_name || '', username: userObject.username || '',
           bio: userObject.bio || '', website: userObject.website || '',
@@ -277,6 +312,14 @@ const AccountSettings = () => {
           phone: userObject.phone || userObject.mobile_number || '',
         };
         loadedAvatar = userObject.avatar_url || '';
+        setAccountRole(userObject.role || 'member');
+        setRoleForm({
+          business_type: influencerProfile.business_type || '',
+          store_name: influencerProfile.store_name || '',
+          store_description: influencerProfile.store_description || '',
+          products_type: listToText(influencerProfile.products_type),
+          service_type: listToText(influencerProfile.service_type),
+        });
         setIsEmailVerified(!!userObject.is_email_verified);
         setIsPhoneVerified(!!userObject.is_phone_verified);
         originalEmail.current = loadedForm.email;
@@ -403,6 +446,61 @@ const AccountSettings = () => {
     } catch (e) {
       setError(e?.response?.data?.message || 'Failed to save interests. Try again.');
     } finally { setSavingInterests(false); }
+  };
+
+  const handleRoleSwitch = async (nextRole) => {
+    if (!userId || roleSaving) return;
+    setRoleSaving(true);
+    setRoleError('');
+    setRoleSaved('');
+
+    const payload = { role: nextRole };
+    if (nextRole === 'influencer') {
+      const products = textToList(roleForm.products_type);
+      const services = textToList(roleForm.service_type);
+      const missingField = [
+        ['business_type', roleForm.business_type],
+        ['store_name', roleForm.store_name],
+        ['store_description', roleForm.store_description],
+        ['products_type', products.length > 0],
+        ['service_type', services.length > 0],
+      ].find(([, value]) => !value);
+
+      if (missingField) {
+        setRoleSaving(false);
+        setRoleError(`${missingField[0]} is required`);
+        return;
+      }
+
+      payload.business_type = roleForm.business_type.trim();
+      payload.store_name = roleForm.store_name.trim();
+      payload.store_description = roleForm.store_description.trim();
+      payload.products_type = products;
+      payload.service_type = services;
+    }
+
+    try {
+      const { data } = await api.patch(`/users/${userId}/role`, payload);
+      const updatedRole = data?.role || nextRole;
+      const influencerProfile = data?.influencer_profile || {};
+      setAccountRole(updatedRole);
+      if (updatedRole === 'influencer') {
+        setRoleForm({
+          business_type: influencerProfile.business_type || payload.business_type || '',
+          store_name: influencerProfile.store_name || payload.store_name || '',
+          store_description: influencerProfile.store_description || payload.store_description || '',
+          products_type: listToText(influencerProfile.products_type || payload.products_type),
+          service_type: listToText(influencerProfile.service_type || payload.service_type),
+        });
+      }
+      await dispatch(fetchMe());
+      setRoleSaved(updatedRole === 'influencer' ? 'Switched to influencer.' : 'Switched to member.');
+      setTimeout(() => setRoleSaved(''), 3000);
+    } catch (e) {
+      setRoleError(e?.response?.data?.message || 'Failed to switch account type. Try again.');
+    } finally {
+      setRoleSaving(false);
+    }
   };
 
   const initials = (form.full_name || form.username || 'U').slice(0, 1).toUpperCase();
@@ -599,6 +697,141 @@ const AccountSettings = () => {
           </div>
 
           {/* ── Interests ─────────────────────────────────── */}
+          {/* Account Type */}
+          <div>
+            <SectionTitle title="Account Type" />
+            <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+              <div className="p-4 border-b border-gray-100 dark:border-gray-800">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-gray-900 dark:text-white capitalize">
+                      Current type: {accountRole || 'member'}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Influencer accounts can add storefront details for discovery.
+                    </p>
+                  </div>
+                  {roleSaved && (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-green-600 dark:text-green-400">
+                      <CheckCircle2 size={14} /> {roleSaved}
+                    </span>
+                  )}
+                </div>
+                {roleError && (
+                  <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs">
+                    <AlertCircle size={13} className="shrink-0" /> {roleError}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 border-b border-gray-100 dark:border-gray-800">
+                <button
+                  type="button"
+                  onClick={() => handleRoleSwitch('member')}
+                  disabled={roleSaving || accountRole === 'member'}
+                  className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition-all disabled:opacity-60 ${
+                    accountRole === 'member'
+                      ? 'border-[#fa3f5e] bg-[#fa3f5e]/5'
+                      : 'border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <span className="w-10 h-10 rounded-full bg-blue-50 dark:bg-gray-800 text-blue-500 flex items-center justify-center shrink-0">
+                    <UserRound size={18} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold text-gray-900 dark:text-white">Member</span>
+                    <span className="block text-xs text-gray-500 dark:text-gray-400">Standard social account</span>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleRoleSwitch('influencer')}
+                  disabled={roleSaving || accountRole === 'influencer'}
+                  className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition-all disabled:opacity-60 ${
+                    accountRole === 'influencer'
+                      ? 'border-[#fa3f5e] bg-[#fa3f5e]/5'
+                      : 'border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <span className="w-10 h-10 rounded-full bg-pink-50 dark:bg-gray-800 text-[#fa3f5e] flex items-center justify-center shrink-0">
+                    <Store size={18} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold text-gray-900 dark:text-white">Influencer</span>
+                    <span className="block text-xs text-gray-500 dark:text-gray-400">Creator storefront profile</span>
+                  </span>
+                </button>
+              </div>
+
+              <div className="p-4 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Business Type</label>
+                    <input
+                      className={`${EDIT_CLS} mt-1.5`}
+                      placeholder="Fashion"
+                      value={roleForm.business_type}
+                      onChange={e => updRole('business_type', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Store Name</label>
+                    <input
+                      className={`${EDIT_CLS} mt-1.5`}
+                      placeholder="Aniket's Closet"
+                      value={roleForm.store_name}
+                      onChange={e => updRole('store_name', e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Store Description</label>
+                  <textarea
+                    className={`${EDIT_CLS} mt-1.5 resize-none`}
+                    rows={3}
+                    placeholder="Curated streetwear and accessories"
+                    value={roleForm.store_description}
+                    onChange={e => updRole('store_description', e.target.value)}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Products Type</label>
+                    <input
+                      className={`${EDIT_CLS} mt-1.5`}
+                      placeholder="clothing, accessories"
+                      value={roleForm.products_type}
+                      onChange={e => updRole('products_type', e.target.value)}
+                    />
+                    <p className="text-[11px] text-gray-400 mt-1">Separate multiple values with commas.</p>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Service Type</label>
+                    <input
+                      className={`${EDIT_CLS} mt-1.5`}
+                      placeholder="styling consultation"
+                      value={roleForm.service_type}
+                      onChange={e => updRole('service_type', e.target.value)}
+                    />
+                    <p className="text-[11px] text-gray-400 mt-1">Separate multiple values with commas.</p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleRoleSwitch('influencer')}
+                  disabled={roleSaving || accountRole === 'influencer'}
+                  className="w-full py-3 rounded-2xl bg-[#fa3f5e] text-white font-bold text-sm hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  {roleSaving ? <><Loader2 size={16} className="animate-spin" /> Updating...</> : accountRole === 'influencer' ? <><CheckCircle2 size={16} /> Influencer Active</> : 'Switch to Influencer'}
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div>
             <SectionTitle title="Interests" />
             <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm p-4">

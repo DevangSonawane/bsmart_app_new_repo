@@ -81,13 +81,10 @@ mixin StoreWishlistBodyMixin<T extends StatefulWidget> on State<T> {
     final visible = _visible(state.items);
     return [
       SliverToBoxAdapter(
-        child: _topBar(context, state,
-            topInset: topInset, showBack: showBack),
+        child: _topBar(context, state, topInset: topInset, showBack: showBack),
       ),
-      if (state.items.isNotEmpty)
-        SliverToBoxAdapter(child: _statsRow(state)),
-      if (state.items.isNotEmpty)
-        SliverToBoxAdapter(child: _searchSortRow()),
+      if (state.items.isNotEmpty) SliverToBoxAdapter(child: _statsRow(state)),
+      if (state.items.isNotEmpty) SliverToBoxAdapter(child: _searchSortRow()),
       if (state.loading && state.items.isEmpty)
         const SliverToBoxAdapter(child: _WishlistSkeletons())
       else if (state.items.isEmpty && state.lastError == null)
@@ -99,20 +96,30 @@ mixin StoreWishlistBodyMixin<T extends StatefulWidget> on State<T> {
       else if (visible.isEmpty)
         SliverToBoxAdapter(child: _noResultsBody())
       else
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
-          sliver: SliverGrid(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              mainAxisExtent: 296,
-            ),
-            delegate: SliverChildBuilderDelegate(
-              (context, index) => _WishlistCard(item: visible[index]),
-              childCount: visible.length,
-            ),
-          ),
+        SliverLayoutBuilder(
+          builder: (context, constraints) {
+            final narrow = constraints.crossAxisExtent < 380;
+            return SliverPadding(
+              padding: EdgeInsets.fromLTRB(
+                narrow ? 14 : 10,
+                12,
+                narrow ? 14 : 10,
+                10,
+              ),
+              sliver: SliverGrid(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: narrow ? 1 : 2,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  mainAxisExtent: narrow ? 318 : 296,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => _WishlistCard(item: visible[index]),
+                  childCount: visible.length,
+                ),
+              ),
+            );
+          },
         ),
       // The store shell appends its own 22px spacer when this body is used as
       // a nav section, so only add one in standalone mode.
@@ -297,116 +304,141 @@ mixin StoreWishlistBodyMixin<T extends StatefulWidget> on State<T> {
       ),
       (LucideIcons.star, 'Avg rating', avg),
     ];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 12, 10, 0),
-      child: Row(
-        children: [
-          for (var i = 0; i < stats.length; i++) ...[
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 12),
-                decoration: BStoreDecorations.card(),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 34,
-                      height: 34,
-                      decoration: const BoxDecoration(
-                        color: BStoreColors.primarySoft,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        stats[i].$1,
-                        color: BStoreColors.primary,
-                        size: 16,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            stats[i].$2.toUpperCase(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: BStoreColors.textMuted,
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w800,
-                            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 380;
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding:
+              EdgeInsets.fromLTRB(narrow ? 14 : 10, 12, narrow ? 14 : 10, 0),
+          child: Row(
+            children: [
+              for (var i = 0; i < stats.length; i++) ...[
+                SizedBox(
+                  width: narrow ? 158 : (constraints.maxWidth - 36) / 3,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 12),
+                    decoration: BStoreDecorations.card(),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: const BoxDecoration(
+                            color: BStoreColors.primarySoft,
+                            shape: BoxShape.circle,
                           ),
-                          Text(
-                            stats[i].$3,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: BStoreColors.textPrimary,
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w900,
-                            ),
+                          child: Icon(
+                            stats[i].$1,
+                            color: BStoreColors.primary,
+                            size: 16,
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                stats[i].$2.toUpperCase(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: BStoreColors.textMuted,
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              Text(
+                                stats[i].$3,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: BStoreColors.textPrimary,
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-            if (i != stats.length - 1) const SizedBox(width: 8),
-          ],
-        ],
-      ),
+                if (i != stats.length - 1) const SizedBox(width: 8),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 
   Widget _searchSortRow() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 12, 10, 0),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              onChanged: (v) => setState(() => _query = v),
-              decoration: InputDecoration(
-                hintText: 'Search your wishlist…',
-                prefixIcon: const Icon(LucideIcons.search, size: 18),
-                filled: true,
-                fillColor: Colors.white,
-                contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(999),
-                  borderSide: const BorderSide(color: BStoreColors.border),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(999),
-                  borderSide: const BorderSide(color: BStoreColors.border),
-                ),
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 380;
+        final search = TextField(
+          onChanged: (v) => setState(() => _query = v),
+          decoration: InputDecoration(
+            hintText: 'Search your wishlist…',
+            prefixIcon: const Icon(LucideIcons.search, size: 18),
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(vertical: 0),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(999),
+              borderSide: const BorderSide(color: BStoreColors.border),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(999),
+              borderSide: const BorderSide(color: BStoreColors.border),
             ),
           ),
-          const SizedBox(width: 8),
-          DropdownButton<_WishlistSort>(
+        );
+        final sort = Container(
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BStoreDecorations.card(radius: 999),
+          child: DropdownButton<_WishlistSort>(
             value: _sort,
             underline: const SizedBox.shrink(),
             icon: const Icon(LucideIcons.chevronDown, size: 16),
+            isExpanded: narrow,
             items: const [
               DropdownMenuItem(
                   value: _WishlistSort.newest, child: Text('Newest')),
               DropdownMenuItem(
-                  value: _WishlistSort.priceAsc,
-                  child: Text('Price ↑')),
+                  value: _WishlistSort.priceAsc, child: Text('Price ↑')),
               DropdownMenuItem(
-                  value: _WishlistSort.priceDesc,
-                  child: Text('Price ↓')),
-              DropdownMenuItem(
-                  value: _WishlistSort.name, child: Text('A–Z')),
+                  value: _WishlistSort.priceDesc, child: Text('Price ↓')),
+              DropdownMenuItem(value: _WishlistSort.name, child: Text('A–Z')),
             ],
             onChanged: (v) => setState(() => _sort = v ?? _sort),
           ),
-        ],
-      ),
+        );
+        return Padding(
+          padding:
+              EdgeInsets.fromLTRB(narrow ? 14 : 10, 12, narrow ? 14 : 10, 0),
+          child: narrow
+              ? Column(
+                  children: [
+                    search,
+                    const SizedBox(height: 10),
+                    sort,
+                  ],
+                )
+              : Row(
+                  children: [
+                    Expanded(child: search),
+                    const SizedBox(width: 8),
+                    SizedBox(width: 132, child: sort),
+                  ],
+                ),
+        );
+      },
     );
   }
 
@@ -521,7 +553,7 @@ class _StoreWishlistScreenState extends State<StoreWishlistScreen>
 
 /// Sliver-embeddable wishlist body for the store's bottom-nav section.
 ///
-/// Rebuilds are driven by [StoreHomeScreen] listening to [WishlistState],
+/// Rebuilds are driven by [StoreScreen] listening to [WishlistState],
 /// since a [ListenableBuilder] cannot sit inside a `slivers` list.
 class StoreWishlistSliver extends StatefulWidget {
   final VoidCallback? onExplore;
@@ -611,8 +643,8 @@ class _WishlistCard extends StatelessWidget {
                   top: 8,
                   left: 8,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.92),
                       borderRadius: BorderRadius.circular(6),
@@ -677,7 +709,8 @@ class _WishlistCard extends StatelessWidget {
                       onPressed: () {
                         StoreMockState.instance.addToCart(item);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('${item.title} added to cart')),
+                          SnackBar(
+                              content: Text('${item.title} added to cart')),
                         );
                       },
                       icon: const Icon(LucideIcons.shoppingCart, size: 15),

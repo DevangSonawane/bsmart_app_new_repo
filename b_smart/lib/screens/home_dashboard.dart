@@ -42,7 +42,6 @@ import '../widgets/post_detail_modal.dart';
 import '../widgets/comments_sheet.dart';
 import '../widgets/share_content_modal.dart';
 import 'ads_page_screen.dart';
-import 'miles_screen.dart';
 import 'promote_screen.dart';
 import 'reels_screen.dart';
 import '../services/reels_service.dart';
@@ -298,11 +297,11 @@ class _HomeDashboardState extends State<HomeDashboard>
     isPrimaryAction: true,
     tooltipPosition: TooltipPosition.top,
   );
-  final HomeOnboardingStep _rocketStep = HomeOnboardingStep(
+  final HomeOnboardingStep _promoteStep = HomeOnboardingStep(
     key: GlobalKey(),
-    title: 'Miles',
+    title: 'Promote',
     description:
-        'Check your Miles, rewards, transactions, and redemption options.',
+        'Boost your campaigns, manage ads, and grow your reach with promotions.',
     tooltipPosition: TooltipPosition.top,
   );
   final HomeOnboardingStep _reelsStep = HomeOnboardingStep(
@@ -611,7 +610,7 @@ class _HomeDashboardState extends State<HomeDashboard>
         _homeStep.key,
         _adsStep.key,
         _createStep.key,
-        _rocketStep.key,
+        _promoteStep.key,
         _reelsStep.key,
         _walletStep.key,
       ];
@@ -3079,7 +3078,7 @@ class _HomeDashboardState extends State<HomeDashboard>
     if (idx == 3) {
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (context) => const MilesScreen(),
+          builder: (context) => const PromoteScreen(),
         ),
       );
       return;
@@ -3938,7 +3937,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                     homeStep: _homeStep,
                     storeStep: _adsStep,
                     createStep: _createStep,
-                    milesStep: _rocketStep,
+                    promoteStep: _promoteStep,
                     bsparksStep: _reelsStep,
                   )
                 : const SizedBox.shrink()),

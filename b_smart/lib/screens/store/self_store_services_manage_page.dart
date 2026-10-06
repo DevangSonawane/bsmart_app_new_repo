@@ -355,111 +355,92 @@ class _ManageServiceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 18),
-      child: Container(
-        height: 146,
-        decoration: storeSoftCardDecoration(radius: 9),
-        clipBehavior: Clip.antiAlias,
-        child: Row(
-          children: [
-            StoreItemImage(
-              imageUrl: imageUrl,
-              icon: LucideIcons.briefcaseBusiness,
-              width: 124,
-              height: 146,
-              debugLabel: 'self-store-service',
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(13, 12, 8, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF060D35),
-                        fontSize: 15,
-                        height: 1.15,
-                        fontWeight: FontWeight.w900,
-                        fontFamily: 'Georgia',
+      child: GestureDetector(
+        onTap: () => _showEditServiceSheet(context),
+        child: Container(
+          height: 146,
+          decoration: storeSoftCardDecoration(radius: 9),
+          clipBehavior: Clip.antiAlias,
+          child: Row(
+            children: [
+              StoreItemImage(
+                imageUrl: imageUrl,
+                icon: LucideIcons.briefcaseBusiness,
+                width: 124,
+                height: 146,
+                debugLabel: 'self-store-service',
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(13, 12, 8, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF060D35),
+                          fontSize: 15,
+                          height: 1.15,
+                          fontWeight: FontWeight.w900,
+                          fontFamily: 'Georgia',
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      price,
-                      style: const TextStyle(
-                        color: Color(0xFF078D92),
-                        fontSize: 13,
-                        height: 1.15,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(
-                          LucideIcons.calendarDays,
+                      const SizedBox(height: 6),
+                      Text(
+                        price,
+                        style: const TextStyle(
                           color: Color(0xFF078D92),
-                          size: 13,
+                          fontSize: 13,
+                          height: 1.15,
+                          fontWeight: FontWeight.w900,
                         ),
-                        const SizedBox(width: 5),
-                        Text(
-                          bookingsCount == 0
-                              ? 'No bookings yet'
-                              : '$bookingsCount ${bookingsCount == 1 ? 'booking' : 'bookings'}',
-                          style: const TextStyle(
-                            color: Color(0xFF29304D),
-                            fontSize: 11.5,
-                            height: 1.15,
-                            fontWeight: FontWeight.w600,
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(
+                            LucideIcons.calendarDays,
+                            color: Color(0xFF078D92),
+                            size: 13,
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const _VisibleBadge(),
-                        const Spacer(),
-                        TextButton.icon(
-                          onPressed: serviceId.isEmpty
-                              ? null
-                              : () => _showEditServiceSheet(context),
-                          icon: const Icon(LucideIcons.pencil, size: 13),
-                          label: const Text('Edit'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: const Color(0xFF060D35),
-                            padding: EdgeInsets.zero,
-                            minimumSize: const Size(48, 28),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            visualDensity: VisualDensity.compact,
-                            textStyle: const TextStyle(
+                          const SizedBox(width: 5),
+                          Text(
+                            bookingsCount == 0
+                                ? 'No bookings yet'
+                                : '$bookingsCount ${bookingsCount == 1 ? 'booking' : 'bookings'}',
+                            style: const TextStyle(
+                              color: Color(0xFF29304D),
                               fontSize: 11.5,
-                              fontWeight: FontWeight.w800,
+                              height: 1.15,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                        ),
-                        IconButton(
-                          onPressed: serviceId.isEmpty
-                              ? null
-                              : () => _confirmDeleteService(context),
-                          icon: const Icon(LucideIcons.ellipsisVertical,
-                              size: 17),
-                          color: const Color(0xFF060D35),
-                          padding: EdgeInsets.zero,
-                          visualDensity: VisualDensity.compact,
-                          constraints: const BoxConstraints.tightFor(
-                              width: 28, height: 28),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const _VisibleBadge(),
+                          const Spacer(),
+                          _ServiceActionsMenu(
+                            serviceId: serviceId,
+                            visible: raw['visible_to_customers'] != false,
+                            title: title,
+                            onEdit: () => _showEditServiceSheet(context),
+                            onDelete: () => _confirmDeleteService(context),
+                            onToggleVisible: () => _toggleVisible(context),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -656,6 +637,30 @@ class _ManageServiceCard extends StatelessWidget {
           .showSnackBar(SnackBar(content: Text('Delete failed: $e')));
     }
   }
+
+  Future<void> _toggleVisible(BuildContext context) async {
+    if (serviceId.isEmpty) return;
+    final next = raw['visible_to_customers'] == false;
+    try {
+      await Phase2StoreApi().updateService(serviceId, {
+        'visible_to_customers': next,
+      });
+      await StoreMockState.instance.refreshMarketplace();
+      onChanged?.call();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            next ? 'Service marked visible.' : 'Service marked as draft.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Update failed: $e')));
+    }
+  }
 }
 
 class _VisibleBadge extends StatelessWidget {
@@ -684,6 +689,106 @@ class _VisibleBadge extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ServiceActionsMenu extends StatelessWidget {
+  final String serviceId;
+  final bool visible;
+  final String title;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final VoidCallback onToggleVisible;
+
+  const _ServiceActionsMenu({
+    required this.serviceId,
+    required this.visible,
+    required this.title,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onToggleVisible,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (serviceId.isEmpty) return const SizedBox.shrink();
+
+    return PopupMenuButton<String>(
+      color: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.black.withValues(alpha: 0.16),
+      icon: const Icon(
+        LucideIcons.ellipsisVertical,
+        color: Color(0xFF060D35),
+        size: 20,
+      ),
+      padding: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'edit',
+          child: Row(
+            children: [
+              const Icon(LucideIcons.pencil,
+                  size: 17, color: Color(0xFF060D35)),
+              const SizedBox(width: 10),
+              const Text('Edit',
+                  style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF060D35))),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'toggle_visible',
+          child: Row(
+            children: [
+              Icon(
+                visible ? LucideIcons.eyeOff : LucideIcons.eye,
+                size: 17,
+                color: const Color(0xFF060D35),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                visible ? 'Mark as Draft' : 'Mark Visible',
+                style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF060D35)),
+              ),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'delete',
+          child: Row(
+            children: [
+              const Icon(LucideIcons.trash2, size: 17, color: Colors.red),
+              const SizedBox(width: 10),
+              const Text('Delete',
+                  style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.red)),
+            ],
+          ),
+        ),
+      ],
+      onSelected: (value) {
+        switch (value) {
+          case 'edit':
+            onEdit();
+            break;
+          case 'toggle_visible':
+            onToggleVisible();
+            break;
+          case 'delete':
+            onDelete();
+            break;
+        }
+      },
     );
   }
 }

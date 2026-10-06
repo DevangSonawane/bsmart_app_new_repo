@@ -4,12 +4,9 @@ import { useSelector } from 'react-redux';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import {
   Eye, Briefcase, Package, Calendar, ShoppingBag, Plus,
-  CheckCircle2, ChevronRight, Star, UserCog, CreditCard, MessageCircle,
+  CheckCircle2, ChevronRight, UserCog, CreditCard, MessageCircle,
 } from 'lucide-react';
 import { Dropdown } from '../../components/productForm/ProductFormFields';
-import { MOCK_ORDERS } from '../data/mockOrders';
-import { MOCK_BOOKINGS } from '../data/mockBookings';
-import { SEED_SERVICES } from '../data/mockServices';
 
 // Deterministic mock daily-earnings series for the "This month" sparkline stat card.
 const EARNINGS_DATA = Array.from({ length: 31 }, (_, i) => {
@@ -107,10 +104,17 @@ const StoreDashboard = () => {
   const availableBalance = Math.round(THIS_MONTH_TOTAL * 0.7);
 
   const recentActivity = [
-    { icon: Calendar, iconBg: 'bg-blue-50 dark:bg-blue-900/20 text-blue-500', title: 'New booking request', detail: `Booking for ${MOCK_BOOKINGS[0]?.service}`, time: 'Today, 10:24 AM' },
-    { icon: ShoppingBag, iconBg: 'bg-pink-50 dark:bg-pink-900/20 text-[#fa3f5e]', title: 'New product order', detail: `Order ${MOCK_ORDERS[MOCK_ORDERS.length - 1]?.id} · ${MOCK_ORDERS[MOCK_ORDERS.length - 1]?.qty} items`, time: 'Today, 9:15 AM' },
-    { icon: Star, iconBg: 'bg-amber-50 dark:bg-amber-900/20 text-amber-500', title: 'Review received', detail: `5-star review for ${SEED_SERVICES[2]?.name || 'a recent order'}`, time: 'Yesterday, 6:42 PM' },
-  ];
+    ...bookings.slice(-3).reverse().map((b) => ({
+      icon: Calendar, iconBg: 'bg-blue-50 dark:bg-blue-900/20 text-blue-500',
+      title: 'New booking request', detail: `Booking for ${b.service}`,
+      time: [b.date, b.time].filter(Boolean).join(', '),
+    })),
+    ...orders.slice(-3).reverse().map((o) => ({
+      icon: ShoppingBag, iconBg: 'bg-pink-50 dark:bg-pink-900/20 text-[#fa3f5e]',
+      title: 'New product order', detail: `Order ${o.id} · ${o.qty} item${o.qty === 1 ? '' : 's'}`,
+      time: o.date,
+    })),
+  ].slice(0, 5);
 
   return (
     <div className="max-w-[1280px] ml-auto px-4 md:px-8 pt-6 pb-10">
@@ -179,21 +183,25 @@ const StoreDashboard = () => {
               <span>Details</span>
               <span>Time</span>
             </div>
-            <div className="divide-y divide-gray-100 dark:divide-gray-800">
-              {recentActivity.map((a, i) => (
-                <div key={i} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${a.iconBg}`}>
-                    <a.icon size={15} />
+            {recentActivity.length === 0 ? (
+              <p className="px-5 pb-5 text-sm text-gray-400 dark:text-gray-500">No recent activity yet.</p>
+            ) : (
+              <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                {recentActivity.map((a, i) => (
+                  <div key={i} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${a.iconBg}`}>
+                      <a.icon size={15} />
+                    </div>
+                    <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-1">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{a.title}</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{a.detail}</p>
+                    </div>
+                    <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0 hidden sm:inline">{a.time}</span>
+                    <ChevronRight size={15} className="text-gray-300 dark:text-gray-600 flex-shrink-0" />
                   </div>
-                  <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-1">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{a.title}</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{a.detail}</p>
-                  </div>
-                  <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0 hidden sm:inline">{a.time}</span>
-                  <ChevronRight size={15} className="text-gray-300 dark:text-gray-600 flex-shrink-0" />
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

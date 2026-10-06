@@ -4,10 +4,10 @@ export const bookingTime = (time) => {
   const [hours, minutes] = time.split(':').map(Number);
   return `${hours % 12 || 12}:${String(minutes).padStart(2, '0')} ${hours >= 12 ? 'PM' : 'AM'}`;
 };
-export const bookingStatus = (status) => ({ New: 'New request', Proposed: 'New time proposed', Confirmed: 'Confirmed', Completed: 'Completed', Declined: 'Declined' }[status] || status);
+export const bookingStatus = (status) => ({ New: 'New request', Proposed: 'New time proposed', Confirmed: 'Confirmed', 'In Progress': 'In progress', Completed: 'Completed', Cancelled: 'Cancelled', Declined: 'Declined' }[status] || status);
 export const BOOKING_TABS = ['Requests', 'Confirmed', 'Completed'];
 export function filterBookings(bookings, { tab = 'Requests', search = '', date = '' } = {}) {
-  const statuses = { Requests: ['New', 'Proposed'], Confirmed: ['Confirmed'], Completed: ['Completed', 'Declined'] }[tab] || ['New', 'Proposed'];
+  const statuses = { Requests: ['New', 'Proposed'], Confirmed: ['Confirmed', 'In Progress'], Completed: ['Completed', 'Cancelled', 'Declined'] }[tab] || ['New', 'Proposed'];
   return bookings.filter((booking) => statuses.includes(booking.status)
     && `${booking.service} ${booking.customer} ${booking.id}`.toLowerCase().includes(search.trim().toLowerCase())
     && (!date || booking.date === date)).sort((a, b) => a.date.localeCompare(b.date));

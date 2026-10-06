@@ -409,13 +409,14 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                               Navigator.of(dialogContext).pop();
                               if (!buttonContext.mounted) return;
                               final ownerUserId = _profileOwnerUserId();
+                              if (ownerUserId == null ||
+                                  ownerUserId.trim().isEmpty) {
+                                return;
+                              }
+                              final encodedOwnerId =
+                                  Uri.encodeComponent(ownerUserId.trim());
                               Navigator.of(buttonContext).pushNamed(
-                                '/store',
-                                arguments: {
-                                  'isSelfStore': false,
-                                  if (ownerUserId != null)
-                                    'ownerUserId': ownerUserId,
-                                },
+                                '/vendor/$encodedOwnerId/public',
                               );
                             },
                           ),
@@ -657,7 +658,8 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
 
   Widget _statsCard(BuildContext context) {
     final profileUserId = _profileOwnerUserId();
-    final canOpenFollowLists = profileUserId != null && profileUserId.isNotEmpty;
+    final canOpenFollowLists =
+        profileUserId != null && profileUserId.isNotEmpty;
     final statItems = <_StatItem>[
       _StatItem('Posts', postsCount.toString(), LucideIcons.grid2x2),
       _StatItem(

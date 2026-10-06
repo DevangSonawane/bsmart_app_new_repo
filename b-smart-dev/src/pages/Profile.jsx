@@ -15,6 +15,7 @@ import HighlightsRail from '../components/HighlightsRail';
 import TweetDetailModal from '../components/TweetDetailModal';
 import PromoteDetailModal from '../components/PromoteDetailModal';
 import TweetImageGallery from '../components/TweetImageGallery';
+import InfluencerSwitchModal from '../components/InfluencerSwitchModal';
 import { setUser } from '../store/authSlice';
 import { fetchUserStory } from '../store/storySlice';
 import { createOrGetConversation } from '../services/chatService';
@@ -204,6 +205,7 @@ const Profile = () => {
     const [, setLoadingInterests] = useState(false);
     const [showAddImageModal, setShowAddImageModal] = useState(false);
     const [showInterestsSection, setShowInterestsSection] = useState(false);
+    const [showInfluencerModal, setShowInfluencerModal] = useState(false);
 
     const [userAds, setUserAds] = useState([]);
     const [loadingAds, setLoadingAds] = useState(false);
@@ -1324,11 +1326,17 @@ const Profile = () => {
     // ── Left-panel quick nav (Saved / Groups / Campaigns / Marketplace / Events) ──
     const handleComingSoon = (label) => setRewardToast({ type: 'success', message: `${label} is coming soon.` });
 
+    const isInfluencer = currentUser?.role === 'influencer';
+    const storeNavItem = isOwnProfile
+        ? isInfluencer
+            ? { label: 'My Store', icon: <Store size={18} />, to: '/market/my-store' }
+            : { label: 'Become an Influencer', icon: <Store size={18} />, onClick: () => setShowInfluencerModal(true) }
+        : { label: 'Marketplace', icon: <Store size={18} />, to: '/market' };
     const SIDEBAR_NAV = [
         { label: 'Saved items', icon: <Bookmark size={18} />, to: '/settings/saved' },
         { label: 'Interests',   icon: <Star size={18} />, onClick: handleStarClick },
         { label: 'Campaigns',   icon: <Megaphone size={18} />, to: '/promote' },
-        { label: 'My Store',    icon: <Store size={18} />, to: '/market/my-store' },
+        storeNavItem,
     ];
 
     const SidebarNavItem = ({ icon, label, to, onClick }) => {
@@ -2171,6 +2179,10 @@ const Profile = () => {
             <AddImageModal
                 isOpen={showAddImageModal}
                 onClose={() => setShowAddImageModal(false)}
+            />
+            <InfluencerSwitchModal
+                isOpen={showInfluencerModal}
+                onClose={() => setShowInfluencerModal(false)}
             />
             <AvatarCropModal
                 isOpen={showAvatarModal}

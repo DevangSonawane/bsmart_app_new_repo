@@ -7,7 +7,8 @@ import { useNavigate } from "react-router-dom";
 import {
   Bell, Heart, MessageCircle, UserPlus, AtSign,
   RefreshCw, CheckCheck, Trash2, AlertCircle,
-  Loader2, ChevronLeft, ChevronRight, Bookmark, Star
+  Loader2, ChevronLeft, ChevronRight, Bookmark, Star,
+  ShoppingBag, Package, Truck, XCircle, Wallet, AlertTriangle, Clock, AlertOctagon
 } from "lucide-react";
 import { useNotificationSocket } from "../hooks/useNotificationSocket";
 import { acceptFollowRequest, declineFollowRequest } from "../services/followService";
@@ -56,6 +57,14 @@ const TYPE_CONFIG = {
   mention:          { icon: AtSign,        color: "text-purple-500", bg: "bg-purple-500",  label: "Mention"          },
   save:             { icon: Bookmark,      color: "text-teal-500",   bg: "bg-teal-500",    label: "Save"             },
   reward:           { icon: Star,          color: "text-yellow-500", bg: "bg-yellow-500",  label: "Reward"           },
+  order_placed:          { icon: ShoppingBag,   color: "text-green-500",  bg: "bg-green-500",   label: "Order placed"      },
+  order_seller_new:      { icon: Package,       color: "text-blue-500",   bg: "bg-blue-500",    label: "New order"         },
+  order_status:          { icon: Truck,         color: "text-purple-500", bg: "bg-purple-500",  label: "Order update"      },
+  order_cancelled:       { icon: XCircle,       color: "text-red-500",    bg: "bg-red-500",     label: "Order cancelled"   },
+  order_refunded:        { icon: Wallet,        color: "text-green-500",  bg: "bg-green-500",   label: "Refund processed"  },
+  order_payment_failed:  { icon: AlertTriangle, color: "text-red-500",    bg: "bg-red-500",     label: "Payment failed"    },
+  order_refund_pending:  { icon: Clock,         color: "text-amber-500",  bg: "bg-amber-500",   label: "Refund pending"    },
+  order_refund_failed:   { icon: AlertOctagon,  color: "text-red-500",    bg: "bg-red-500",     label: "Refund failed"     },
 };
 const getType = (t) => TYPE_CONFIG[t] || { icon: Bell, color: "text-gray-400", bg: "bg-gray-400", label: "Notification" };
 

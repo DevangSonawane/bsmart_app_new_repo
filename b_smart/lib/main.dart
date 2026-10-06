@@ -33,7 +33,7 @@ import 'screens/profile_screen.dart';
 import 'screens/ad_detail_screen.dart';
 import 'screens/ad_public_detail_screen.dart';
 import 'screens/reels_screen.dart';
-import 'screens/vendor_public_profile_react_screen.dart';
+import 'screens/store/visitor_store_home_page.dart';
 import 'utils/system_ui.dart';
 import 'widgets/profile_setup_gate.dart';
 import 'utils/app_navigator.dart';
@@ -432,16 +432,15 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
         final uri = Uri.parse(name);
         final segments = uri.pathSegments;
 
-        // React parity: /vendor/:userId/public → VendorPublicProfileReactScreen(userId)
+        // React parity: /vendor/:userId/public → seller storefront.
         if (segments.length == 3 &&
             segments[0] == 'vendor' &&
             segments[2] == 'public') {
           final userId = segments[1];
-          debugPrint(
-              '[Router] → VendorPublicProfileReactScreen userId=$userId');
+          debugPrint('[Router] → VisitorStorefrontScreen userId=$userId');
           return MaterialPageRoute<void>(
             settings: settings,
-            builder: (ctx) => VendorPublicProfileReactScreen(userId: userId),
+            builder: (ctx) => VisitorStorefrontScreen(ownerUserId: userId),
           );
         }
 

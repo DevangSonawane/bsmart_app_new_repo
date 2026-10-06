@@ -54,34 +54,43 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
 
   static final _serverIdPattern = RegExp(r'^[0-9a-fA-F]{24}$');
 
-  List<Map<String, String>> get _variants =>
-      StoreMockState.variantsOf(_item);
+  List<Map<String, String>> get _variants => StoreMockState.variantsOf(_item);
 
   Set<String> get _colors => StoreMockState.colorsOf(_item);
 
   Set<String> get _sizes => StoreMockState.sizesOf(_item);
 
   Map<String, dynamic> get _selectedVariant {
-    final variant = <String, dynamic>{};
-    if (_selectedColor != null) variant['color'] = _selectedColor;
-    if (_selectedSize != null) variant['size'] = _selectedSize;
+    final variant = <String, dynamic>{
+      if (_selectedColor != null) 'color': _selectedColor,
+      if (_selectedSize != null) 'size': _selectedSize,
+    };
+    for (final option in _variants) {
+      final matchesColor =
+          _selectedColor == null || option['color'] == _selectedColor;
+      final matchesSize =
+          _selectedSize == null || option['size'] == _selectedSize;
+      if (!matchesColor || !matchesSize) continue;
+      final price = double.tryParse(option['price'] ?? '');
+      final stock = int.tryParse(option['stock'] ?? '');
+      if (price != null && price > 0) variant['price'] = price;
+      if (stock != null) variant['stock_quantity'] = stock;
+      break;
+    }
     return variant;
   }
 
-  int? get _stockQuantity {
-    if (!_item.raw.containsKey('stock_quantity')) return null;
-    final raw = _item.raw['stock_quantity'];
-    if (raw is num) return raw.toInt();
-    if (raw is String) return int.tryParse(raw) ?? 0;
-    return 0;
-  }
+  int get _maxQuantity =>
+      StoreMockState.instance.maxQuantityFor(_item, variant: _selectedVariant);
 
-  String get _displayPrice {    if (_variants.isNotEmpty) {
+  bool get _isOutOfStock => _maxQuantity <= 0;
+
+  String get _displayPrice {
+    if (_variants.isNotEmpty) {
       for (final v in _variants) {
         final matchesColor =
             _selectedColor == null || v['color'] == _selectedColor;
-        final matchesSize =
-            _selectedSize == null || v['size'] == _selectedSize;
+        final matchesSize = _selectedSize == null || v['size'] == _selectedSize;
         if (matchesColor && matchesSize) {
           final parsed = double.tryParse(v['price'] ?? '');
           if (parsed != null && parsed > 0) {
@@ -101,7 +110,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
     _selectDefaultVariant();
     _quantity = StoreMockState.instance
         .quantityForVariant(_item, _selectedVariant)
-        .clamp(1, 99);
+        .clamp(1, _maxQuantity <= 0 ? 1 : _maxQuantity);
     if (StoreMockState.instance.quantityFor(_item.id) == 0) {
       _quantity = 1;
     }
@@ -127,7 +136,10 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
       _item,
       _selectedVariant,
     );
-    setState(() => _quantity = qty > 0 ? qty : 1);
+    final maxQuantity = _maxQuantity;
+    setState(() {
+      _quantity = maxQuantity <= 0 ? 1 : (qty > 0 ? qty : 1);
+    });
   }
 
   /// Refetches the product by id so detail is never stale.
@@ -152,6 +164,8 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
         if (_selectedColor == null || _selectedSize == null) {
           _selectDefaultVariant();
         }
+        final maxQuantity = _maxQuantity;
+        _quantity = maxQuantity <= 0 ? 1 : _quantity.clamp(1, maxQuantity);
       });
     } catch (_) {
       // Keep the listed data; browse/Search already show server content.
@@ -163,7 +177,9 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
       _item,
       _selectedVariant,
     );
-    final nextQuantity = cartQuantity > 0 ? cartQuantity : 1;
+    final maxQuantity = _maxQuantity;
+    final nextQuantity =
+        maxQuantity <= 0 ? 1 : (cartQuantity > 0 ? cartQuantity : 1);
     if (!mounted || nextQuantity == _quantity) return;
     setState(() => _quantity = nextQuantity);
   }
@@ -228,9 +244,10 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
   }
 
   void _addToCart({required bool openCart}) {
+    if (_isOutOfStock) return;
     StoreMockState.instance.setCartQuantity(
       _item,
-      _quantity,
+      _quantity.clamp(1, _maxQuantity),
       variant: _selectedVariant,
     );
     if (openCart) {
@@ -240,7 +257,12 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
   }
 
   void _setQuantity(int quantity) {
-    final nextQuantity = quantity.clamp(1, 99);
+    final maxQuantity = _maxQuantity;
+    if (maxQuantity <= 0) {
+      setState(() => _quantity = 1);
+      return;
+    }
+    final nextQuantity = quantity.clamp(1, maxQuantity);
     setState(() => _quantity = nextQuantity);
     if (StoreMockState.instance.quantityForVariant(
           _item,
@@ -269,6 +291,8 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
   @override
   Widget build(BuildContext context) {
     final product = VisitorProductDetailData(item: _item);
+    final maxQuantity = _maxQuantity;
+    final isOutOfStock = maxQuantity <= 0;
 
     return Theme(
       data: BStoreTheme.data(context),
@@ -282,7 +306,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                 physics: const BouncingScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 108),
                 children: [
-                  _ProductTopBar(onCart: _openCart, productId: _item.id),
+                  _ProductTopBar(onCart: _openCart),
                   const SizedBox(height: 16),
                   _ProductImageCard(
                     imageUrl: product.imageUrl,
@@ -326,7 +350,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                           ),
                         ),
                       ),
-                      _StockBadge(stock: _stockQuantity),
+                      _StockBadge(stock: _maxQuantity),
                     ],
                   ),
                   const SizedBox(height: 11),
@@ -367,10 +391,12 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                       ),
                       _QuantityControl(
                         quantity: _quantity,
-                        onMinus: _quantity <= 1
+                        onMinus: isOutOfStock || _quantity <= 1
                             ? null
                             : () => _setQuantity(_quantity - 1),
-                        onPlus: () => _setQuantity(_quantity + 1),
+                        onPlus: isOutOfStock || _quantity >= maxQuantity
+                            ? null
+                            : () => _setQuantity(_quantity + 1),
                       ),
                     ],
                   ),
@@ -402,6 +428,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                 right: 0,
                 bottom: 0,
                 child: _ProductBottomActions(
+                  enabled: !isOutOfStock,
                   onAddToCart: () => _addToCart(openCart: false),
                   onBuyNow: () => _addToCart(openCart: true),
                 ),
@@ -533,9 +560,7 @@ class _ColorChip extends StatelessWidget {
             shape: BoxShape.circle,
             color: circle,
             border: Border.all(
-              color: selected
-                  ? BStoreColors.primary
-                  : BStoreColors.divider,
+              color: selected ? BStoreColors.primary : BStoreColors.divider,
               width: selected ? 3 : 1.5,
             ),
             boxShadow: selected
@@ -609,9 +634,8 @@ class _ProductOwner {
 
 class _ProductTopBar extends StatelessWidget {
   final VoidCallback onCart;
-  final String productId;
 
-  const _ProductTopBar({required this.onCart, required this.productId});
+  const _ProductTopBar({required this.onCart});
 
   @override
   Widget build(BuildContext context) {
@@ -634,12 +658,6 @@ class _ProductTopBar extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                WishlistHeartButton(
-                  productId: productId,
-                  size: 36,
-                  iconSize: 20,
-                ),
-                const SizedBox(width: 6),
                 AnimatedBuilder(
                   animation: StoreMockState.instance,
                   builder: (context, _) => IconButton(
@@ -797,14 +815,11 @@ class _StockBadge extends StatelessWidget {
             : stock! <= 5
                 ? 'Only $stock left'
                 : 'In stock';
-    final color =
-        !inStock ? const Color(0xFFB3261E) : BStoreColors.primary;
+    final color = !inStock ? const Color(0xFFB3261E) : BStoreColors.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
-        color: inStock
-            ? const Color(0xFFE5F5F3)
-            : const Color(0xFFFDECEA),
+        color: inStock ? const Color(0xFFE5F5F3) : const Color(0xFFFDECEA),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -972,7 +987,7 @@ class _SellerCard extends StatelessWidget {
 class _QuantityControl extends StatelessWidget {
   final int quantity;
   final VoidCallback? onMinus;
-  final VoidCallback onPlus;
+  final VoidCallback? onPlus;
 
   const _QuantityControl({
     required this.quantity,
@@ -1008,7 +1023,8 @@ class _QuantityControl extends StatelessWidget {
           IconButton(
             onPressed: onPlus,
             icon: const Icon(LucideIcons.plus),
-            color: BStoreColors.textPrimary,
+            color:
+                onPlus == null ? BStoreColors.textMuted : BStoreColors.primary,
           ),
         ],
       ),
@@ -1057,10 +1073,12 @@ class _DeliveryRow extends StatelessWidget {
 }
 
 class _ProductBottomActions extends StatelessWidget {
+  final bool enabled;
   final VoidCallback onAddToCart;
   final VoidCallback onBuyNow;
 
   const _ProductBottomActions({
+    required this.enabled,
     required this.onAddToCart,
     required this.onBuyNow,
   });
@@ -1081,9 +1099,9 @@ class _ProductBottomActions extends StatelessWidget {
             child: SizedBox(
               height: 46,
               child: OutlinedButton.icon(
-                onPressed: onAddToCart,
+                onPressed: enabled ? onAddToCart : null,
                 icon: const Icon(LucideIcons.shoppingCart, size: 18),
-                label: const Text('Add to Cart'),
+                label: Text(enabled ? 'Add to Cart' : 'Out of Stock'),
                 style: BStoreButtons.outlined(
                   foreground: BStoreColors.primary,
                   border: BStoreColors.primary,
@@ -1097,11 +1115,14 @@ class _ProductBottomActions extends StatelessWidget {
             child: SizedBox(
               height: 46,
               child: FilledButton(
-                onPressed: onBuyNow,
+                onPressed: enabled ? onBuyNow : null,
                 style: BStoreButtons.filled(radius: 12),
-                child: const Text(
-                  'Buy Now',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                child: Text(
+                  enabled ? 'Buy Now' : 'Unavailable',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
             ),

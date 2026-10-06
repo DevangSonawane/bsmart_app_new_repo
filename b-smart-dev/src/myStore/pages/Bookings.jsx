@@ -1,33 +1,92 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Search, CalendarDays, MapPin, ShieldCheck, X } from 'lucide-react';
+import { Search, CalendarDays, MapPin, ShieldCheck, X, Loader2, RefreshCw } from 'lucide-react';
 import { inputCls } from '../../components/productForm/ProductFormFields';
 import BookingDetails from '../components/BookingDetails';
 import { CustomerAvatar, BookingBadge } from '../components/BookingUI';
 import { BOOKING_TABS, filterBookings, bookingDate, localDate } from '../data/bookingHelpers';
 import { money } from '../data/orderFilters';
+import serviceBookingService from '../../services/serviceBookingService';
+import RowActionsMenu from '../components/RowActionsMenu';
 
 const BASE = '/market/my-store/bookings';
 
 export default function StoreBookings() {
-  const bookings = useSelector((state) => state.bookings.items);
+  const fallbackBookings = useSelector((state) => state.bookings.items);
+  const [apiBookings, setApiBookings] = useState([]);
+  const [apiLoaded, setApiLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [updatingId, setUpdatingId] = useState('');
   const { bookingId } = useParams();
   const [params, setParams] = useSearchParams();
   const tab = BOOKING_TABS.includes(params.get('tab')) ? params.get('tab') : 'Requests';
   const search = params.get('search') || '';
   const date = params.get('date') || '';
   const setFilter = (key, value) => setParams((current) => { const next = new URLSearchParams(current); if (value) next.set(key, value); else next.delete(key); return next; }, { replace: true });
+  const bookings = apiLoaded ? apiBookings : fallbackBookings;
   const filtered = filterBookings(bookings, { tab, search, date });
-  const today = bookings.filter((booking) => booking.date === localDate() && booking.status === 'Confirmed');
+  const today = bookings.filter((booking) => booking.date === localDate() && ['Confirmed', 'In Progress'].includes(booking.status));
   const suffix = params.size ? `?${params.toString()}` : '';
   const active = bookings.find((booking) => booking.id === bookingId);
   const viewUrl = (id) => `${BASE}/${id}${suffix}`;
+
+  const fetchBookings = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      setApiBookings(await serviceBookingService.listSeller());
+      setApiLoaded(true);
+    } catch (err) {
+      setApiLoaded(false);
+      setError(err?.response?.data?.message || 'Could not load live service bookings. Showing local bookings.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchBookings(); }, []);
+
+  useEffect(() => {
+    if (!bookingId || !apiLoaded) return;
+    let alive = true;
+    serviceBookingService.get(bookingId)
+      .then((fresh) => {
+        if (!alive) return;
+        setApiBookings((current) => current.some((booking) => booking.id === fresh.id)
+          ? current.map((booking) => booking.id === fresh.id ? fresh : booking)
+          : [fresh, ...current]);
+      })
+      .catch((err) => {
+        if (alive) setError(err?.response?.data?.message || 'Could not load booking details.');
+      });
+    return () => { alive = false; };
+  }, [bookingId, apiLoaded]);
+
+  const updateBookingStatus = async (id, status) => {
+    setUpdatingId(id);
+    setError('');
+    try {
+      const updated = await serviceBookingService.updateStatus(id, status);
+      setApiBookings((current) => current.map((booking) => booking.id === id ? updated : booking));
+      setApiLoaded(true);
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Could not update booking status.');
+    } finally {
+      setUpdatingId('');
+    }
+  };
   return (
     <div className="max-w-[1280px] ml-auto px-4 md:px-8 pt-6 pb-10">
       <div className="flex items-start gap-4 lg:gap-6">
         <section aria-label="Bookings" className={`min-w-0 flex-1 ${bookingId ? 'hidden md:block' : ''}`}>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-5">Bookings</h1>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Bookings</h1>
+            <button type="button" onClick={fetchBookings} className="inline-flex items-center gap-2 text-xs font-semibold text-[#fa3f5e]"><RefreshCw size={14} />Refresh</button>
+          </div>
+          {loading && <div className="flex items-center gap-2 text-sm text-gray-500 mb-4"><Loader2 size={16} className="animate-spin" />Loading bookings...</div>}
+          {error && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">{error}</p>}
           <div className="flex gap-6 border-b border-gray-200 dark:border-gray-800 mb-5">{BOOKING_TABS.map((value) => <button type="button" key={value} aria-pressed={tab === value} onClick={() => setFilter('tab', value)} className={`pb-3 text-sm font-semibold border-b-2 transition-colors ${tab === value ? 'border-[#fa3f5e] text-[#fa3f5e]' : 'border-transparent text-gray-500 dark:text-gray-400'}`}>{value}</button>)}</div>
           <div className="flex flex-wrap gap-3 items-center justify-between mb-5">
             <div className="relative flex-1 sm:max-w-md min-w-[180px]"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input aria-label="Search bookings" value={search} onChange={(event) => setFilter('search', event.target.value)} placeholder="Search bookings" className={`${inputCls} pl-9`} /></div>
@@ -41,7 +100,15 @@ export default function StoreBookings() {
                 <td className="px-4 py-4 text-gray-500 dark:text-gray-400 whitespace-nowrap"><span className="flex items-center gap-1.5"><CalendarDays size={13} />{bookingDate(booking.date)} · {booking.time}</span></td>
                 <td className="px-4 py-4 text-[#fa3f5e] font-semibold">{money(booking.amount)}</td>
                 <td className="px-4 py-4"><BookingBadge status={booking.status} /></td>
-                <td className="px-4 py-4 text-right"><Link to={viewUrl(booking.id)} aria-label={`View booking ${booking.id}`} className="inline-flex px-3.5 py-2 rounded-lg text-xs font-semibold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange">View</Link></td>
+                <td className="px-4 py-4 text-right">
+                  <RowActionsMenu ariaLabel={`Actions for booking ${booking.id}`} menuClassName="w-40">
+                    {(close) => (
+                      <Link role="menuitem" to={viewUrl(booking.id)} onClick={close} className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 hover:text-[#fa3f5e] dark:text-gray-300 dark:hover:bg-gray-800">
+                        View booking
+                      </Link>
+                    )}
+                  </RowActionsMenu>
+                </td>
               </tr>)}{!filtered.length && <tr><td colSpan={5} className="text-center py-12 text-gray-400">No bookings match this view.</td></tr>}</tbody>
             </table>
           </div>
@@ -52,7 +119,7 @@ export default function StoreBookings() {
         </section>
         {bookingId && (
           <div className="w-full md:w-[300px] lg:w-[340px] shrink-0 md:sticky md:top-6">
-            <BookingDetails key={bookingId} booking={active} closeTo={BASE + suffix} />
+            <BookingDetails key={bookingId} booking={active} closeTo={BASE + suffix} onStatusChange={updateBookingStatus} updating={updatingId === bookingId} apiEnabled={apiLoaded} />
           </div>
         )}
       </div>

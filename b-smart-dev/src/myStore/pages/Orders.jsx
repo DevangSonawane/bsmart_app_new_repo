@@ -1,18 +1,41 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Search, ArrowDown, ArrowUp, ChevronLeft, ChevronRight, CalendarDays, X } from 'lucide-react';
+import { Search, ArrowDown, ArrowUp, ChevronLeft, ChevronRight, CalendarDays, X, Loader2, RefreshCw } from 'lucide-react';
 import { Dropdown, inputCls } from '../../components/productForm/ProductFormFields';
 import OrderDetails from '../components/OrderDetails';
-import { OrderProductImage, PaymentBadge } from '../components/OrderUI';
+import { OrderProductImage, PaymentBadge, StatusBadge } from '../components/OrderUI';
 import { filterOrders, ORDER_TABS, money, orderDate } from '../data/orderFilters';
+import orderService from '../../services/orderService';
+import RowActionsMenu from '../components/RowActionsMenu';
+import socketService from '../../services/socketService';
 
 const PAGE_SIZE = 6;
 const BASE = '/market/my-store/orders';
 
+const Bar = ({ className = '' }) => <div className={`animate-pulse bg-gray-200 dark:bg-gray-800 rounded ${className}`} />;
+
+const OrderRowSkeleton = () => (
+  <tr>
+    <td className="pl-4 py-5"><Bar className="w-4 h-4 rounded" /></td>
+    <td className="px-3 py-5"><div className="flex items-center gap-2.5"><Bar className="w-9 h-9 rounded-full flex-shrink-0" /><div className="min-w-[100px] space-y-2"><Bar className="h-3 w-20" /><Bar className="h-3 w-16" /></div></div></td>
+    <td className="px-3 py-5"><Bar className="h-3 w-14 mb-2" /><div className="flex gap-1"><Bar className="w-9 h-9 rounded" /><Bar className="w-9 h-9 rounded" /></div></td>
+    <td className="px-3 py-5"><Bar className="h-4 w-12" /></td>
+    <td className="px-3 py-5"><Bar className="h-5 w-14 rounded-full" /></td>
+    <td className="px-3 py-5"><Bar className="h-5 w-14 rounded-full" /></td>
+    <td className="px-3 py-5"><Bar className="h-3 w-16 mb-2" /><Bar className="h-2.5 w-10" /></td>
+    <td className="px-4 py-5 text-right"><Bar className="h-7 w-7 rounded-lg ml-auto" /></td>
+  </tr>
+);
+
 export default function StoreOrders() {
-  const orders = useSelector((state) => state.orders.items);
+  const fallbackOrders = useSelector((state) => state.orders.items);
   const products = useSelector((state) => state.products.items);
+  const [apiOrders, setApiOrders] = useState([]);
+  const [apiLoaded, setApiLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [updatingId, setUpdatingId] = useState('');
   const { orderId } = useParams();
   const [params, setParams] = useSearchParams();
   const [page, setPage] = useState(1);
@@ -33,6 +56,7 @@ export default function StoreOrders() {
     setPage(1);
     setSelected([]);
   };
+  const orders = apiLoaded ? apiOrders : fallbackOrders;
   const filtered = filterOrders(orders, { tab, search, payment, from, to, oldest });
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -45,11 +69,113 @@ export default function StoreOrders() {
   const activeOrder = orders.find((order) => order.id === orderId);
   const toggle = (id) => setSelected((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
 
+  const fetchOrders = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      setApiOrders(await orderService.listSeller());
+      setApiLoaded(true);
+    } catch (err) {
+      setApiLoaded(false);
+      setError(err?.response?.data?.message || 'Could not load live seller orders. Showing local orders.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchOrders(); }, []);
+
+  useEffect(() => {
+    if (orderId) window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [orderId]);
+
+  useEffect(() => {
+    if (!orderId || !apiLoaded) return;
+    let alive = true;
+    orderService.get(orderId)
+      .then((fresh) => {
+        if (!alive) return;
+        setApiOrders((current) => current.some((order) => order.id === fresh.id)
+          ? current.map((order) => order.id === fresh.id ? fresh : order)
+          : [fresh, ...current]);
+      })
+      .catch((err) => {
+        if (alive) setError(err?.response?.data?.message || 'Could not load order details.');
+      });
+    return () => { alive = false; };
+  }, [orderId, apiLoaded]);
+
+  // Live updates — another tab/device (or the customer's own view) changing this
+  // order's status pushes here instantly via the backend's order-status-updated event.
+  useEffect(() => {
+    if (!apiLoaded) return;
+    const handleLiveUpdate = (payload) => {
+      const id = payload?.order_id;
+      if (!id) return;
+      // Pull the authoritative full order rather than trusting the partial socket payload.
+      orderService.get(id)
+        .then((fresh) => {
+          setApiOrders((current) => current.map((order) => (String(order.id) === String(id) ? fresh : order)));
+        })
+        .catch(() => {});
+    };
+    socketService.on('order-status-updated', handleLiveUpdate);
+    return () => socketService.off('order-status-updated', handleLiveUpdate);
+  }, [apiLoaded]);
+
+  const updateOrderStatus = async (id, status, extra = {}) => {
+    setUpdatingId(id);
+    setError('');
+    try {
+      const updated = await orderService.updateStatus(id, status, extra);
+      setApiOrders((current) => current.map((order) => order.id === id ? updated : order));
+      setApiLoaded(true);
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Could not update order status.');
+    } finally {
+      setUpdatingId('');
+    }
+  };
+
+  // Local-only draft edits (courier / tracking number / notify toggle) before a
+  // status-change button actually persists them to the server.
+  const updateOrderFulfillmentLocal = (id, changes) => {
+    setApiOrders((current) => current.map((order) => (order.id === id ? { ...order, ...changes } : order)));
+  };
+
+  if (orderId) {
+    return (
+      <div className="max-w-[1280px] ml-auto px-4 md:px-8 pb-10">
+        <div className="mb-5 pt-6">
+          <Link to={closeTo} className="inline-flex items-center gap-2 rounded-lg px-1 py-1 text-xs font-bold text-[#d90445] transition hover:text-[#fa3f5e]">
+            <ChevronLeft size={14} />
+            Back to Orders
+          </Link>
+        </div>
+        {loading && !activeOrder && <div className="mb-4 flex items-center gap-2 text-sm text-gray-500"><Loader2 size={16} className="animate-spin" />Loading order details...</div>}
+        {error && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">{error}</p>}
+        <OrderDetails
+          key={orderId}
+          order={activeOrder}
+          closeTo={closeTo}
+          onStatusChange={updateOrderStatus}
+          onFulfillmentChange={updateOrderFulfillmentLocal}
+          updating={updatingId === orderId}
+          apiEnabled={apiLoaded}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-[1280px] ml-auto px-4 md:px-8 pt-6 pb-10">
-      <div className={orderId ? 'grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_350px] gap-6 items-start' : ''}>
-        <section className={`min-w-0 ${orderId ? 'hidden xl:block' : ''}`} aria-label="Orders">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-5">Orders</h1>
+      <div>
+        <section className="min-w-0" aria-label="Orders">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Orders</h1>
+            <button type="button" onClick={fetchOrders} className="inline-flex items-center gap-2 text-xs font-semibold text-[#fa3f5e]"><RefreshCw size={14} />Refresh</button>
+          </div>
+          {error && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">{error}</p>}
           <div className="flex gap-6 overflow-x-auto border-b border-gray-200 dark:border-gray-800 mb-5">
             {ORDER_TABS.map((value) => <button key={value} type="button" aria-pressed={tab === value} onClick={() => setFilter('tab', value)} className={`pb-3 text-sm font-semibold border-b-2 whitespace-nowrap transition-colors ${tab === value ? 'border-[#fa3f5e] text-[#fa3f5e]' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white'}`}>{value}</button>)}
           </div>
@@ -76,21 +202,31 @@ export default function StoreOrders() {
               <table className="w-full min-w-[660px] text-xs">
                 <thead><tr className="border-b border-gray-100 dark:border-gray-800 text-gray-500 dark:text-gray-400 text-left">
                   <th className="pl-4 py-3.5 w-9"><input ref={(node) => { selectAllRef.current = node; if (node) node.indeterminate = someSelected && !allSelected; }} type="checkbox" aria-label="Select all visible orders" checked={allSelected} disabled={!visibleOrders.length} onChange={() => setSelected((current) => allSelected ? current.filter((id) => !visibleOrders.some((order) => order.id === id)) : [...new Set([...current, ...visibleOrders.map((order) => order.id)])])} className="accent-[#fa3f5e] rounded" /></th>
-                  <th className="px-3 py-3.5 font-medium">Order</th><th className="px-3 py-3.5 font-medium">Items</th><th className="px-3 py-3.5 font-medium">Total</th><th className="px-3 py-3.5 font-medium">Payment</th>
+                  <th className="px-3 py-3.5 font-medium">Order</th><th className="px-3 py-3.5 font-medium">Items</th><th className="px-3 py-3.5 font-medium">Total</th><th className="px-3 py-3.5 font-medium">Status</th><th className="px-3 py-3.5 font-medium">Payment</th>
                   <th className="px-3 py-3.5 font-medium" aria-sort={oldest ? 'ascending' : 'descending'}><button type="button" onClick={() => setFilter('sort', oldest ? '' : 'oldest')} className="flex items-center gap-1.5">Date{oldest ? <ArrowUp size={12} /> : <ArrowDown size={12} />}</button></th>
                   <th className="px-4 py-3.5 font-medium text-right">Actions</th>
                 </tr></thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                  {visibleOrders.map((order) => <tr key={order.id} className={orderId === order.id || selected.includes(order.id) ? 'bg-pink-50/60 dark:bg-pink-900/10' : 'hover:bg-gray-50 dark:hover:bg-gray-800/40'}>
+                  {loading && Array.from({ length: PAGE_SIZE }, (_, i) => <OrderRowSkeleton key={i} />)}
+                  {!loading && visibleOrders.map((order) => <tr key={order.id} className={orderId === order.id || selected.includes(order.id) ? 'bg-pink-50/60 dark:bg-pink-900/10' : 'hover:bg-gray-50 dark:hover:bg-gray-800/40'}>
                     <td className="pl-4 py-5"><input type="checkbox" aria-label={`Select ${order.id}`} checked={selected.includes(order.id)} onChange={() => toggle(order.id)} className="accent-[#fa3f5e] rounded" /></td>
-                    <td className="px-3 py-5"><div className="flex items-center gap-2.5"><span className="w-9 h-9 rounded-full bg-gradient-to-br from-insta-purple/15 to-insta-pink/15 text-[#fa3f5e] flex items-center justify-center flex-shrink-0 text-xs font-bold">{order.customer.split(' ').map((part) => part[0]).slice(0, 2).join('')}</span><div className="min-w-[100px]"><Link to={`${BASE}/${order.id}${suffix}`} className="text-gray-500 dark:text-gray-400">Order <span className="font-semibold text-[#fa3f5e]">#{order.id}</span></Link><p className="text-gray-600 dark:text-gray-300 mt-1">{order.customer}</p>{order.status === 'Cancelled' && <p className="text-red-500 mt-1">Cancelled</p>}</div></div></td>
+                    <td className="px-3 py-5"><div className="flex items-center gap-2.5"><span className="w-9 h-9 rounded-full bg-gradient-to-br from-insta-purple/15 to-insta-pink/15 text-[#fa3f5e] flex items-center justify-center flex-shrink-0 text-xs font-bold">{String(order.customer || 'C').split(' ').map((part) => part[0]).slice(0, 2).join('')}</span><div className="min-w-[100px]"><Link to={`${BASE}/${order.id}${suffix}`} className="text-gray-500 dark:text-gray-400">Order <span className="font-semibold text-[#fa3f5e]">#{order.id}</span></Link><p className="text-gray-600 dark:text-gray-300 mt-1">{order.customer}</p>{order.status === 'Cancelled' && <p className="text-red-500 mt-1">Cancelled</p>}</div></div></td>
                     <td className="px-3 py-5"><p className="text-gray-500 dark:text-gray-400 mb-2">{order.items.reduce((sum, item) => sum + item.quantity, 0)} item{order.qty === 1 ? '' : 's'}</p><div className="flex gap-1">{order.items.slice(0, 3).map((item) => <OrderProductImage key={item.productId} item={item} products={products} className="w-9 h-9" />)}</div></td>
                     <td className="px-3 py-5 font-semibold text-gray-800 dark:text-gray-200">{money(order.amount)}</td>
+                    <td className="px-3 py-5"><StatusBadge status={order.status} /></td>
                     <td className="px-3 py-5"><PaymentBadge status={order.paymentStatus} /></td>
                     <td className="px-3 py-5 text-gray-600 dark:text-gray-300 whitespace-nowrap">{orderDate(order.date)}<p className="text-[10px] text-gray-400 mt-1">{order.time}</p></td>
-                    <td className="px-4 py-5 text-right"><Link to={`${BASE}/${order.id}${suffix}`} aria-label={`View order ${order.id}`} className="inline-flex whitespace-nowrap border border-[#fa3f5e]/40 text-[#fa3f5e] rounded-lg px-3 py-2 font-semibold hover:bg-pink-50 dark:hover:bg-pink-900/20 transition-colors">View order</Link></td>
+                    <td className="px-4 py-5 text-right">
+                      <RowActionsMenu ariaLabel={`Actions for order ${order.id}`} menuClassName="w-40">
+                        {(close) => (
+                          <Link role="menuitem" to={`${BASE}/${order.id}${suffix}`} onClick={close} className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 hover:text-[#fa3f5e] dark:text-gray-300 dark:hover:bg-gray-800">
+                            View order
+                          </Link>
+                        )}
+                      </RowActionsMenu>
+                    </td>
                   </tr>)}
-                  {!visibleOrders.length && <tr><td colSpan={7} className="py-14 text-center text-gray-400">No orders match this view.</td></tr>}
+                  {!loading && !visibleOrders.length && <tr><td colSpan={8} className="py-14 text-center text-gray-400">No orders match this view.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -100,7 +236,6 @@ export default function StoreOrders() {
             </div>
           </div>
         </section>
-        {orderId && <OrderDetails key={orderId} order={activeOrder} closeTo={closeTo} />}
       </div>
     </div>
   );
