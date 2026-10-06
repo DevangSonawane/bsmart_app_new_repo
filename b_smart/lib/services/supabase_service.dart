@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import '../api/api.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/page_cache_service.dart';
 import '../utils/current_user.dart';
 import '../utils/value_parsers.dart';
 import 'comment_sync_service.dart';
@@ -582,6 +583,15 @@ class SupabaseService {
         followed: followed,
         followState: followState,
       );
+      try {
+        final currentUserId = await CurrentUser.id;
+        final pageCache = PageCacheService();
+        if (currentUserId != null && currentUserId.trim().isNotEmpty) {
+          await pageCache.invalidateAll(
+              ['follow_requests', 'suggestions', 'profile'], currentUserId);
+        }
+        await pageCache.invalidate('vendor_public', targetUserId);
+      } on Exception catch (_) {}
     }
     return result;
   }
@@ -608,6 +618,15 @@ class SupabaseService {
         followed: false,
         followState: 'not_following',
       );
+      try {
+        final currentUserId = await CurrentUser.id;
+        final pageCache = PageCacheService();
+        if (currentUserId != null && currentUserId.trim().isNotEmpty) {
+          await pageCache.invalidateAll(
+              ['follow_requests', 'suggestions', 'profile'], currentUserId);
+        }
+        await pageCache.invalidate('vendor_public', targetUserId);
+      } on Exception catch (_) {}
     }
     return result;
   }
@@ -1288,7 +1307,7 @@ class SupabaseService {
           ContentSyncService().publishLike(
             contentId: postId,
             liked: liked,
-            isTweet: true,
+            isTweet: isTweet,
           );
           return liked;
         }
@@ -1344,6 +1363,14 @@ class SupabaseService {
       saved: result,
       isTweet: isTweet,
     );
+    try {
+      final currentUserId = await CurrentUser.id;
+      final pageCache = PageCacheService();
+      if (currentUserId != null && currentUserId.trim().isNotEmpty) {
+        await pageCache.invalidateAll(
+            ['saved_items', 'home_feed', 'profile'], currentUserId);
+      }
+    } on Exception catch (_) {}
     return result;
   }
 

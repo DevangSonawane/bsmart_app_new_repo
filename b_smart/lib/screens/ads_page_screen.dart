@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -6,7 +9,6 @@ import 'package:flutter/scheduler.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:video_player/video_player.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
@@ -15,6 +17,7 @@ import '../api/api_exceptions.dart';
 import '../models/ad_model.dart';
 import '../models/ad_category_model.dart';
 import '../services/ads_service.dart';
+import '../services/page_cache_service.dart';
 import '../services/media_playback_registry.dart';
 import '../services/supabase_service.dart';
 import '../utils/app_error_handler.dart';
@@ -56,6 +59,7 @@ class AdsPageScreen extends StatefulWidget {
 class _AdsPageScreenState extends State<AdsPageScreen>
     with RouteAware, WidgetsBindingObserver {
   final AdsService _adsService = AdsService();
+  final PageCacheService _pageCache = PageCacheService();
   static const bool _showViewRecordedPopupEnabled = false; // React parity
   static final Set<String> _sessionViewedAdIds = <String>{};
   static const String _viewedAdIdsPrefsKey = 'ads_viewed_ad_ids_v1';
@@ -236,12 +240,54 @@ class _AdsPageScreenState extends State<AdsPageScreen>
     }
   }
 
-  Future<void> _loadCategoriesAndAds() async {
+  Future<void> _loadCategoriesAndAds({bool forceNetwork = false}) async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
       _error = null;
     });
+
+    final userId = await CurrentUser.id;
+    final cacheParams = <String, dynamic>{
+      'category': _selectedCategoryId,
+      'search': _searchInput.trim(),
+    };
+    final cached = forceNetwork
+        ? null
+        : await _pageCache.get('ads', userId ?? '', cacheParams);
+
+    if (cached != null && !forceNetwork) {
+      try {
+        final decoded = jsonDecode(cached) as Map<String, dynamic>;
+        final categoryMaps = (decoded['categories'] as List?)
+                ?.map((e) => Map<String, dynamic>.from(e as Map))
+                .toList() ??
+            <Map<String, dynamic>>[];
+        final categories = categoryMaps
+            .map((raw) => AdCategory(
+                  id: (raw['id'] ?? raw['_id'] ?? '').toString().trim(),
+                  name: (raw['name'] ?? '').toString().trim(),
+                  icon: (raw['icon'] ?? '').toString().trim().isEmpty
+                      ? null
+                      : (raw['icon'] as String?)?.trim(),
+                ))
+            .toList();
+        final adMaps = (decoded['ads'] as List?)
+                ?.map((e) => Map<String, dynamic>.from(e as Map))
+                .toList() ??
+            <Map<String, dynamic>>[];
+        final ads = adMaps.map(Ad.fromApi).toList();
+        if (!mounted) return;
+        setState(() {
+          _categories = categories;
+          _ads = ads;
+          _isLoading = false;
+        });
+        return;
+      } on Exception catch (_) {
+        await _pageCache.invalidate('ads', userId ?? '');
+      }
+    }
 
     try {
       final categories = await _adsService.fetchCategories();
@@ -258,6 +304,43 @@ class _AdsPageScreenState extends State<AdsPageScreen>
       });
 
       await _fetchAdsPage(reset: true);
+
+      try {
+        final adMaps = _ads.map((ad) {
+          return <String, dynamic>{
+            '_id': ad.id,
+            'id': ad.id,
+            'company_id': ad.companyId,
+            'companyName': ad.companyName,
+            'title': ad.title,
+            'description': ad.description,
+            'videoUrl': ad.videoUrl,
+            'imageUrl': ad.imageUrl,
+            'imageUrls': ad.imageUrls,
+            'likes_count': ad.likesCount,
+            'comments_count': ad.commentsCount,
+            'shares_count': ad.sharesCount,
+            'current_views': ad.currentViews,
+            'is_liked_by_me': ad.isLikedByMe,
+            'is_saved_by_me': ad.isSavedByMe,
+          };
+        }).toList();
+        await _pageCache.set(
+          'ads',
+          userId ?? '',
+          cacheParams,
+          jsonEncode(<String, dynamic>{
+            'categories': _categories
+                .map((e) => <String, dynamic>{
+                      'id': e.id,
+                      'name': e.name,
+                      if (e.icon != null) 'icon': e.icon,
+                    })
+                .toList(),
+            'ads': adMaps,
+          }),
+        );
+      } on Exception catch (_) {}
     } catch (e, st) {
       AppErrorHandler.logError('ads-page-load-categories', e, st);
       if (!mounted) return;

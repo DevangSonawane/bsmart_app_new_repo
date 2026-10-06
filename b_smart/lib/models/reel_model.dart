@@ -189,6 +189,122 @@ class Reel {
       peopleTags: post.peopleTags,
     );
   }
+
+  factory Reel.fromJson(Map<String, dynamic> json) {
+    final createdAtRaw = json['createdAt']?.toString() ?? '';
+    final createdAt = DateTime.tryParse(createdAtRaw) ?? DateTime.now();
+    final durationMs = json['duration'] is int
+        ? json['duration'] as int
+        : int.tryParse(json['duration']?.toString() ?? '') ?? 30000;
+    return Reel(
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
+      userId: (json['userId'] ?? json['user_id'] ?? '').toString(),
+      userName: (json['userName'] ?? json['user_name'] ?? '').toString(),
+      userAvatarUrl: json['userAvatarUrl']?.toString(),
+      videoUrl: (json['videoUrl'] ?? json['video_url'] ?? '').toString(),
+      thumbnailUrl: json['thumbnailUrl']?.toString(),
+      aspectRatio: json['aspectRatio']?.toString(),
+      caption: json['caption']?.toString(),
+      hashtags: json['hashtags'] is List
+          ? (json['hashtags'] as List).map((e) => e.toString()).toList()
+          : const <String>[],
+      audioTitle: json['audioTitle']?.toString(),
+      audioArtist: json['audioArtist']?.toString(),
+      audioId: json['audioId']?.toString(),
+      likes: json['likes'] is int
+          ? json['likes'] as int
+          : int.tryParse(json['likes']?.toString() ?? '') ?? 0,
+      comments: json['comments'] is int
+          ? json['comments'] as int
+          : int.tryParse(json['comments']?.toString() ?? '') ?? 0,
+      shares: json['shares'] is int
+          ? json['shares'] as int
+          : int.tryParse(json['shares']?.toString() ?? '') ?? 0,
+      views: json['views'] is int
+          ? json['views'] as int
+          : int.tryParse(json['views']?.toString() ?? '') ?? 0,
+      isLiked: json['isLiked'] is bool
+          ? json['isLiked'] as bool
+          : (json['isLiked']?.toString().toLowerCase() == 'true'),
+      isSaved: json['isSaved'] is bool
+          ? json['isSaved'] as bool
+          : (json['isSaved']?.toString().toLowerCase() == 'true'),
+      isFollowing: json['isFollowing'] is bool
+          ? json['isFollowing'] as bool
+          : (json['isFollowing']?.toString().toLowerCase() == 'true'),
+      createdAt: createdAt,
+      isSponsored: json['isSponsored'] is bool
+          ? json['isSponsored'] as bool
+          : (json['isSponsored']?.toString().toLowerCase() == 'true'),
+      sponsorBrand: json['sponsorBrand']?.toString(),
+      sponsorLogoUrl: json['sponsorLogoUrl']?.toString(),
+      productTags: json['productTags'] is List
+          ? (json['productTags'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map((e) => ProductTag.fromJson(e))
+              .toList()
+          : null,
+      remixEnabled: json['remixEnabled'] is bool
+          ? json['remixEnabled'] as bool
+          : (json['remixEnabled']?.toString().toLowerCase() != 'false'),
+      audioReuseEnabled: json['audioReuseEnabled'] is bool
+          ? json['audioReuseEnabled'] as bool
+          : (json['audioReuseEnabled']?.toString().toLowerCase() != 'false'),
+      originalReelId: json['originalReelId']?.toString(),
+      originalCreatorId: json['originalCreatorId']?.toString(),
+      originalCreatorName: json['originalCreatorName']?.toString(),
+      isRisingCreator: json['isRisingCreator'] is bool
+          ? json['isRisingCreator'] as bool
+          : (json['isRisingCreator']?.toString().toLowerCase() == 'true'),
+      isTrending: json['isTrending'] is bool
+          ? json['isTrending'] as bool
+          : (json['isTrending']?.toString().toLowerCase() == 'true'),
+      duration: Duration(milliseconds: durationMs),
+      peopleTags: json['peopleTags'] is List
+          ? (json['peopleTags'] as List)
+              .whereType<Map<String, dynamic>>()
+              .toList()
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'userId': userId,
+      'userName': userName,
+      'userAvatarUrl': userAvatarUrl,
+      'videoUrl': videoUrl,
+      'thumbnailUrl': thumbnailUrl,
+      'aspectRatio': aspectRatio,
+      'caption': caption,
+      'hashtags': hashtags,
+      'audioTitle': audioTitle,
+      'audioArtist': audioArtist,
+      'audioId': audioId,
+      'likes': likes,
+      'comments': comments,
+      'shares': shares,
+      'views': views,
+      'isLiked': isLiked,
+      'isSaved': isSaved,
+      'isFollowing': isFollowing,
+      'createdAt': createdAt.toIso8601String(),
+      'isSponsored': isSponsored,
+      'sponsorBrand': sponsorBrand,
+      'sponsorLogoUrl': sponsorLogoUrl,
+      'productTags': productTags?.map((e) => e.toJson()).toList(),
+      'remixEnabled': remixEnabled,
+      'audioReuseEnabled': audioReuseEnabled,
+      'originalReelId': originalReelId,
+      'originalCreatorId': originalCreatorId,
+      'originalCreatorName': originalCreatorName,
+      'isRisingCreator': isRisingCreator,
+      'isTrending': isTrending,
+      'duration': duration.inMilliseconds,
+      'peopleTags': peopleTags,
+    };
+  }
 }
 
 class ProductTag {
@@ -207,6 +323,32 @@ class ProductTag {
     this.currency,
     required this.externalUrl,
   });
+
+  factory ProductTag.fromJson(Map<String, dynamic> json) {
+    return ProductTag(
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
+      name: (json['name'] ?? '').toString(),
+      imageUrl: json['imageUrl']?.toString() ?? json['image_url']?.toString(),
+      price: json['price'] is double
+          ? json['price'] as double
+          : (json['price'] is int
+              ? (json['price'] as int).toDouble()
+              : double.tryParse(json['price']?.toString() ?? '')),
+      currency: json['currency']?.toString() ?? json['currencyCode']?.toString(),
+      externalUrl: (json['externalUrl'] ?? json['external_url'] ?? '').toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'imageUrl': imageUrl,
+      'price': price,
+      'currency': currency,
+      'externalUrl': externalUrl,
+    };
+  }
 }
 
 class ReelComment {

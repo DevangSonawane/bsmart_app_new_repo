@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api/phase2_store_api.dart';
+import '../../services/page_cache_service.dart';
+import '../../utils/current_user.dart';
 import '../../utils/url_helper.dart';
 import 'shared/store_money.dart';
 
@@ -85,6 +88,43 @@ class StoreMockCatalogItem {
       raw: raw ?? this.raw,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'type': type.name,
+      'title': title,
+      'category': category,
+      'description': description,
+      'imageUrl': imageUrl,
+      'iconCodePoint': icon.codePoint,
+      'price': price,
+      'duration': duration,
+      'rating': rating,
+      'reviews': reviews,
+      'raw': raw,
+    };
+  }
+
+  factory StoreMockCatalogItem.fromJson(Map<String, dynamic> json) {
+    return StoreMockCatalogItem(
+      id: json['id'] as String,
+      type: StoreMockItemType.values.firstWhere(
+        (e) => e.name == json['type'],
+        orElse: () => StoreMockItemType.product,
+      ),
+      title: json['title'] as String,
+      category: json['category'] as String,
+      description: json['description'] as String,
+      imageUrl: json['imageUrl'] as String? ?? '',
+      icon: IconData(json['iconCodePoint'] as int? ?? 0xe800, fontFamily: 'MaterialIcons'),
+      price: (json['price'] as num?)?.toDouble() ?? 0.0,
+      duration: json['duration'] as String? ?? '',
+      rating: json['rating'] as String? ?? '',
+      reviews: json['reviews'] as String? ?? '',
+      raw: Map<String, dynamic>.from(json['raw'] as Map? ?? {}),
+    );
+  }
 }
 
 class StoreMockCartLine {
@@ -141,6 +181,24 @@ class StoreMockCartLine {
   }
 
   double get total => unitPrice * quantity;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'item': item.toJson(),
+      'quantity': quantity,
+      'schedule': schedule,
+      'variant': variant,
+    };
+  }
+
+  factory StoreMockCartLine.fromJson(Map<String, dynamic> json) {
+    return StoreMockCartLine(
+      item: StoreMockCatalogItem.fromJson(json['item'] as Map<String, dynamic>),
+      quantity: json['quantity'] as int? ?? 1,
+      schedule: json['schedule'] as String?,
+      variant: Map<String, dynamic>.from(json['variant'] as Map? ?? {}),
+    );
+  }
 }
 
 class StoreMockOrder {
@@ -188,6 +246,7 @@ class StoreMockState extends ChangeNotifier {
   final List<StoreMockCartLine> _cartLines = [];
 
   final Phase2StoreApi _api = Phase2StoreApi();
+  final PageCacheService _pageCache = PageCacheService();
 
   // ── Live Phase-2 lists (replaces mock orders/bookings in UI) ──
   List<Map<String, dynamic>> buyerOrders = const [];

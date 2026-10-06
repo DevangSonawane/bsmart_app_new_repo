@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'dart:ui';
 import 'dart:math' as math;
 
@@ -6,6 +8,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../api/api.dart';
 import '../services/wallet_service.dart';
+import '../services/page_cache_service.dart';
+import '../utils/current_user.dart';
 import '../models/ledger_model.dart';
 import '../widgets/floating_message_overlay.dart';
 import 'messaging_screen.dart';
@@ -25,6 +29,7 @@ class _WalletScreenState extends State<WalletScreen>
     with TickerProviderStateMixin {
   final WalletService _walletService = WalletService();
   final AuthApi _authApi = AuthApi();
+  final PageCacheService _pageCache = PageCacheService();
   int _coinBalance = 0;
   bool _isLifeTime = true;
   int _totalEarnedLifetime = 0;
@@ -46,11 +51,40 @@ class _WalletScreenState extends State<WalletScreen>
     _loadWallet();
   }
 
-  Future<void> _loadWallet() async {
+  Future<void> _loadWallet({bool forceNetwork = false}) async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
+
+    final currentUserId = await _safeUserId();
+    final cacheParams = <String, dynamic>{'section': _openSection.name};
+    final cached = forceNetwork ? null : await _pageCache.get('wallet', currentUserId, cacheParams);
+
+    if (cached != null) {
+      try {
+        final decoded = const JsonDecoder().convert(cached) as Map<String, dynamic>;
+        if (!mounted) return;
+        setState(() {
+          _meProfile = decoded['meProfile'] is Map
+              ? Map<String, dynamic>.from(decoded['meProfile'] as Map)
+              : null;
+          _walletData = decoded['walletData'] is Map
+              ? Map<String, dynamic>.from(decoded['walletData'] as Map)
+              : null;
+          _coinBalance = _parseMaybeInt(decoded['coinBalance']) ?? 0;
+          _totalEarnedLifetime = _parseMaybeInt(decoded['totalEarnedLifetime']) ?? 0;
+          _totalSpentLifetime = _parseMaybeInt(decoded['totalSpentLifetime']) ?? 0;
+          _totalEarnedMonth = _parseMaybeInt(decoded['totalEarnedMonth']) ?? 0;
+          _totalSpentMonth = _parseMaybeInt(decoded['totalSpentMonth']) ?? 0;
+          _isLoading = false;
+        });
+        return;
+      } on Exception catch (_) {
+        await _pageCache.invalidate('wallet', currentUserId);
+      }
+    }
+
     try {
       final meRaw = await _authApi.me();
       final me = _normalizeProfile(meRaw);
@@ -96,6 +130,18 @@ class _WalletScreenState extends State<WalletScreen>
         _totalSpentMonth = monthSpent;
         _isLoading = false;
       });
+
+      try {
+        await _pageCache.set('wallet', currentUserId, cacheParams, const JsonEncoder().convert(<String, dynamic>{
+          'meProfile': me,
+          'walletData': data,
+          'coinBalance': balance,
+          'totalEarnedLifetime': earnedFromSummary ?? lifetimeEarned,
+          'totalSpentLifetime': spentFromSummary ?? lifetimeSpent,
+          'totalEarnedMonth': monthEarned,
+          'totalSpentMonth': monthSpent,
+        }));
+      } on Exception catch (_) {}
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -103,6 +149,11 @@ class _WalletScreenState extends State<WalletScreen>
         _errorMessage = e.toString();
       });
     }
+  }
+
+  Future<String> _safeUserId() async {
+    final id = await CurrentUser.id;
+    return id?.trim().isNotEmpty == true ? id!.trim() : 'anon';
   }
 
   Map<String, dynamic> _normalizeProfile(dynamic raw) {
@@ -142,9 +193,9 @@ class _WalletScreenState extends State<WalletScreen>
       backgroundColor: scaffoldBg,
       body: Stack(
         children: [
-          RefreshIndicator(
-            onRefresh: _loadWallet,
-            color: const Color(0xFFF97316),
+           RefreshIndicator(
+             onRefresh: () => _loadWallet(forceNetwork: true),
+             color: const Color(0xFFF97316),
             child: CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [

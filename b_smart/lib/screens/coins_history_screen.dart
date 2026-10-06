@@ -1,7 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import '../services/page_cache_service.dart';
 import '../services/wallet_service.dart';
 import '../models/ledger_model.dart';
 import '../theme/instagram_theme.dart';
+import '../utils/current_user.dart';
 
 class CoinsHistoryScreen extends StatefulWidget {
   const CoinsHistoryScreen({super.key});
@@ -12,6 +16,7 @@ class CoinsHistoryScreen extends StatefulWidget {
 
 class _CoinsHistoryScreenState extends State<CoinsHistoryScreen> {
   final WalletService _walletService = WalletService();
+  final PageCacheService _pageCache = PageCacheService();
   List<LedgerTransaction> _transactions = [];
   LedgerTransactionType? _selectedType;
   LedgerTransactionStatus? _selectedStatus;
@@ -22,7 +27,54 @@ class _CoinsHistoryScreenState extends State<CoinsHistoryScreen> {
     _loadTransactions();
   }
 
-  Future<void> _loadTransactions() async {
+  Future<void> _loadTransactions({bool forceNetwork = false}) async {
+    final currentUserId = await CurrentUser.id;
+    final cacheParams = <String, dynamic>{
+      if (_selectedType != null) 'type': _selectedType!.name,
+      if (_selectedStatus != null) 'status': _selectedStatus!.name,
+    };
+    final cached = forceNetwork
+        ? null
+        : await _pageCache.get('coins_history', currentUserId ?? '', cacheParams);
+
+    if (cached != null) {
+      try {
+        final decoded = jsonDecode(cached) as List;
+        final transactions = decoded.map((item) {
+          final map = item as Map<String, dynamic>;
+          return LedgerTransaction(
+            id: map['id'] as String? ?? '',
+            userId: map['user_id'] as String? ?? '',
+            type: LedgerTransactionType.values.firstWhere(
+              (e) => e.name == (map['type'] as String? ?? 'adReward'),
+              orElse: () => LedgerTransactionType.adReward,
+            ),
+            amount: (map['amount'] is int)
+                ? map['amount'] as int
+                : int.tryParse(map['amount'].toString()) ?? 0,
+            timestamp: DateTime.tryParse(
+                  map['timestamp'] as String? ?? '',
+                ) ??
+                DateTime.now(),
+            status: LedgerTransactionStatus.values.firstWhere(
+              (e) => e.name == (map['status'] as String? ?? 'pending'),
+              orElse: () => LedgerTransactionStatus.pending,
+            ),
+            description: map['description'] as String?,
+            relatedId: map['related_id'] as String?,
+          );
+        }).toList();
+        if (mounted) {
+          setState(() {
+            _transactions = transactions;
+          });
+        }
+        return;
+      } on Exception catch (_) {
+        await _pageCache.invalidate('coins_history', currentUserId ?? '');
+      }
+    }
+
     final transactions = (_selectedType != null || _selectedStatus != null)
         ? await _walletService.getFilteredTransactions(
             type: _selectedType,
@@ -35,6 +87,26 @@ class _CoinsHistoryScreenState extends State<CoinsHistoryScreen> {
         _transactions = transactions;
       });
     }
+
+    try {
+      await _pageCache.set(
+        'coins_history',
+        currentUserId ?? '',
+        cacheParams,
+        jsonEncode(
+          transactions.map((t) => <String, dynamic>{
+            'id': t.id,
+            'user_id': t.userId,
+            'type': t.type.name,
+            'amount': t.amount,
+            'timestamp': t.timestamp.toIso8601String(),
+            'status': t.status.name,
+            'description': t.description,
+            'related_id': t.relatedId,
+          }).toList(),
+        ),
+      );
+    } on Exception catch (_) {}
   }
 
   IconData _getTransactionIcon(LedgerTransactionType type) {
@@ -140,43 +212,37 @@ class _CoinsHistoryScreenState extends State<CoinsHistoryScreen> {
                 Wrap(
                   spacing: 8,
                   children: [
-                    _buildFilterChip(
-                      'All Types',
-                      _selectedType == null,
-                      () {
-                        setState(() {
-                          _selectedType = null;
-                          _loadTransactions();
-                        });
-                      },
-                    ),
-                    _buildFilterChip(
-                      'Spotlight bCoins',
-                      _selectedType == LedgerTransactionType.adReward,
-                      () {
-                        setState(() {
-                          _selectedType = LedgerTransactionType.adReward;
-                          _loadTransactions();
-                        });
-                      },
-                    ),
-                    _buildFilterChip(
-                      'Gifts',
-                      _selectedType == LedgerTransactionType.giftReceived ||
-                          _selectedType == LedgerTransactionType.giftSent,
-                      () {
-                        setState(() {
-                          // Ideally this should filter for both, but for now we reset or pick one
-                          // If we want to support multiple types, we need to change _selectedType to a list
-                          // For now, let's just show received gifts as a default or keep the original behavior (null)
-                          // The original code set it to null, which means "All".
-                          // Let's set it to giftReceived for now so the chip becomes active.
-                          // Or better, let's just fix the compilation error.
-                          _selectedType = LedgerTransactionType.giftReceived;
-                          _loadTransactions();
-                        });
-                      },
-                    ),
+                      _buildFilterChip(
+                        'All Types',
+                        _selectedType == null,
+                        () {
+                          setState(() {
+                            _selectedType = null;
+                            _loadTransactions();
+                          });
+                        },
+                      ),
+                      _buildFilterChip(
+                        'Spotlight bCoins',
+                        _selectedType == LedgerTransactionType.adReward,
+                        () {
+                          setState(() {
+                            _selectedType = LedgerTransactionType.adReward;
+                            _loadTransactions();
+                          });
+                        },
+                      ),
+                      _buildFilterChip(
+                        'Gifts',
+                        _selectedType == LedgerTransactionType.giftReceived ||
+                            _selectedType == LedgerTransactionType.giftSent,
+                        () {
+                          setState(() {
+                            _selectedType = LedgerTransactionType.giftReceived;
+                            _loadTransactions();
+                          });
+                        },
+                      ),
                   ],
                 ),
               ],
@@ -191,7 +257,7 @@ class _CoinsHistoryScreenState extends State<CoinsHistoryScreen> {
                   )
                 : RefreshIndicator(
                     onRefresh: () async {
-                      _loadTransactions();
+                      _loadTransactions(forceNetwork: true);
                     },
                     child: ListView.builder(
                       padding: const EdgeInsets.all(16),

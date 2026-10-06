@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/api.dart';
+import '../services/page_cache_service.dart';
 import '../theme/design_tokens.dart';
+import '../utils/current_user.dart';
 import '../widgets/safe_network_image.dart';
 
 class PrivacyScreen extends StatefulWidget {
@@ -17,6 +20,7 @@ class PrivacyScreen extends StatefulWidget {
 class _PrivacyScreenState extends State<PrivacyScreen> {
   final FollowRequestsApi _followApi = FollowRequestsApi();
   final PrivacyApi _privacyApi = PrivacyApi();
+  final PageCacheService _pageCache = PageCacheService();
 
   bool _loading = true;
   bool _toggling = false;
@@ -123,12 +127,48 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
     }
   }
 
-  Future<void> _loadEverything() async {
+  Future<void> _loadEverything({bool forceNetwork = false}) async {
     if (!mounted) return;
     setState(() {
       _loading = true;
       _saveError = null;
     });
+
+    final currentUserId = await CurrentUser.id;
+    final cacheParams = <String, dynamic>{};
+    final cached = forceNetwork
+        ? null
+        : await _pageCache.get('privacy', currentUserId ?? '', cacheParams);
+
+    if (cached != null) {
+      try {
+        final decoded = jsonDecode(cached) as Map<String, dynamic>;
+        final isPrivate = decoded['isPrivate'] is bool ? decoded['isPrivate'] as bool : false;
+        final pendingCount = decoded['pendingCount'] is int ? decoded['pendingCount'] as int : 0;
+        final settingsMap = decoded['settings'];
+        final settings = settingsMap is Map<String, dynamic>
+            ? PrivacySettingsData.fromApi(settingsMap)
+            : PrivacySettingsData.defaults();
+
+        if (!mounted) return;
+        setState(() {
+          _isPrivate = isPrivate;
+          _pendingCount = pendingCount;
+          _settings = settings;
+          _snapshot = settings.copyWith(
+            profileVisibility: settings.profileVisibility,
+            activityStatus: settings.activityStatus,
+            followSettings: settings.followSettings,
+            messagingPrivacy: settings.messagingPrivacy,
+            searchDiscovery: settings.searchDiscovery,
+          );
+          _loading = false;
+        });
+        return;
+      } on Exception catch (_) {
+        await _pageCache.invalidate('privacy', currentUserId ?? '');
+      }
+    }
 
     final statusFuture = _safe<FollowPrivacyStatus>(
       _followApi.getPrivacyStatus(),
@@ -154,6 +194,19 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
       );
       _loading = false;
     });
+
+    try {
+      await _pageCache.set(
+        'privacy',
+        currentUserId ?? '',
+        cacheParams,
+        jsonEncode(<String, dynamic>{
+          'isPrivate': status?.isPrivate ?? false,
+          'pendingCount': status?.pendingRequestsCount ?? 0,
+          'settings': (settings ?? PrivacySettingsData.defaults()).toJson(),
+        }),
+      );
+    } on Exception catch (_) {}
   }
 
   Future<void> _togglePrivacy() async {
@@ -1440,7 +1493,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _loadEverything,
+        onRefresh: () => _loadEverything(forceNetwork: true),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),

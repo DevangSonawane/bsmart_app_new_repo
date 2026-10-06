@@ -11,6 +11,7 @@ import '../repositories/feed_repository.dart';
 import '../services/feed_service.dart';
 import '../services/wallet_service.dart';
 import '../services/supabase_service.dart';
+import '../services/page_cache_service.dart';
 import '../services/user_account_service.dart';
 import '../models/user_account_model.dart';
 import '../theme/instagram_theme.dart';
@@ -97,6 +98,14 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
       post.id,
       (prev) => prev.copyWith(isLiked: liked),
     );
+    try {
+      final currentUserId = await CurrentUser.id;
+      final pageCache = PageCacheService();
+      if (currentUserId != null && currentUserId.trim().isNotEmpty) {
+        await pageCache.invalidateAll(
+            ['home_feed', 'profile', 'post'], currentUserId);
+      }
+    } on Exception catch (_) {}
   }
 
   Future<void> _handleSave(FeedPost post) async {
@@ -121,6 +130,14 @@ class _InstagramFeedScreenState extends State<InstagramFeedScreen> {
         (prev) => prev.copyWith(isSaved: saved),
       );
     }
+    try {
+      final currentUserId = await CurrentUser.id;
+      final pageCache = PageCacheService();
+      if (currentUserId != null && currentUserId.trim().isNotEmpty) {
+        await pageCache.invalidateAll(
+            ['saved_items', 'home_feed', 'profile'], currentUserId);
+      }
+    } on Exception catch (_) {}
   }
 
   void _handleFollow(FeedPost post) {

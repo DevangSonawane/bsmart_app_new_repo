@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import '../services/feed_service.dart';
+import '../services/page_cache_service.dart';
 import '../widgets/post_card.dart';
 import '../utils/current_user.dart';
 
@@ -12,6 +15,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final FeedService _feedService = FeedService();
+  final PageCacheService _pageCache = PageCacheService();
   final List posts = [];
   final ScrollController _scrollController = ScrollController();
   final List<GlobalKey> _itemKeys = [];
@@ -27,17 +31,30 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadMore();
   }
 
-  Future<void> _loadMore() async {
+  Future<void> _loadMore({bool forceNetwork = false}) async {
     if (!_hasMore) return;
     final currentUserId = await CurrentUser.id;
-    final items = await _feedService.fetchFeedFromBackend(
-      limit: _limit,
-      offset: _page * _limit,
-      currentUserId: currentUserId,
-    );
+    final cacheParams = <String, dynamic>{'page': _page, 'limit': _limit};
+    final cached = forceNetwork
+        ? null
+        : await _pageCache.get('home_feed', currentUserId ?? '', cacheParams);
+
+    List items;
+    if (cached != null) {
+      final decoded = jsonDecode(cached);
+      items = decoded is List ? decoded.cast<Map<String, dynamic>>() : <Map<String, dynamic>>[];
+    } else {
+      items = await _feedService.fetchFeedFromBackend(
+        limit: _limit,
+        offset: _page * _limit,
+        currentUserId: currentUserId,
+      );
+      await _pageCache.set('home_feed', currentUserId ?? '', cacheParams, jsonEncode(items));
+    }
+
+    if (!mounted) return;
     setState(() {
       posts.addAll(items);
-      // Ensure keys for new items
       while (_itemKeys.length < posts.length) {
         _itemKeys.add(GlobalKey());
       }
@@ -55,7 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _activeIndex = 0;
       _itemKeys.clear();
     });
-    await _loadMore();
+    await _loadMore(forceNetwork: true);
   }
 
   @override

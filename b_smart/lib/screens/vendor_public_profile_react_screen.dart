@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +16,7 @@ import '../models/store_profile.dart';
 import '../services/ads_service.dart';
 import '../services/content_sync_service.dart';
 import '../services/supabase_service.dart';
+import '../services/page_cache_service.dart';
 import '../utils/current_user.dart';
 import '../utils/url_helper.dart';
 import '../widgets/fullscreen_image_viewer.dart';
@@ -44,6 +46,7 @@ class _VendorPublicProfileReactScreenState
   final AdsService _adsService = AdsService();
   final SupabaseService _supabase = SupabaseService();
   final NotificationPreferencesApi _prefsApi = NotificationPreferencesApi();
+  final PageCacheService _pageCache = PageCacheService();
 
   bool _loading = true;
   String? _error;
@@ -272,7 +275,7 @@ class _VendorPublicProfileReactScreenState
     }
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool forceNetwork = false}) async {
     final uid = widget.userId.trim();
     if (uid.isEmpty) {
       setState(() {
@@ -281,6 +284,61 @@ class _VendorPublicProfileReactScreenState
       });
       return;
     }
+
+    final cacheParams = <String, dynamic>{};
+    final cached = forceNetwork
+        ? null
+        : await _pageCache.get('vendor_public', uid, cacheParams);
+
+    if (cached != null && !forceNetwork) {
+      try {
+        final data = jsonDecode(cached) as Map<String, dynamic>;
+        if (!mounted) return;
+        final vendor = _map(data['vendor']);
+        final user = _map(
+          data['user_id'] ??
+              data['userId'] ??
+              data['user'] ??
+              data['vendor_user'] ??
+              data['vendorUser'] ??
+              vendor['user_id'] ??
+              vendor['userId'] ??
+              vendor['user'],
+        );
+        final rawUserId = data['user_id'] ??
+            data['userId'] ??
+            vendor['user_id'] ??
+            vendor['userId'];
+        final vendorUserId = (user['_id'] ??
+                user['id'] ??
+                ((rawUserId is String || rawUserId is num) ? rawUserId : null) ??
+                uid)
+            .toString()
+            .trim();
+        setState(() {
+          _data = data;
+          _vendorUserId = vendorUserId.isEmpty ? uid : vendorUserId;
+          _followersCountOverride = _readCount(
+            data['stats'] is Map ? _map(data['stats']) : data,
+            const [
+              'followers_count',
+              'followersCount',
+              'followers',
+              'followerCount',
+            ],
+          );
+          _loading = false;
+        });
+        _startCoverAutoplayIfNeeded();
+        unawaited(_loadAds());
+        unawaited(_loadGallery());
+        unawaited(_loadFollowState());
+        return;
+      } on Exception catch (_) {
+        await _pageCache.invalidate('vendor_public', uid);
+      }
+    }
+
     setState(() {
       _loading = true;
       _error = null;
@@ -330,6 +388,10 @@ class _VendorPublicProfileReactScreenState
       unawaited(_loadAds());
       unawaited(_loadGallery());
       unawaited(_loadFollowState());
+
+      try {
+        await _pageCache.set('vendor_public', uid, cacheParams, jsonEncode(data));
+      } on Exception catch (_) {}
     } catch (e, st) {
       debugPrint('Vendor profile load failed for $uid: $e');
       debugPrint(st.toString());

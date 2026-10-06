@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:video_player/video_player.dart';
@@ -10,6 +11,7 @@ import '../services/promote_service.dart';
 import '../services/promote_like_cache.dart';
 import '../services/media_playback_registry.dart';
 import '../services/video_pool.dart';
+import '../services/page_cache_service.dart';
 import 'package:b_smart/widgets/glass_action_button.dart';
 import 'external_link_screen.dart';
 import '../api/promote_reels_api.dart';
@@ -46,6 +48,7 @@ class _PromoteScreenState extends State<PromoteScreen>
   final PromoteReelsApi _promoteReelsApi = PromoteReelsApi();
   final FollowsApi _followsApi = FollowsApi();
   final SupabaseService _supabaseService = SupabaseService();
+  final PageCacheService _pageCache = PageCacheService();
   Map<String, String>? _mediaHeaders;
   int _currentIndex = 0;
   bool _isMuted = true;
@@ -117,7 +120,50 @@ class _PromoteScreenState extends State<PromoteScreen>
     }
   }
 
-  Future<void> _loadPromotes() async {
+  Future<void> _loadPromotes({bool forceNetwork = false}) async {
+    final userId = await CurrentUser.id;
+    final cacheParams = <String, dynamic>{};
+    final cached = forceNetwork
+        ? null
+        : await _pageCache.get('promote', userId ?? '', cacheParams);
+
+    if (cached != null && !forceNetwork) {
+      try {
+        final list = (jsonDecode(cached) as List)
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList(growable: false);
+        if (list.isNotEmpty && mounted) {
+          final initialReelId = _toId(widget.initialReelId);
+          var initialIndex = 0;
+          if (initialReelId.isNotEmpty) {
+            final foundIndex = list.indexWhere((item) {
+              final id = _toId(item['id'] ?? item['_id'] ?? item['promote_reel_id']);
+              return id == initialReelId;
+            });
+            if (foundIndex >= 0) initialIndex = foundIndex;
+          }
+          setState(() {
+            _promotes = list;
+            _currentIndex = initialIndex;
+            _loading = false;
+          });
+          if (_promotes.isNotEmpty) {
+            _initControllerForIndex(initialIndex);
+            if (initialIndex > 0) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted || !_pageController.hasClients) return;
+                _pageController.jumpToPage(initialIndex);
+              });
+            }
+          }
+          unawaited(_loadFollowStatuses());
+          return;
+        }
+      } on Exception catch (_) {
+        await _pageCache.invalidate('promote', userId ?? '');
+      }
+    }
+
     final list = await _promoteService.fetchPromotes();
     if (mounted) {
       final initialReelId = _toId(widget.initialReelId);
@@ -146,6 +192,14 @@ class _PromoteScreenState extends State<PromoteScreen>
         }
       }
       unawaited(_loadFollowStatuses());
+      try {
+        await _pageCache.set(
+          'promote',
+          userId ?? '',
+          cacheParams,
+          jsonEncode(_promotes),
+        );
+      } on Exception catch (_) {}
     }
   }
 

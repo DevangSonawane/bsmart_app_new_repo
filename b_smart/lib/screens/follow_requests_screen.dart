@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/follow_requests_api.dart';
+import '../services/page_cache_service.dart';
 import '../theme/design_tokens.dart';
+import '../utils/current_user.dart';
 import '../widgets/safe_network_image.dart';
 
 class FollowRequestsScreen extends StatefulWidget {
@@ -16,6 +19,7 @@ class FollowRequestsScreen extends StatefulWidget {
 
 class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
   final _api = FollowRequestsApi();
+  final PageCacheService _pageCache = PageCacheService();
 
   bool _loading = true;
   String? _error;
@@ -78,11 +82,33 @@ class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
         .trim();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool forceNetwork = false}) async {
     setState(() {
       _loading = true;
       _error = null;
     });
+
+    final currentUserId = await CurrentUser.id;
+    final cacheParams = <String, dynamic>{};
+    final cached = forceNetwork
+        ? null
+        : await _pageCache.get('follow_requests', currentUserId ?? '', cacheParams);
+
+    if (cached != null) {
+      try {
+        final decoded = jsonDecode(cached) as Map<String, dynamic>;
+        if (!mounted) return;
+        setState(() {
+          _requests = (decoded['requests'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
+          _pendingCount = decoded['count'] is int ? decoded['count'] as int : 0;
+          _loading = false;
+        });
+        return;
+      } on Exception catch (_) {
+        await _pageCache.invalidate('follow_requests', currentUserId ?? '');
+      }
+    }
+
     try {
       final page = await _api.getFollowRequests();
       if (!mounted) return;
@@ -91,6 +117,17 @@ class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
         _pendingCount = page.count;
         _loading = false;
       });
+      try {
+        await _pageCache.set(
+          'follow_requests',
+          currentUserId ?? '',
+          cacheParams,
+          jsonEncode(<String, dynamic>{
+            'requests': page.requests,
+            'count': page.count,
+          }),
+        );
+      } on Exception catch (_) {}
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -156,9 +193,9 @@ class _FollowRequestsScreenState extends State<FollowRequestsScreen> {
         title: const Text('Follow requests'),
         centerTitle: true,
       ),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: _loading
+       body: RefreshIndicator(
+         onRefresh: () => _load(forceNetwork: true),
+         child: _loading
             ? const Center(
                 child: CircularProgressIndicator(color: DesignTokens.instaPink),
               )

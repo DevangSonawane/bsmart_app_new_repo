@@ -20,6 +20,7 @@ import '../services/supabase_service.dart';
 import '../services/ui_surface_memory_service.dart';
 import '../services/wallet_service.dart';
 import '../services/video_pool.dart';
+import '../services/page_cache_service.dart';
 import '../preferences/storage_preferences_scope.dart';
 import '../services/network_status_scope.dart';
 import '../state/app_state.dart';
@@ -2415,6 +2416,14 @@ class _HomeDashboardState extends State<HomeDashboard>
       store.dispatch(UpdatePostLikedWithCount(post.id, liked, optimisticLikes));
       if (mounted) setState(() {}); // reflect reconciled state
     }
+    try {
+      final currentUserId = await CurrentUser.id;
+      final pageCache = PageCacheService();
+      if (currentUserId != null && currentUserId.trim().isNotEmpty) {
+        await pageCache.invalidateAll(
+            ['home_feed', 'profile', 'post'], currentUserId);
+      }
+    } on Exception catch (_) {}
   }
 
   void _onDoubleTapLikePost(FeedPost post) {

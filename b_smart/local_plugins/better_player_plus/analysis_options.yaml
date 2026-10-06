@@ -1,6 +1,10 @@
 #include: package:lint/analysis_options_package.yaml
 
 analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
   strong-mode:
     implicit-dynamic: false
 

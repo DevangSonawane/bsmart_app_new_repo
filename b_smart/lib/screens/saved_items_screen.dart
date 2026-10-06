@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -7,6 +8,7 @@ import '../api/api.dart';
 import '../api/reels_api.dart';
 import '../models/ad_model.dart';
 import '../models/feed_post_model.dart';
+import '../services/page_cache_service.dart';
 import '../services/promote_service.dart';
 import '../services/supabase_service.dart';
 import '../utils/current_user.dart';
@@ -27,6 +29,7 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
   final ReelsApi _reelsApi = ReelsApi();
   final AdsApi _adsApi = AdsApi();
   final PromoteReelsApi _promoteReelsApi = PromoteReelsApi();
+  final PageCacheService _pageCache = PageCacheService();
   Map<String, String>? _imageHeaders;
 
   bool _loading = false;
@@ -466,21 +469,43 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
 
   Future<void> _loadSaved({bool force = false}) async {
     if (_loading && !force) return;
+
+    final uid = await CurrentUser.id;
+    if (uid == null || uid.trim().isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _items = const [];
+        _error = 'Please sign in to view saved items.';
+        _loading = false;
+      });
+      return;
+    }
+
+    if (!force) {
+      try {
+        final cached = await _pageCache.get('saved_items', uid, {});
+        if (cached != null) {
+          final itemsJson = jsonDecode(cached) as List;
+          final items = itemsJson.map((e) => FeedPost.fromJson(e)).toList();
+          if (items.isNotEmpty && mounted) {
+            setState(() {
+              _items = items;
+              _loading = false;
+              _error = null;
+            });
+            return;
+          }
+        }
+      } catch (_) {
+        // Cache error, fall through to API call
+      }
+    }
+
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final uid = await CurrentUser.id;
-      if (uid == null || uid.trim().isEmpty) {
-        if (!mounted) return;
-        setState(() {
-          _items = const [];
-          _error = 'Please sign in to view saved items.';
-        });
-        return;
-      }
-
       final raw = await _savedApi.getSavedItems();
       final items = _collectMaps(raw);
       final seen = <String>{};
@@ -520,6 +545,10 @@ class _SavedItemsScreenState extends State<SavedItemsScreen> {
       setState(() {
         _items = nextItems.map((entry) => entry.post).toList();
       });
+
+      try {
+        await _pageCache.set('saved_items', uid, {}, jsonEncode(_items.map((e) => e.toJson()).toList()));
+      } catch (_) {}
     } catch (e) {
       if (!mounted) return;
       setState(() {

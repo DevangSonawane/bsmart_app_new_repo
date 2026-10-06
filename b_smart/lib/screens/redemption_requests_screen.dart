@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -5,6 +7,8 @@ import 'package:intl/intl.dart';
 
 import '../api/api_exceptions.dart';
 import '../api/gift_cards_api.dart';
+import '../services/page_cache_service.dart';
+import '../utils/current_user.dart';
 
 class RedemptionRequestsScreen extends StatefulWidget {
   const RedemptionRequestsScreen({super.key});
@@ -16,6 +20,7 @@ class RedemptionRequestsScreen extends StatefulWidget {
 
 class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
   final GiftCardsApi _giftCardsApi = GiftCardsApi();
+  final PageCacheService _pageCache = PageCacheService();
   String _filter = 'All';
   bool _loading = true;
   String? _errorMessage;
@@ -83,13 +88,36 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
     _loadRequests();
   }
 
-  Future<void> _loadRequests() async {
+  Future<void> _loadRequests({bool forceNetwork = false}) async {
     final currentRequest = ++_requestId;
     if (mounted) {
       setState(() {
         _loading = true;
         _errorMessage = null;
       });
+    }
+
+    final currentUserId = await CurrentUser.id;
+    final cacheParams = <String, dynamic>{'filter': _filter};
+    final cached = forceNetwork
+        ? null
+        : await _pageCache.get('redemption_requests', currentUserId ?? '', cacheParams);
+
+    if (cached != null) {
+      try {
+        final List<dynamic> raw = jsonDecode(cached);
+        final requests = raw
+            .map((item) => _RedemptionRequest.fromApi(Map<String, dynamic>.from(item)))
+            .toList(growable: false);
+        if (!mounted || currentRequest != _requestId) return;
+        setState(() {
+          _requests = requests;
+          _loading = false;
+        });
+        return;
+      } on Exception catch (_) {
+        await _pageCache.invalidate('redemption_requests', currentUserId ?? '');
+      }
     }
 
     try {
@@ -105,6 +133,15 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
         _requests = requests;
         _loading = false;
       });
+
+      try {
+        await _pageCache.set(
+          'redemption_requests',
+          currentUserId ?? '',
+          cacheParams,
+          jsonEncode(orders),
+        );
+      } on Exception catch (_) {}
     } on ApiException catch (e) {
       if (!mounted || currentRequest != _requestId) return;
       setState(() {
@@ -171,19 +208,19 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
         '${request.name} cancelled and coins refunded.',
         backgroundColor: const Color(0xFFF97316),
       );
-      await _loadRequests();
+      await _loadRequests(forceNetwork: true);
       return true;
     } on ApiException catch (e) {
       if (!mounted) return false;
       _showSnackBar(
         e.message,
-        backgroundColor: const Color(0xFFEF4444),
+        backgroundColor: const Color(0xFFF97316),
       );
     } catch (_) {
       if (!mounted) return false;
       _showSnackBar(
         'Could not cancel this gift card right now.',
-        backgroundColor: const Color(0xFFEF4444),
+        backgroundColor: const Color(0xFFF97316),
       );
     }
     return false;
@@ -204,9 +241,9 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
       if (!mounted) return false;
       _showSnackBar(
         '${request.name} deleted from your history.',
-        backgroundColor: const Color(0xFFEF4444),
+        backgroundColor: const Color(0xFF10B981),
       );
-      await _loadRequests();
+      await _loadRequests(forceNetwork: true);
       return true;
     } on ApiException catch (e) {
       if (!mounted) return false;
@@ -276,7 +313,7 @@ class _RedemptionRequestsScreenState extends State<RedemptionRequestsScreen> {
       backgroundColor: scaffoldBg,
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: _loadRequests,
+          onRefresh: () => _loadRequests(forceNetwork: true),
           color: const Color(0xFFF97316),
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),

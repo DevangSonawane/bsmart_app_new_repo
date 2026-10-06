@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -7,6 +8,8 @@ import '../api/api_client.dart';
 import '../api/posts_api.dart';
 import '../api/reels_api.dart';
 import '../models/feed_post_model.dart';
+import '../services/page_cache_service.dart';
+import '../utils/current_user.dart';
 import '../widgets/safe_network_image.dart';
 import '../utils/url_helper.dart';
 import '../screens/post_detail_screen.dart';
@@ -23,6 +26,7 @@ class ExploreSearchScreen extends StatefulWidget {
 class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
   final PostsApi _postsApi = PostsApi();
   final ReelsApi _reelsApi = ReelsApi();
+  final PageCacheService _pageCache = PageCacheService();
 
   bool _loading = false;
   List<_ExploreItem> _items = const [];
@@ -52,6 +56,24 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
   Future<void> _loadExplore({bool force = false}) async {
     if (_loading) return;
     if (!force && _items.isNotEmpty) return;
+
+    final userId = await CurrentUser.id;
+    if (!force && userId != null && userId.trim().isNotEmpty) {
+      try {
+        final cached = await _pageCache.get('search_explore', userId, {'page': 1});
+        if (cached != null) {
+          final itemsJson = jsonDecode(cached) as List;
+          final items = itemsJson.map((e) => _ExploreItem.fromJson(e)).toList();
+          if (items.isNotEmpty && mounted) {
+            setState(() => _items = items);
+            return;
+          }
+        }
+      } catch (_) {
+        // Cache error, fall through to API call
+      }
+    }
+
     setState(() => _loading = true);
     try {
       // Use the paginated feed to avoid mixing in non-post types (e.g. tweets)
@@ -65,6 +87,12 @@ class _ExploreSearchScreenState extends State<ExploreSearchScreen> {
       final mixed = _mixExplore(posts, reels);
       if (!mounted) return;
       setState(() => _items = mixed);
+
+      if (userId != null && userId.trim().isNotEmpty) {
+        try {
+          await _pageCache.set('search_explore', userId, {'page': 1}, jsonEncode(_items.map((e) => e.toJson()).toList()));
+        } catch (_) {}
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _items = const []);
@@ -613,6 +641,24 @@ class _ExploreItem {
       kind: _ExploreKind.reel,
       thumbnailUrl: UrlHelper.absoluteUrl(thumbnailUrl),
       raw: raw,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'kind': kind.index,
+      'thumbnailUrl': thumbnailUrl,
+      'raw': raw,
+    };
+  }
+
+  factory _ExploreItem.fromJson(Map<String, dynamic> json) {
+    return _ExploreItem._(
+      id: json['id'] as String,
+      kind: _ExploreKind.values[json['kind'] as int],
+      thumbnailUrl: json['thumbnailUrl'] as String,
+      raw: Map<String, dynamic>.from(json['raw'] as Map),
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -22,6 +23,7 @@ import '../utils/url_helper.dart';
 import '../preferences/content_preferences_scope.dart';
 import '../preferences/storage_preferences_scope.dart';
 import '../services/network_status_scope.dart';
+import '../services/page_cache_service.dart';
 import '../theme/theme_scope.dart';
 import '../widgets/comments_sheet.dart';
 import '../widgets/share_content_modal.dart';
@@ -43,6 +45,7 @@ class _ReelsScreenState extends State<ReelsScreen>
     with AutomaticKeepAliveClientMixin, RouteAware, WidgetsBindingObserver {
   final ReelsService _reelsService = ReelsService();
   final SupabaseService _supabase = SupabaseService();
+  final PageCacheService _pageCache = PageCacheService();
   final PageController _pageController = PageController();
   final FocusNode _keyboardFocusNode =
       FocusNode(debugLabel: 'reels-feed-focus');
@@ -371,7 +374,59 @@ class _ReelsScreenState extends State<ReelsScreen>
     unawaited(MediaPlaybackRegistry.instance.pauseAll());
   }
 
-  Future<void> _loadReels() async {
+  Future<void> _loadReels({bool force = false}) async {
+    final userId = await CurrentUser.id;
+    if (!force && userId != null && userId.trim().isNotEmpty) {
+      try {
+        final cached = await _pageCache.get('reels', userId, {});
+        if (cached != null) {
+          final reels = (jsonDecode(cached) as List)
+              .map((e) => Reel.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList();
+          if (reels.isNotEmpty && mounted) {
+            int nextIndex = 0;
+            final initialId = widget.initialReelId?.trim();
+            if (initialId != null && initialId.isNotEmpty) {
+              final idx = reels.indexWhere((r) => r.id == initialId);
+              if (idx >= 0) nextIndex = idx;
+            } else {
+              final savedIndex =
+                  await UiSurfaceMemoryService.instance.loadReelsIndex();
+              if (savedIndex != null && reels.isNotEmpty) {
+                nextIndex = savedIndex.clamp(0, reels.length - 1).toInt();
+              }
+            }
+            setState(() {
+              _reels = reels;
+              _currentIndex = nextIndex;
+              _isLoading = false;
+              _hasMore = reels.length >= 20;
+              _offlineRetryAttempts = 0;
+            });
+            if (_pageController.hasClients && nextIndex != 0) {
+              _pageController.jumpToPage(nextIndex);
+            }
+            if (_reels.isNotEmpty) {
+              unawaited(_reelsService.incrementViews(_reels[_currentIndex].id));
+              if (!_avoidBackgroundMediaFetch) {
+                unawaited(_reelsService.preWarmReels(3));
+              }
+              if (!_playbackAllowed) return;
+              unawaited(_initializePoolAt(_currentIndex));
+              _poolOps = _poolOps.then<void>((_) async {
+                if (!mounted) return;
+                await _activateCurrentReelPlayback();
+                if (mounted) setState(() {});
+              }).catchError((_) {});
+            }
+            return;
+          }
+        }
+      } catch (_) {
+        // Cache error, fall through to API call
+      }
+    }
+
     final hasCached = _reelsService.getReels().isNotEmpty;
     setState(() {
       _isLoading = !hasCached;
@@ -417,6 +472,12 @@ class _ReelsScreenState extends State<ReelsScreen>
           await _activateCurrentReelPlayback();
           if (mounted) setState(() {});
         }).catchError((_) {});
+      }
+
+      if (userId != null && userId.trim().isNotEmpty) {
+        try {
+          await _pageCache.set('reels', userId, {}, jsonEncode(_reels.map((r) => r.toJson()).toList()));
+        } catch (_) {}
       }
     } catch (e) {
       if (!mounted) return;

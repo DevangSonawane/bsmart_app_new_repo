@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../api/api_client.dart';
 import '../../api/phase2_store_api.dart';
 import '../../api/upload_api.dart';
+import '../../services/page_cache_service.dart';
 import '../../utils/current_user.dart';
 import 'store_models.dart';
 import 'store_role_setup_screen.dart';
@@ -74,12 +76,12 @@ class _SelfStoreProductsPageState extends State<SelfStoreProductsPage> {
   }
 
   void _refreshProducts() {
-    setState(() => _productsFuture = _loadMyProducts());
+    setState(() => _productsFuture = _loadMyProducts(forceNetwork: true));
   }
 
   /// Pull-to-refresh entry point (called by the parent [RefreshIndicator]).
   Future<void> refresh() async {
-    final future = _loadMyProducts();
+    final future = _loadMyProducts(forceNetwork: true);
     setState(() => _productsFuture = future);
     try {
       await future;
@@ -90,11 +92,31 @@ class _SelfStoreProductsPageState extends State<SelfStoreProductsPage> {
 
   /// Loads my products and defensively drops anything owned by someone else,
   /// so a backend hiccup can never show another seller's products here.
-  static Future<List<Map<String, dynamic>>> _loadMyProducts() async {
+  static Future<List<Map<String, dynamic>>> _loadMyProducts(
+      {bool forceNetwork = false}) async {
     final myId = await CurrentUser.id;
+    final pageCache = PageCacheService();
+    final cacheParams = <String, dynamic>{};
+    final cached =
+        forceNetwork ? null : await pageCache.get('store', myId ?? '', cacheParams);
+
+    if (cached != null) {
+      try {
+        final decoded = jsonDecode(cached) as List;
+        return decoded.cast<Map<String, dynamic>>();
+      } on Exception catch (_) {
+        await pageCache.invalidate('store', myId ?? '');
+      }
+    }
+
     final items = await Phase2StoreApi().myProducts();
     if (myId == null || myId.isEmpty) return items;
-    return items.where((item) => _isMine(item, myId)).toList();
+    final filtered = items.where((item) => _isMine(item, myId)).toList();
+    try {
+      await pageCache.set(
+          'store', myId, cacheParams, jsonEncode(filtered));
+    } on Exception catch (_) {}
+    return filtered;
   }
 
   static bool _isMine(Map<String, dynamic> item, String myId) {
@@ -618,6 +640,13 @@ class _OwnerProductCard extends StatelessWidget {
         'images': images,
       });
       await StoreMockState.instance.refreshMarketplace();
+      try {
+        final currentUserId = await CurrentUser.id;
+        final pageCache = PageCacheService();
+        if (currentUserId != null && currentUserId.trim().isNotEmpty) {
+          await pageCache.invalidate('store', currentUserId);
+        }
+      } on Exception catch (_) {}
       onChanged?.call();
       if (!context.mounted) return;
       ScaffoldMessenger.of(context)

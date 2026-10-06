@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api/phase2_store_api.dart';
 import '../../api/upload_api.dart';
+import '../../services/page_cache_service.dart';
 import '../../utils/current_user.dart';
 import 'self_store_availability_page.dart';
 import 'shared/store_image_editor.dart';
@@ -73,7 +75,11 @@ class _SelfStoreServicesManagePageState
   void initState() {
     super.initState();
     _servicesFuture = _loadMyServices();
-    _bookingsFuture = Phase2StoreApi()
+    _bookingsFuture = _loadMyBookings();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadMyBookings() {
+    return Phase2StoreApi()
         .sellerServiceBookings()
         .catchError((_) => const <Map<String, dynamic>>[]);
   }
@@ -81,19 +87,15 @@ class _SelfStoreServicesManagePageState
   void _refreshServices() {
     if (!mounted) return;
     setState(() {
-      _servicesFuture = _loadMyServices();
-      _bookingsFuture = Phase2StoreApi()
-          .sellerServiceBookings()
-          .catchError((_) => const <Map<String, dynamic>>[]);
+      _servicesFuture = _loadMyServices(forceNetwork: true);
+      _bookingsFuture = _loadMyBookings();
     });
   }
 
   /// Pull-to-refresh entry point (called by the parent [RefreshIndicator]).
   Future<void> refresh() async {
-    final services = _loadMyServices();
-    final bookings = Phase2StoreApi()
-        .sellerServiceBookings()
-        .catchError((_) => const <Map<String, dynamic>>[]);
+    final services = _loadMyServices(forceNetwork: true);
+    final bookings = _loadMyBookings();
     if (!mounted) return;
     setState(() {
       _servicesFuture = services;
@@ -108,11 +110,31 @@ class _SelfStoreServicesManagePageState
 
   /// Loads my services and defensively drops anything owned by someone else,
   /// so a backend hiccup can never show another seller's services here.
-  static Future<List<Map<String, dynamic>>> _loadMyServices() async {
+  static Future<List<Map<String, dynamic>>> _loadMyServices(
+      {bool forceNetwork = false}) async {
     final myId = await CurrentUser.id;
+    final pageCache = PageCacheService();
+    final cacheParams = <String, dynamic>{};
+    final cached =
+        forceNetwork ? null : await pageCache.get('store', myId ?? '', cacheParams);
+
+    if (cached != null) {
+      try {
+        final decoded = jsonDecode(cached) as List;
+        return decoded.cast<Map<String, dynamic>>();
+      } on Exception catch (_) {
+        await pageCache.invalidate('store', myId ?? '');
+      }
+    }
+
     final items = await Phase2StoreApi().myServices();
     if (myId == null || myId.isEmpty) return items;
-    return items.where((item) => _isMine(item, myId)).toList();
+    final filtered = items.where((item) => _isMine(item, myId)).toList();
+    try {
+      await pageCache.set(
+          'store', myId, cacheParams, jsonEncode(filtered));
+    } on Exception catch (_) {}
+    return filtered;
   }
 
   static bool _isMine(Map<String, dynamic> item, String myId) {
