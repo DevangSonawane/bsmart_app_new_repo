@@ -4740,7 +4740,7 @@ class _SuggestedReelsPlaceholder extends StatelessWidget {
                   'Suggested bSparks',
                   style: GoogleFonts.montserrat(
                     fontSize: 15,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.normal,
                     color: titleColor,
                   ),
                 ),

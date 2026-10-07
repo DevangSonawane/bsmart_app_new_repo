@@ -877,20 +877,23 @@ class VisitorProductPurchaseSuccessPage extends StatelessWidget {
               const SizedBox(height: 10),
               SizedBox(
                 height: 46,
-                child: OutlinedButton(
+                child: OutlinedButton.icon(
                   onPressed: () {
                     StoreMockState.instance.refreshBuyerOrders();
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => const StoreOrderTrackingListPage(),
+                        builder: (_) => StoreOrderTrackingDetailPage(
+                          order: TrackingOrder.fromStoreOrder(order),
+                        ),
                       ),
                     );
                   },
-                  style: BStoreButtons.outlined(),
-                  child: const Text(
-                    'View order',
+                  icon: const Icon(LucideIcons.truck, size: 19),
+                  label: const Text(
+                    'Track Order',
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
                   ),
+                  style: BStoreButtons.outlined(),
                 ),
               ),
             ],

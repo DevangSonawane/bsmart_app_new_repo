@@ -108,8 +108,9 @@ class _SelfStoreServicesManagePageState
     }
   }
 
-  /// Loads my services and defensively drops anything owned by someone else,
-  /// so a backend hiccup can never show another seller's services here.
+  /// Loads my services from the personal endpoint. The `/influencer-services/my`
+  /// route already scopes to the current seller, so we do not second-guess it
+  /// with client-side ownership checks.
   static Future<List<Map<String, dynamic>>> _loadMyServices(
       {bool forceNetwork = false}) async {
     final myId = await CurrentUser.id;
@@ -128,49 +129,13 @@ class _SelfStoreServicesManagePageState
     }
 
     final items = await Phase2StoreApi().myServices();
-    if (myId == null || myId.isEmpty) return items;
-    final filtered = items.where((item) => _isMine(item, myId)).toList();
-    try {
-      await pageCache.set(
-          'store', myId, cacheParams, jsonEncode(filtered));
-    } on Exception catch (_) {}
-    return filtered;
-  }
-
-  static bool _isMine(Map<String, dynamic> item, String myId) {
-    const ownerKeys = [
-      'influencer_id',
-      'influencerId',
-      'user_id',
-      'userId',
-      'owner_id',
-      'ownerId',
-      'seller_id',
-      'sellerId',
-      'created_by',
-      'createdBy',
-    ];
-    var sawOwner = false;
-    for (final key in ownerKeys) {
-      final value = item[key]?.toString().trim();
-      if (value == null || value.isEmpty || value == 'null') continue;
-      sawOwner = true;
-      if (value == myId) return true;
+    if (myId != null && myId.isNotEmpty) {
+      try {
+        await pageCache.set(
+            'store', myId, cacheParams, jsonEncode(items));
+      } on Exception catch (_) {}
     }
-    const nestedKeys = ['influencer', 'owner', 'seller', 'user', 'created_by'];
-    for (final key in nestedKeys) {
-      final nested = item[key];
-      if (nested is! Map) continue;
-      final map = nested.map((k, v) => MapEntry(k.toString(), v));
-      for (final idKey in ['id', '_id', 'user_id', 'userId']) {
-        final value = map[idKey]?.toString().trim();
-        if (value == null || value.isEmpty || value == 'null') continue;
-        sawOwner = true;
-        if (value == myId) return true;
-      }
-    }
-    // No owner info on the item: trust the server-side `/my` filter.
-    return !sawOwner ? true : false;
+    return items;
   }
 
   static int _bookingsFor(

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -562,22 +563,24 @@ class _StoreScreenState extends State<StoreScreen> {
                           parent: BouncingScrollPhysics(),
                         ),
                         slivers: [
-                          _MarketplaceHeaderSliver(
-                            title: isHomeMarketplace
-                                ? 'Marketplace'
-                                : (selectedItem.label.isEmpty
-                                    ? 'Create'
-                                    : selectedItem.label),
-                            onProfileTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => StoreProfilePage(
-                                    ownerUserId: widget.ownerUserId,
+                          // Home tab is the Swiggy-style marketplace: its
+                          // maroon header bleeds from the very top, so the
+                          // white title/profile bar is hidden here.
+                          if (!isHomeMarketplace)
+                            _MarketplaceHeaderSliver(
+                              title: selectedItem.label.isEmpty
+                                  ? 'Create'
+                                  : selectedItem.label,
+                              onProfileTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => StoreProfilePage(
+                                      ownerUserId: widget.ownerUserId,
+                                    ),
                                   ),
-                                ),
-                              );
-                            },
-                          ),
+                                );
+                              },
+                            ),
                           _buildSection(selectedItem.section),
                           const SliverToBoxAdapter(child: SizedBox(height: 22)),
                         ],
@@ -1593,13 +1596,13 @@ class _StoreFooterNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isIOS = defaultTargetPlatform == TargetPlatform.iOS;
+
     return Padding(
-      padding: EdgeInsets.only(
-        bottom: Theme.of(context).platform == TargetPlatform.iOS ? 4 : 0,
-      ),
+      padding: EdgeInsets.only(bottom: isIOS ? 4 : 0),
       child: SafeArea(
         top: false,
-        bottom: Theme.of(context).platform != TargetPlatform.iOS,
+        bottom: !isIOS,
         child: SizedBox(
           height: 42,
           child: Stack(
@@ -1634,7 +1637,7 @@ class _StoreFooterNav extends StatelessWidget {
   }
 }
 
-class _StoreFooterIconButton extends StatelessWidget {
+class _StoreFooterIconButton extends StatefulWidget {
   final _StoreNavItem item;
   final bool selected;
   final VoidCallback onTap;
@@ -1648,42 +1651,68 @@ class _StoreFooterIconButton extends StatelessWidget {
   });
 
   @override
+  State<_StoreFooterIconButton> createState() => _StoreFooterIconButtonState();
+}
+
+class _StoreFooterIconButtonState extends State<_StoreFooterIconButton> {
+  bool _rotating = false;
+
+  @override
   Widget build(BuildContext context) {
-    final color = selected ? BStoreColors.primary : BStoreColors.textSecondary;
+    final color =
+        widget.selected ? BStoreColors.primary : BStoreColors.textSecondary;
+
+    if (widget.isCenterAdd) {
+      return Transform.translate(
+        offset: const Offset(0, -8),
+        child: GestureDetector(
+          onTap: () {
+            setState(() => _rotating = true);
+            widget.onTap();
+            Future.delayed(const Duration(milliseconds: 300), () {
+              if (mounted) setState(() => _rotating = false);
+            });
+          },
+          child: Container(
+            width: 56,
+            height: 56,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: BStoreColors.primary,
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x26000000),
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Center(
+              child: AnimatedRotation(
+                turns: _rotating ? 1 / 8 : 0,
+                duration: const Duration(milliseconds: 300),
+                child: const Icon(
+                  LucideIcons.plus,
+                  color: Colors.white,
+                  size: 34,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final child = InkWell(
-      onTap: selected ? null : onTap,
+      onTap: widget.selected ? null : widget.onTap,
       borderRadius: BorderRadius.circular(12),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
         child: SizedBox(
           width: 34,
           height: 34,
           child: Center(
-            child: isCenterAdd
-                ? Transform.translate(
-                    offset: const Offset(0, -8),
-                    child: Container(
-                      width: 56,
-                      height: 56,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: BStoreColors.primary,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Color(0x26000000),
-                            blurRadius: 10,
-                            offset: Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        LucideIcons.plus,
-                        color: Colors.white,
-                        size: 34,
-                      ),
-                    ),
-                  )
-                : Icon(item.icon, color: color, size: 30),
+            child: Icon(widget.item.icon, color: color, size: 30),
           ),
         ),
       ),
@@ -1707,17 +1736,25 @@ class _StoreFooterShapePainter extends CustomPainter {
     final paint = Paint()
       ..color = backgroundColor
       ..style = PaintingStyle.fill;
+
     final borderPaint = Paint()
       ..color = borderColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
 
+    final path = _buildPath(size);
+    canvas.drawPath(path, paint);
+    canvas.drawPath(path, borderPaint);
+  }
+
+  Path _buildPath(Size size) {
     const notchWidth = 86.0;
     const notchDepth = 36.0;
     const shoulderWidth = 20.0;
     final centerX = size.width / 2;
     final notchLeft = centerX - notchWidth / 2;
     final notchRight = centerX + notchWidth / 2;
+
     final path = Path()
       ..moveTo(0, 0)
       ..lineTo(notchLeft - shoulderWidth, 0)
@@ -1741,9 +1778,7 @@ class _StoreFooterShapePainter extends CustomPainter {
       ..lineTo(size.width, size.height)
       ..lineTo(0, size.height)
       ..close();
-
-    canvas.drawPath(path, paint);
-    canvas.drawPath(path, borderPaint);
+    return path;
   }
 
   @override

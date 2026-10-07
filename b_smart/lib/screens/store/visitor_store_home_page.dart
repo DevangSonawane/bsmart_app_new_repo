@@ -7,18 +7,16 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../api/api_client.dart';
 import '../../services/page_cache_service.dart';
 import '../../services/supabase_service.dart';
-import '../../utils/current_user.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
-import 'shared/store_money.dart';
+import 'shared/marketplace_listing_card.dart';
+import 'shared/marketplace_swiggy_header.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_models.dart';
 import 'store_profile_page.dart';
 import 'store_profile_state.dart';
 import 'store_theme.dart';
 import 'store_wishlist.dart';
-import 'visitor_product_detail_page.dart';
-import 'visitor_service_detail_page.dart';
 
 class VisitorStorefrontScreen extends StatelessWidget {
   final String ownerUserId;
@@ -76,6 +74,9 @@ enum _VisitorStoreFilter { all, services, products }
 
 class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
   _VisitorStoreFilter _selectedFilter = _VisitorStoreFilter.all;
+  String _searchQuery = '';
+  String? _selectedCategory;
+  String? _sellerName;
   late Future<_VisitorStoreOwner?> _ownerFuture;
   final PageCacheService _pageCache = PageCacheService();
 
@@ -83,6 +84,7 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
   void initState() {
     super.initState();
     _ownerFuture = _loadOwner();
+    _trackSellerName();
     StoreMockState.instance.addListener(_handleStoreChanged);
     StoreProfileState.instance.addListener(_handleStoreChanged);
     unawaited(StoreMockState.instance.ensureMarketplace());
@@ -102,6 +104,7 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.ownerUserId != widget.ownerUserId) {
       _ownerFuture = _loadOwner();
+      _trackSellerName();
       unawaited(StoreProfileState.instance.ensureLoaded(widget.ownerUserId));
     }
   }
@@ -110,11 +113,40 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
     if (mounted) setState(() {});
   }
 
+  void _trackSellerName() {
+    _ownerFuture.then((owner) {
+      if (!mounted) return;
+      final name = owner?.displayName.trim() ?? '';
+      if (name.isNotEmpty && name != _sellerName) {
+        setState(() => _sellerName = name);
+      }
+    });
+  }
+
+  List<String> _headerCategories() {
+    final store = StoreMockState.instance;
+    Iterable<StoreMockCatalogItem> items = switch (_selectedFilter) {
+      _VisitorStoreFilter.all => [...store.products, ...store.services],
+      _VisitorStoreFilter.products => store.products,
+      _VisitorStoreFilter.services => store.services,
+    };
+    final ownerId = widget.ownerUserId?.trim() ?? '';
+    if (ownerId.isNotEmpty) {
+      items = items.where(
+          (item) => _StoreItemsContent._belongsToOwner(item.raw, ownerId));
+    }
+    final out = <String>[];
+    for (final item in items) {
+      final category = item.category.trim();
+      if (category.isNotEmpty && !out.contains(category)) out.add(category);
+    }
+    return out;
+  }
+
   Future<_VisitorStoreOwner?> _loadOwner({bool forceNetwork = false}) async {
     final ownerId = widget.ownerUserId?.trim();
     if (ownerId == null || ownerId.isEmpty) return null;
 
-    final currentUserId = await CurrentUser.id;
     final cacheParams = <String, dynamic>{'ownerId': ownerId};
     final cached = forceNetwork
         ? null
@@ -142,7 +174,7 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
                 'photoUrl',
                 'avatar',
               ]) ??
-            '',
+              '',
         );
         return _VisitorStoreOwner(
           displayName: displayName ?? 'Store owner',
@@ -175,7 +207,7 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
             'photoUrl',
             'avatar',
           ]) ??
-        '',
+          '',
     );
     Map<String, String>? avatarHeaders;
     if (avatarUrl.isNotEmpty && UrlHelper.shouldAttachAuthHeader(avatarUrl)) {
@@ -234,9 +266,50 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
             );
           },
         ),
-        _StoreFilterTabs(
-          selectedFilter: _selectedFilter,
-          onSelected: (filter) => setState(() => _selectedFilter = filter),
+        Builder(
+          builder: (context) {
+            final profile =
+                StoreProfileState.instance.profileFor(widget.ownerUserId);
+            final storeName = profile?.storeName.trim() ?? '';
+            final headerName = storeName.isNotEmpty
+                ? storeName
+                : (_sellerName?.isNotEmpty == true ? _sellerName : 'Store');
+            final storeType = profile?.storeType.trim() ?? '';
+            return SwiggyMarketplaceHeader(
+              userName: headerName,
+              userSubtitle: storeType.isNotEmpty ? storeType : null,
+              onUserTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => StoreProfilePage(
+                    ownerUserId: widget.ownerUserId,
+                  ),
+                ),
+              ),
+              onWishlistTap: () => openWishlist(context),
+              selectedTab: switch (_selectedFilter) {
+                _VisitorStoreFilter.all => MarketplaceTab.all,
+                _VisitorStoreFilter.products => MarketplaceTab.products,
+                _VisitorStoreFilter.services => MarketplaceTab.services,
+              },
+              onTabSelected: (tab) => setState(() {
+                _selectedFilter = switch (tab) {
+                  MarketplaceTab.all => _VisitorStoreFilter.all,
+                  MarketplaceTab.products => _VisitorStoreFilter.products,
+                  MarketplaceTab.services => _VisitorStoreFilter.services,
+                };
+                _selectedCategory = null;
+              }),
+              query: _searchQuery,
+              onQueryChanged: (value) => setState(() => _searchQuery = value),
+              onClearQuery: _searchQuery.isEmpty
+                  ? null
+                  : () => setState(() => _searchQuery = ''),
+              categories: _headerCategories(),
+              selectedCategory: _selectedCategory,
+              onCategorySelected: (category) =>
+                  setState(() => _selectedCategory = category),
+            );
+          },
         ),
         if (store.catalogLoading && StoreMockState.catalog.isEmpty)
           const Padding(
@@ -273,10 +346,31 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
         else
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
-            child: _StoreItemsContent(
-              filter: _selectedFilter,
-              ownerUserId: widget.ownerUserId,
-              query: '',
+            // Fluid crossfade + slide when switching All/Products/Services.
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0.05, 0),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              ),
+              child: KeyedSubtree(
+                key: ValueKey(
+                    '${_selectedFilter.name}|${_selectedCategory ?? ''}'),
+                child: _StoreItemsContent(
+                  filter: _selectedFilter,
+                  ownerUserId: widget.ownerUserId,
+                  query: _searchQuery,
+                  category: _selectedCategory,
+                ),
+              ),
             ),
           ),
       ],
@@ -612,152 +706,57 @@ class _VerifiedAvatar extends StatelessWidget {
   }
 }
 
-class _StoreFilterTabs extends StatelessWidget {
-  final _VisitorStoreFilter selectedFilter;
-  final ValueChanged<_VisitorStoreFilter> onSelected;
-
-  const _StoreFilterTabs({
-    required this.selectedFilter,
-    required this.onSelected,
-  });
-
-  static const _tabs = [
-    (_VisitorStoreFilter.all, LucideIcons.layoutGrid, 'All'),
-    (_VisitorStoreFilter.services, LucideIcons.briefcaseBusiness, 'Services'),
-    (_VisitorStoreFilter.products, LucideIcons.box, 'Products'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 16, 14, 0),
-      child: Container(
-        height: 46,
-        decoration: storeSoftCardDecoration(radius: 18),
-        child: Row(
-          children: [
-            for (var i = 0; i < _tabs.length; i++) ...[
-              Expanded(
-                child: _StoreFilterTab(
-                  icon: _tabs[i].$2,
-                  label: _tabs[i].$3,
-                  selected: selectedFilter == _tabs[i].$1,
-                  onTap: () => onSelected(_tabs[i].$1),
-                ),
-              ),
-              if (i != _tabs.length - 1)
-                Container(width: 1, height: 22, color: const Color(0xFFE2E5EA)),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StoreFilterTab extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _StoreFilterTab({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = selected ? const Color(0xFF078D92) : const Color(0xFF060D35);
-    return InkWell(
-      onTap: selected ? null : onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: color, size: 16),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 160),
-            height: 2,
-            width: selected ? 32 : 0,
-            decoration: BoxDecoration(
-              color: const Color(0xFF078D92),
-              borderRadius: BorderRadius.circular(20),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _StoreItemsContent extends StatelessWidget {
   final _VisitorStoreFilter filter;
   final String? ownerUserId;
   final String query;
+  final String? category;
 
   const _StoreItemsContent({
     required this.filter,
     required this.ownerUserId,
     required this.query,
+    this.category,
   });
 
   @override
   Widget build(BuildContext context) {
     final store = StoreMockState.instance;
-    final products = _matchingItems(_ownedItems(store.products));
-    final services = _matchingItems(_ownedItems(store.services));
+    final products = _inCategory(_matchingItems(_ownedItems(store.products)));
+    final services = _inCategory(_matchingItems(_ownedItems(store.services)));
     final catalog = <StoreMockCatalogItem>[...products, ...services];
     final emptyBody = query.trim().isEmpty
         ? 'This store has not published products or services yet.'
         : 'No listings match "${query.trim()}".';
+    Widget gridFor(List<StoreMockCatalogItem> items) => _StoreItemsGrid(
+          children: [
+            for (final item in items)
+              MarketplaceListingCard(
+                  item: item, ownerUserId: ownerUserId),
+          ],
+        );
     return switch (filter) {
-      _VisitorStoreFilter.services =>
-        _VisitorServiceList(ownerUserId: ownerUserId, services: services),
-      _VisitorStoreFilter.products =>
-        _VisitorProductList(ownerUserId: ownerUserId, products: products),
+      _VisitorStoreFilter.services => services.isEmpty
+          ? const StoreEmptyState(
+              icon: LucideIcons.briefcaseBusiness,
+              title: 'No services yet',
+              body: 'Services published by this store will appear here.',
+            )
+          : gridFor(services),
+      _VisitorStoreFilter.products => products.isEmpty
+          ? const StoreEmptyState(
+              icon: LucideIcons.package,
+              title: 'No products yet',
+              body: 'Products published by this store will appear here.',
+            )
+          : gridFor(products),
       _VisitorStoreFilter.all => catalog.isEmpty
           ? StoreEmptyState(
               icon: LucideIcons.store,
               title: query.trim().isEmpty ? 'No listings yet' : 'No matches',
               body: emptyBody,
             )
-          : _StoreItemsGrid(
-              children: [
-                if (services.isNotEmpty)
-                  _ServiceFeatureCard(
-                    ownerUserId: ownerUserId,
-                    service: services.first,
-                  ),
-                for (final item in catalog
-                    .where((item) =>
-                        services.isEmpty || item.id != services.first.id)
-                    .take(7))
-                  item.type == StoreMockItemType.service
-                      ? _ServiceFeatureCard(
-                          ownerUserId: ownerUserId,
-                          service: item,
-                        )
-                      : _ProductCard(item: item, ownerUserId: ownerUserId),
-              ],
-            ),
+          : gridFor(catalog.take(8).toList()),
     };
   }
 
@@ -776,6 +775,12 @@ class _StoreItemsContent extends StatelessWidget {
           item.description.toLowerCase().contains(q) ||
           item.priceLabel.toLowerCase().contains(q);
     }).toList();
+  }
+
+  List<StoreMockCatalogItem> _inCategory(List<StoreMockCatalogItem> items) {
+    final selected = category?.trim() ?? '';
+    if (selected.isEmpty) return items;
+    return items.where((item) => item.category.trim() == selected).toList();
   }
 
   static bool _belongsToOwner(Map<String, dynamic> item, String ownerId) {
@@ -867,653 +872,10 @@ class _StoreItemsGrid extends StatelessWidget {
           crossAxisCount: 2,
           crossAxisSpacing: gap,
           mainAxisSpacing: 12,
-          childAspectRatio: columnWidth / 260,
+          childAspectRatio: columnWidth / MarketplaceListingCard.gridHeight,
           children: children,
         );
       },
-    );
-  }
-}
-
-class _CatalogImage extends StatelessWidget {
-  final StoreMockCatalogItem item;
-  final double height;
-
-  const _CatalogImage({
-    required this.item,
-    required this.height,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return StoreItemImage(
-      imageUrl: item.imageUrl,
-      icon: item.icon,
-      width: double.infinity,
-      height: height,
-      debugLabel: 'visitor-store-catalog',
-    );
-  }
-}
-
-class _VisitorServiceList extends StatelessWidget {
-  final String? ownerUserId;
-  final List<StoreMockCatalogItem> services;
-
-  const _VisitorServiceList({
-    required this.ownerUserId,
-    required this.services,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (services.isEmpty) {
-      return const StoreEmptyState(
-        icon: LucideIcons.briefcaseBusiness,
-        title: 'No services yet',
-        body: 'Services published by influencers will appear here.',
-      );
-    }
-    return _StoreItemsGrid(
-      children: [
-        for (final service in services)
-          _ServiceFeatureCard(ownerUserId: ownerUserId, service: service),
-      ],
-    );
-  }
-}
-
-class _ServiceFeatureCard extends StatelessWidget {
-  final String? ownerUserId;
-  final StoreMockCatalogItem service;
-
-  const _ServiceFeatureCard({
-    required this.ownerUserId,
-    required this.service,
-  });
-
-  void _openDetail(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => VisitorServiceDetailPage(
-          ownerUserId: ownerUserId,
-          item: service,
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => _openDetail(context),
-      borderRadius: BorderRadius.circular(14),
-      child: SizedBox.expand(
-        child: Container(
-          decoration: storeSoftCardDecoration(radius: 14),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Stack(
-                children: [
-                  _CatalogImage(item: service, height: 104),
-                ],
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      service.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF060D35),
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Text(
-                          formatCompactStoreMoney(service.price),
-                          style: const TextStyle(
-                            color: Color(0xFF078D92),
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            service.duration,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Color(0xFF29304D),
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        const Icon(
-                          LucideIcons.star,
-                          color: Color(0xFF078D92),
-                          size: 13,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          service.rating,
-                          style: const TextStyle(
-                            color: Color(0xFF060D35),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(width: 5),
-                        Flexible(
-                          child: Text(
-                            '(${service.reviews})',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Color(0xFF29304D),
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      height: 32,
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => VisitorServiceDetailPage(
-                              ownerUserId: ownerUserId,
-                              item: service,
-                            ),
-                          ),
-                        ),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF078D92),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(7),
-                          ),
-                        ),
-                        child: const FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'View',
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              SizedBox(width: 6),
-                              Icon(LucideIcons.chevronRight, size: 17),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ProductCard extends StatelessWidget {
-  final StoreMockCatalogItem item;
-  final String? ownerUserId;
-
-  const _ProductCard({
-    required this.item,
-    this.ownerUserId,
-  });
-
-  void _openDetail(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => VisitorProductDetailPage(
-          ownerUserId: ownerUserId,
-          product: VisitorProductDetailData(
-            item: item,
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => _openDetail(context),
-      borderRadius: BorderRadius.circular(14),
-      child: SizedBox.expand(
-        child: Container(
-          decoration: storeSoftCardDecoration(radius: 14),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Stack(
-                children: [
-                  _CatalogImage(item: item, height: 104),
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: WishlistHeartButton(productId: item.id),
-                  ),
-                ],
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF060D35),
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Text(
-                            formatCompactStoreMoney(item.price),
-                            style: const TextStyle(
-                              color: Color(0xFF078D92),
-                              fontSize: 15,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'From',
-                            style: TextStyle(
-                              color: Color(0xFF29304D),
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          const Icon(
-                            LucideIcons.star,
-                            color: Color(0xFF078D92),
-                            size: 13,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            item.rating,
-                            style: const TextStyle(
-                              color: Color(0xFF060D35),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                          Flexible(
-                            child: Text(
-                              '(${item.reviews})',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF29304D),
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        height: 32,
-                        width: double.infinity,
-                        child: _InlineCartStepper(item: item),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _VisitorProductList extends StatelessWidget {
-  final String? ownerUserId;
-  final List<StoreMockCatalogItem> products;
-
-  const _VisitorProductList({
-    required this.ownerUserId,
-    required this.products,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (products.isEmpty) {
-      return const StoreEmptyState(
-        icon: LucideIcons.package,
-        title: 'No products yet',
-        body: 'Products published by influencers will appear here.',
-      );
-    }
-    return Stack(
-      children: [
-        _VisitorProductGrid(
-          children: [
-            for (final product in products)
-              _VisitorProductGridCard(
-                item: product,
-                ownerUserId: ownerUserId,
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _VisitorProductGrid extends StatelessWidget {
-  final List<Widget> children;
-
-  const _VisitorProductGrid({required this.children});
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const gap = 12.0;
-        final width = constraints.maxWidth.isFinite
-            ? constraints.maxWidth
-            : MediaQuery.sizeOf(context).width - 20;
-        final columnWidth = ((width - gap) / 2).clamp(120.0, 260.0);
-        return GridView.count(
-          padding: EdgeInsets.zero,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          crossAxisSpacing: gap,
-          mainAxisSpacing: 12,
-          childAspectRatio: columnWidth / 260,
-          children: children,
-        );
-      },
-    );
-  }
-}
-
-class _VisitorProductGridCard extends StatelessWidget {
-  final StoreMockCatalogItem item;
-  final String? ownerUserId;
-
-  const _VisitorProductGridCard({
-    required this.item,
-    this.ownerUserId,
-  });
-
-  void _openDetail(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => VisitorProductDetailPage(
-          ownerUserId: ownerUserId,
-          product: VisitorProductDetailData(
-            item: item,
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => _openDetail(context),
-      borderRadius: BorderRadius.circular(14),
-      child: SizedBox.expand(
-        child: Container(
-          decoration: storeSoftCardDecoration(radius: 14),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Stack(
-                children: [
-                  _CatalogImage(item: item, height: 104),
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: WishlistHeartButton(productId: item.id),
-                  ),
-                ],
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF060D35),
-                          fontSize: 14.5,
-                          height: 1.15,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        formatCompactStoreMoney(item.price),
-                        style: const TextStyle(
-                          color: Color(0xFF078D92),
-                          fontSize: 15.5,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          const Icon(
-                            LucideIcons.star,
-                            color: Color(0xFF078D92),
-                            size: 13,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            item.rating,
-                            style: const TextStyle(
-                              color: Color(0xFF060D35),
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                          Flexible(
-                            child: Text(
-                              '(${item.reviews})',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF29304D),
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        height: 32,
-                        width: double.infinity,
-                        child: _InlineCartStepper(item: item),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _InlineCartStepper extends StatelessWidget {
-  final StoreMockCatalogItem item;
-
-  const _InlineCartStepper({required this.item});
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: StoreMockState.instance,
-      builder: (context, _) {
-        final quantity = StoreMockState.instance.quantityFor(item.id);
-        final maxQuantity = StoreMockState.instance.maxQuantityFor(item);
-        if (quantity == 0) {
-          return OutlinedButton(
-            onPressed: maxQuantity <= 0
-                ? null
-                : () => StoreMockState.instance.addToCart(item),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF078D92),
-              side: const BorderSide(color: Color(0xFFD5DEE4)),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(7),
-              ),
-            ),
-            child: const FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(LucideIcons.shoppingCart, size: 15),
-                  SizedBox(width: 8),
-                  Text(
-                    'Add',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        return Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFF078D92),
-            borderRadius: BorderRadius.circular(7),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: _StepperTapTarget(
-                  icon: LucideIcons.minus,
-                  onTap: () => StoreMockState.instance.updateQuantity(
-                    item.id,
-                    quantity - 1,
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 34,
-                child: Text(
-                  '$quantity',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: _StepperTapTarget(
-                  icon: LucideIcons.plus,
-                  enabled: quantity < maxQuantity,
-                  onTap: quantity >= maxQuantity
-                      ? null
-                      : () => StoreMockState.instance.updateQuantity(
-                            item.id,
-                            quantity + 1,
-                          ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _StepperTapTarget extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback? onTap;
-  final bool enabled;
-
-  const _StepperTapTarget({
-    required this.icon,
-    required this.onTap,
-    this.enabled = true,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(7),
-      child: Center(
-        child: Icon(
-          icon,
-          color: enabled ? Colors.white : Colors.white54,
-          size: 16,
-        ),
-      ),
     );
   }
 }

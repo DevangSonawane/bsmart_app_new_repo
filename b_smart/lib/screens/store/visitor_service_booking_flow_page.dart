@@ -10,6 +10,7 @@ import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
 import 'shared/store_shared_widgets.dart';
 import 'shared/store_money.dart';
+import 'store_theme.dart';
 import 'store_address_book.dart';
 import 'store_models.dart';
 import 'store_saved_address_page.dart';
@@ -494,8 +495,10 @@ class _VisitorServiceBookingFlowPageState
       future: _providerFuture,
       builder: (context, snapshot) {
         final provider = snapshot.data;
-        return Scaffold(
-          backgroundColor: const Color(0xFFFFFEFC),
+        return Theme(
+          data: BStoreTheme.data(context),
+          child: Scaffold(
+            backgroundColor: const Color(0xFFFFFEFC),
           body: SafeArea(
             top: false,
             child: AnimatedBuilder(
@@ -526,7 +529,11 @@ class _VisitorServiceBookingFlowPageState
                           }
                         },
                       ),
-                      SizedBox(height: _step == 0 ? 26 : 16),
+                      if (_step < 3) ...[
+                        const SizedBox(height: 10),
+                        _StepDots(current: _step),
+                      ],
+                      SizedBox(height: _step == 0 ? 22 : 16),
                       AnimatedSwitcher(
                         duration: const Duration(milliseconds: 180),
                         child: switch (_step) {
@@ -618,6 +625,7 @@ class _VisitorServiceBookingFlowPageState
               ),
             ),
           ),
+          ),
         );
       },
     );
@@ -663,6 +671,36 @@ class _BookingHeader extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _StepDots extends StatelessWidget {
+  final int current;
+
+  const _StepDots({required this.current});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (var i = 0; i < 3; i++) ...[
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            width: current == i ? 26 : 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: i <= current
+                  ? const Color(0xFF078D92)
+                  : const Color(0xFFE1E5EA),
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          if (i != 2) const SizedBox(width: 6),
+        ],
+      ],
     );
   }
 }
@@ -733,8 +771,10 @@ class _SelectAvailabilityStep extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const _SectionLabel('Select date'),
+        const SizedBox(height: 10),
         SizedBox(
-          height: 58,
+          height: 66,
           child: Row(
             children: [
               for (var i = 0; i < dates.length; i++) ...[
@@ -745,22 +785,59 @@ class _SelectAvailabilityStep extends StatelessWidget {
                     onTap: () => onDateSelected(dates[i].value),
                   ),
                 ),
-                const SizedBox(width: 5),
+                if (i != dates.length - 1) const SizedBox(width: 6),
               ],
+              const SizedBox(width: 6),
               _CalendarChip(onTap: onCalendarTap),
             ],
           ),
         ),
-        const SizedBox(height: 18),
-        Text(
-          _BookingDate(selectedDate).heading,
-          style: const TextStyle(
-            color: Color(0xFF060D35),
-            fontSize: 14,
-            fontWeight: FontWeight.w800,
+        const SizedBox(height: 14),
+        Container(
+          width: double.infinity,
+          padding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEAF7F6),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              const Icon(LucideIcons.calendarCheck,
+                  color: Color(0xFF078D92), size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _BookingDate(selectedDate).heading,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF060D35),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              InkWell(
+                onTap: onCalendarTap,
+                borderRadius: BorderRadius.circular(8),
+                child: const Padding(
+                  padding:
+                      EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Text(
+                    'Change',
+                    style: TextStyle(
+                      color: Color(0xFF078D92),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 18),
         if (dayUnavailable) ...[
           Container(
             width: double.infinity,
@@ -779,6 +856,10 @@ class _SelectAvailabilityStep extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
+        ],
+        if (morningTimes.isNotEmpty || afternoonTimes.isNotEmpty) ...[
+          const _SectionLabel('Select time'),
+          const SizedBox(height: 10),
         ],
         if (morningTimes.isNotEmpty) ...[
           const _SlotHeading('Morning'),
@@ -800,45 +881,91 @@ class _SelectAvailabilityStep extends StatelessWidget {
           ),
           const SizedBox(height: 18),
         ],
+        const _SectionLabel('Duration'),
+        const SizedBox(height: 10),
         _BookingSelectTile(
           icon: LucideIcons.clock3,
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               value: selectedDuration,
               isExpanded: true,
-              icon: const Icon(LucideIcons.chevronDown, size: 18),
+              dropdownColor: Colors.white,
+              icon: const Icon(LucideIcons.chevronDown,
+                  size: 18, color: Color(0xFF060D35)),
+              style: const TextStyle(
+                color: Color(0xFF060D35),
+                fontSize: 13.5,
+                fontWeight: FontWeight.w800,
+              ),
               items: const [
-                DropdownMenuItem(value: '1-2 hrs', child: Text('1-2 hrs')),
-                DropdownMenuItem(value: '2-3 hrs', child: Text('2-3 hrs')),
-                DropdownMenuItem(value: '3-4 hrs', child: Text('3-4 hrs')),
+                DropdownMenuItem(
+                  value: '1-2 hrs',
+                  child: Text('1-2 hrs',
+                      style: TextStyle(color: Color(0xFF060D35))),
+                ),
+                DropdownMenuItem(
+                  value: '2-3 hrs',
+                  child: Text('2-3 hrs',
+                      style: TextStyle(color: Color(0xFF060D35))),
+                ),
+                DropdownMenuItem(
+                  value: '3-4 hrs',
+                  child: Text('3-4 hrs',
+                      style: TextStyle(color: Color(0xFF060D35))),
+                ),
               ],
               onChanged: onDurationChanged,
             ),
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 18),
+        const _SectionLabel('Service address'),
+        const SizedBox(height: 10),
         InkWell(
           onTap: onAddressTap,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
           child: _BookingSelectTile(
             icon: LucideIcons.mapPin,
             trailing: LucideIcons.chevronRight,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Service address'),
-                const SizedBox(height: 2),
                 Text(
-                  serviceAddress.isEmpty ? 'Select address' : serviceAddress,
+                  serviceAddress.isEmpty
+                      ? 'Tap to select address'
+                      : serviceAddress,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: serviceAddress.isEmpty
+                        ? const Color(0xFF078D92)
+                        : const Color(0xFF060D35),
+                  ),
                 ),
               ],
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  final String label;
+
+  const _SectionLabel(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: const TextStyle(
+        color: Color(0xFF060D35),
+        fontSize: 15,
+        fontWeight: FontWeight.w900,
+      ),
     );
   }
 }
@@ -857,20 +984,26 @@ class _DateChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
+      onTap: selected ? null : onTap,
+      borderRadius: BorderRadius.circular(14),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(vertical: 5),
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFEAF7F6) : Colors.white,
-          borderRadius: BorderRadius.circular(10),
+          color: selected ? const Color(0xFF078D92) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: selected ? const Color(0xFF078D92) : const Color(0xFFE2E6EA),
+            color: selected
+                ? const Color(0xFF078D92)
+                : const Color(0xFFE2E6EA),
+            width: selected ? 0 : 1.2,
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.045),
+              color: selected
+                  ? const Color(0xFF078D92).withValues(alpha: 0.32)
+                  : Colors.black.withValues(alpha: 0.045),
               blurRadius: 14,
               offset: const Offset(0, 6),
             ),
@@ -882,32 +1015,30 @@ class _DateChip extends StatelessWidget {
             Text(
               date.day,
               style: TextStyle(
-                color: selected
-                    ? const Color(0xFF078D92)
-                    : const Color(0xFF060D35),
-                fontSize: 9,
+                color: selected ? Colors.white : const Color(0xFF060D35),
+                fontSize: 10,
                 height: 1.05,
                 fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
             Text(
               date.date,
               style: TextStyle(
-                color: selected
-                    ? const Color(0xFF078D92)
-                    : const Color(0xFF060D35),
-                fontSize: 13.5,
+                color: selected ? Colors.white : const Color(0xFF060D35),
+                fontSize: 16,
                 height: 1,
                 fontWeight: FontWeight.w900,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
             Text(
               date.month,
-              style: const TextStyle(
-                color: Color(0xFF29304D),
-                fontSize: 9,
+              style: TextStyle(
+                color: selected
+                    ? Colors.white.withValues(alpha: 0.85)
+                    : const Color(0xFF29304D),
+                fontSize: 10,
                 height: 1.05,
                 fontWeight: FontWeight.w600,
               ),
@@ -927,8 +1058,8 @@ class _CalendarChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 34,
-      height: 58,
+      width: 38,
+      height: 66,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
@@ -988,19 +1119,28 @@ class _TimeGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        for (var i = 0; i < times.length; i++) ...[
-          Expanded(
-            child: _TimeChip(
-              label: times[i],
-              selected: selectedTime == times[i],
-              onTap: () => onTimeSelected(times[i]),
-            ),
-          ),
-          if (i != times.length - 1) const SizedBox(width: 12),
-        ],
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth =
+            constraints.maxWidth.isFinite ? constraints.maxWidth : 340.0;
+        const gap = 10.0;
+        final chipWidth = ((maxWidth - gap * 2) / 3).clamp(96.0, 160.0);
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final time in times)
+              SizedBox(
+                width: chipWidth,
+                child: _TimeChip(
+                  label: time,
+                  selected: selectedTime == time,
+                  onTap: () => onTimeSelected(time),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -1019,25 +1159,28 @@ class _TimeChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 26,
+      height: 42,
       child: OutlinedButton(
-        onPressed: onTap,
+        onPressed: selected ? null : onTap,
         style: OutlinedButton.styleFrom(
           backgroundColor: selected ? const Color(0xFF078D92) : Colors.white,
           foregroundColor: selected ? Colors.white : const Color(0xFF060D35),
           side: BorderSide(
-            color: selected ? const Color(0xFF078D92) : const Color(0xFFE1E5EA),
+            color: selected
+                ? const Color(0xFF078D92)
+                : const Color(0xFFE1E5EA),
+            width: 1.2,
           ),
-          padding: EdgeInsets.zero,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(11),
           ),
         ),
         child: FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
             label,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
           ),
         ),
       ),
@@ -1100,54 +1243,154 @@ class _SubservicePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Choose subservices',
-            style: TextStyle(
-              color: Color(0xFF060D35),
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 6),
-          for (final sub in subservices)
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              controlAffinity: ListTileControlAffinity.leading,
-              title: Text(
-                sub['name'] ?? '',
-                style: const TextStyle(
-                  color: Color(0xFF29304D),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Add-on services',
+                style: TextStyle(
+                  color: Color(0xFF060D35),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-              subtitle: ((sub['price'] ?? '').isNotEmpty ||
-                      (sub['hours'] ?? '').isNotEmpty)
-                  ? Text(
-                      [
-                        if ((sub['price'] ?? '').isNotEmpty)
-                          _formatSubPrice(sub['price']),
-                        if ((sub['hours'] ?? '').isNotEmpty)
-                          '${sub['hours']}h',
-                      ].join(' · '),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF7F6),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '${selected.length}/${subservices.length} selected',
+                style: const TextStyle(
+                  color: Color(0xFF078D92),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        for (var i = 0; i < subservices.length; i++) ...[
+          _SubserviceRow(
+            name: subservices[i]['name'] ?? '',
+            subtitle: ((subservices[i]['price'] ?? '').isNotEmpty ||
+                    (subservices[i]['hours'] ?? '').isNotEmpty)
+                ? [
+                    if ((subservices[i]['price'] ?? '').isNotEmpty)
+                      _formatSubPrice(subservices[i]['price']),
+                    if ((subservices[i]['hours'] ?? '').isNotEmpty)
+                      '${subservices[i]['hours']}h',
+                  ].join(' · ')
+                : '',
+            selected:
+                selected.contains(subservices[i]['name']),
+            onTap: () => onToggled(subservices[i]['name'] ?? '',
+                !selected.contains(subservices[i]['name'])),
+          ),
+          if (i != subservices.length - 1) const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+}
+
+class _SubserviceRow extends StatelessWidget {
+  final String name;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SubserviceRow({
+    required this.name,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: selected
+              ? const Color(0xFFEAF7F6)
+              : const Color(0xFFF7F8FA),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected
+                ? const Color(0xFF078D92)
+                : const Color(0xFFE8EBF0),
+            width: 1.2,
+          ),
+        ),
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: selected
+                    ? const Color(0xFF078D92)
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: selected
+                      ? const Color(0xFF078D92)
+                      : const Color(0xFFC9CED6),
+                  width: 1.4,
+                ),
+              ),
+              child: selected
+                  ? const Icon(LucideIcons.check,
+                      color: Colors.white, size: 15)
+                  : null,
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF060D35),
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Color(0xFF6E748B),
-                        fontSize: 11.5,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                       ),
-                    )
-                  : null,
-              value: selected.contains(sub['name']),
-              activeColor: const Color(0xFF078D92),
-              onChanged: (value) =>
-                  onToggled(sub['name'] ?? '', value ?? false),
+                    ),
+                  ],
+                ],
+              ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1189,81 +1432,120 @@ class _ReviewRequestStep extends StatelessWidget {
     return Column(
       children: [
         Container(
+          padding: const EdgeInsets.all(12),
+          decoration: storeSoftCardDecoration(radius: 16),
+          child: _ReviewServiceSummary(
+            service: service,
+            provider: provider,
+            providerName: providerName,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEAF7F6),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: _SlotTile(
+                      icon: LucideIcons.calendarDays,
+                      label: 'Date',
+                      value: selectedDate.heading,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _SlotTile(
+                      icon: LucideIcons.clock,
+                      label: 'Time',
+                      value: selectedTime,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _SlotTile(
+                      icon: LucideIcons.hourglass,
+                      label: 'Duration',
+                      value: selectedDuration,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _SlotTile(
+                      icon: LucideIcons.mapPin,
+                      label: 'Address',
+                      value: addressLine.isEmpty
+                          ? 'Select address'
+                          : addressLine,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                height: 38,
+                child: OutlinedButton(
+                  onPressed: onAddressTap,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF078D92),
+                    side: const BorderSide(color: Color(0xFF078D92)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text(
+                    'Change slot or address',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (subservices.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: storeSoftCardDecoration(radius: 16),
+            child: _SubservicePicker(
+              subservices: subservices,
+              selected: selectedSubservices,
+              onToggled: onSubserviceToggled,
+            ),
+          ),
+        ],
+        const SizedBox(height: 10),
+        Container(
           decoration: storeSoftCardDecoration(radius: 16),
           clipBehavior: Clip.antiAlias,
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-                child: _ReviewServiceSummary(
-                  service: service,
-                  provider: provider,
-                  providerName: providerName,
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+                child: _ReviewBCoinsRow(
+                  value: useBCoins,
+                  onChanged: onUseBCoinsChanged,
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _ReviewInfoRow(
-                            icon: LucideIcons.calendarDays,
-                            text: selectedDate.heading,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _ReviewInfoRow(
-                            icon: LucideIcons.clock,
-                            text: selectedTime,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    _ReviewInfoRow(
-                      icon: LucideIcons.clock3,
-                      text: selectedDuration,
-                    ),
-                    const SizedBox(height: 10),
-                    InkWell(
-                      onTap: onAddressTap,
-                      child: _ReviewInfoRow(
-                        icon: LucideIcons.mapPin,
-                        text: addressLine.isEmpty
-                            ? 'Select address'
-                            : addressLine,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (subservices.isNotEmpty) ...[
-                const _ReviewDivider(),
-                _SubservicePicker(
-                  subservices: subservices,
-                  selected: selectedSubservices,
-                  onToggled: onSubserviceToggled,
-                ),
-              ],
-              const _ReviewDivider(),
-              const _ReviewActionRow(
-                icon: LucideIcons.penLine,
-                title: 'Add a note',
-              ),
-              const _ReviewDivider(),
-              _ReviewBCoinsRow(
-                value: useBCoins,
-                onChanged: onUseBCoinsChanged,
               ),
               const _ReviewDivider(),
               const _ReviewPaymentRow(),
               const _ReviewDivider(),
               Padding(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 child: Row(
                   children: [
                     const Expanded(
@@ -1271,7 +1553,7 @@ class _ReviewRequestStep extends StatelessWidget {
                         'Estimated total',
                         style: TextStyle(
                           color: Color(0xFF060D35),
-                          fontSize: 13,
+                          fontSize: 14,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -1280,7 +1562,7 @@ class _ReviewRequestStep extends StatelessWidget {
                       service.price,
                       style: const TextStyle(
                         color: Color(0xFF078D92),
-                        fontSize: 17,
+                        fontSize: 20,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -1378,6 +1660,15 @@ class _ReviewServiceSummary extends StatelessWidget {
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                Text(
+                  service.price,
+                  style: const TextStyle(
+                    color: Color(0xFF078D92),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1433,34 +1724,58 @@ class _ReviewProviderAvatar extends StatelessWidget {
   }
 }
 
-class _ReviewInfoRow extends StatelessWidget {
+class _SlotTile extends StatelessWidget {
   final IconData icon;
-  final String text;
+  final String label;
+  final String value;
 
-  const _ReviewInfoRow({
+  const _SlotTile({
     required this.icon,
-    required this.text,
+    required this.label,
+    required this.value,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, color: const Color(0xFF29304D), size: 18),
-        const SizedBox(width: 11),
-        Expanded(
-          child: Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Color(0xFF29304D),
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: const Color(0xFF078D92), size: 18),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label.toUpperCase(),
+                  style: const TextStyle(
+                    color: Color(0xFF6E748B),
+                    fontSize: 9.5,
+                    letterSpacing: 0.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF060D35),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -1575,8 +1890,13 @@ class _ReviewBCoinsRowState extends State<_ReviewBCoinsRow> {
               scale: 0.75,
               child: Switch(
                 value: widget.value,
-                activeThumbColor: const Color(0xFF078D92),
                 onChanged: widget.onChanged,
+                activeThumbColor: Colors.white,
+                activeTrackColor: const Color(0xFF078D92),
+                inactiveThumbColor: Colors.white,
+                inactiveTrackColor: const Color(0xFFD5DAE1),
+                trackOutlineColor:
+                    const WidgetStatePropertyAll(Colors.transparent),
               ),
             ),
           ],

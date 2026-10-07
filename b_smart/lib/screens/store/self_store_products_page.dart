@@ -90,8 +90,10 @@ class _SelfStoreProductsPageState extends State<SelfStoreProductsPage> {
     }
   }
 
-  /// Loads my products and defensively drops anything owned by someone else,
-  /// so a backend hiccup can never show another seller's products here.
+  /// Loads my products from the personal endpoint. The `/influencer-products/my`
+  /// route already scopes to the current seller, so we do not second-guess it
+  /// with client-side ownership checks — a backend hiccup should surface as an
+  /// empty list, never as another seller's products.
   static Future<List<Map<String, dynamic>>> _loadMyProducts(
       {bool forceNetwork = false}) async {
     final myId = await CurrentUser.id;
@@ -110,49 +112,22 @@ class _SelfStoreProductsPageState extends State<SelfStoreProductsPage> {
     }
 
     final items = await Phase2StoreApi().myProducts();
-    if (myId == null || myId.isEmpty) return items;
-    final filtered = items.where((item) => _isMine(item, myId)).toList();
-    try {
-      await pageCache.set(
-          'store', myId, cacheParams, jsonEncode(filtered));
-    } on Exception catch (_) {}
-    return filtered;
+    if (myId != null && myId.isNotEmpty) {
+      try {
+        await pageCache.set(
+            'store', myId, cacheParams, jsonEncode(items));
+      } on Exception catch (_) {}
+    }
+    return items;
   }
 
-  static bool _isMine(Map<String, dynamic> item, String myId) {
-    const ownerKeys = [
-      'influencer_id',
-      'influencerId',
-      'user_id',
-      'userId',
-      'owner_id',
-      'ownerId',
-      'seller_id',
-      'sellerId',
-      'created_by',
-      'createdBy',
-    ];
-    var sawOwner = false;
-    for (final key in ownerKeys) {
-      final value = item[key]?.toString().trim();
-      if (value == null || value.isEmpty || value == 'null') continue;
-      sawOwner = true;
-      if (value == myId) return true;
-    }
-    const nestedKeys = ['influencer', 'owner', 'seller', 'user', 'created_by'];
-    for (final key in nestedKeys) {
-      final nested = item[key];
-      if (nested is! Map) continue;
-      final map = nested.map((k, v) => MapEntry(k.toString(), v));
-      for (final idKey in ['id', '_id', 'user_id', 'userId']) {
-        final value = map[idKey]?.toString().trim();
-        if (value == null || value.isEmpty || value == 'null') continue;
-        sawOwner = true;
-        if (value == myId) return true;
-      }
-    }
-    // No owner info on the item: trust the server-side `/my` filter.
-    return !sawOwner ? true : false;
+  static String _productStatus(Map<String, dynamic> product) {
+    final raw = _text(product, const ['status']);
+    if (raw.isEmpty) return 'Active';
+    final value = raw.toLowerCase();
+    if (value == 'active' || value == 'published') return 'Active';
+    if (value == 'out_of_stock' || value == 'out of stock') return 'Out of Stock';
+    return 'Draft';
   }
 
   @override
@@ -201,12 +176,11 @@ class _SelfStoreProductsPageState extends State<SelfStoreProductsPage> {
               );
             }
             final filtered = products.where((product) {
-              final status = _text(product, const ['status']).toLowerCase();
-              final stock = _number(product, const ['stock_quantity']);
+              final status = _productStatus(product);
               return switch (_selectedTab) {
-                0 => status != 'draft' && stock > 0,
-                1 => status == 'draft',
-                _ => stock <= 0,
+                0 => status == 'Active',
+                1 => status == 'Draft',
+                _ => status == 'Out of Stock',
               };
             }).toList();
             return Column(

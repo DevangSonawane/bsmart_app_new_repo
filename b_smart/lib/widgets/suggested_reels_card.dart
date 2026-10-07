@@ -50,7 +50,7 @@ class SuggestedReelsCard extends StatelessWidget {
                     'Suggested bSparks',
                     style: GoogleFonts.montserrat(
                       color: titleColor,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.normal,
                       fontSize: 15,
                     ),
                   ),
