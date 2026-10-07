@@ -4,7 +4,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../api/phase2_store_api.dart';
 import '../../services/auth/auth_service.dart';
 import '../../services/wallet_service.dart';
-import '../../utils/url_helper.dart';
 import 'self_store_products_page.dart';
 import 'self_store_services_manage_page.dart';
 import 'shared/store_shared_widgets.dart';
@@ -1134,28 +1133,7 @@ double _listingNumber(Map<String, dynamic> source, List<String> keys) {
 }
 
 String _listingImageUrl(Map<String, dynamic> item) {
-  for (final key in ['image_url', 'imageUrl', 'thumbnail', 'cover_image']) {
-    final value = item[key]?.toString().trim();
-    if (value != null && value.isNotEmpty && value != 'null') {
-      return UrlHelper.absoluteUrl(value);
-    }
-  }
-  final images = item['images'];
-  if (images is List && images.isNotEmpty) {
-    final first = images.first;
-    if (first is String && first.trim().isNotEmpty) {
-      return UrlHelper.absoluteUrl(first.trim());
-    }
-    if (first is Map) {
-      for (final key in ['url', 'fileName', 'filename', 'path', 'src']) {
-        final value = first[key]?.toString().trim();
-        if (value != null && value.isNotEmpty && value != 'null') {
-          return UrlHelper.absoluteUrl(value);
-        }
-      }
-    }
-  }
-  return '';
+  return StoreMockState.firstImageUrl(item);
 }
 
 class _ToggleTab extends StatelessWidget {

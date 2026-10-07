@@ -56,7 +56,7 @@ class StoreImageEditor extends StatefulWidget {
     ]) {
       final value = entry[key]?.toString().trim() ?? '';
       if (value.isEmpty) continue;
-      final resolved = UrlHelper.absoluteUrl(value);
+      final resolved = UrlHelper.normalizeUrl(value);
       if (resolved.isNotEmpty) return resolved;
     }
     return '';
@@ -80,8 +80,7 @@ class _StoreImageEditorState extends State<StoreImageEditor> {
     if (_uploading) return;
     setState(() => _uploading = true);
     try {
-      final picked =
-          await ImagePicker().pickImage(source: ImageSource.gallery);
+      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
       if (picked == null || !mounted) return;
 
       String? name;
@@ -124,13 +123,13 @@ class _StoreImageEditorState extends State<StoreImageEditor> {
     for (final key in ['data', 'file', 'result']) {
       final nested = upload[key];
       if (nested is Map) {
-        final name = _uploadName(
-            nested.map((k, v) => MapEntry(k.toString(), v)));
+        final name =
+            _uploadName(nested.map((k, v) => MapEntry(k.toString(), v)));
         if (name.isNotEmpty) return name;
       }
       if (nested is List && nested.isNotEmpty && nested.first is Map) {
-        final name = _uploadName((nested.first as Map)
-            .map((k, v) => MapEntry(k.toString(), v)));
+        final name = _uploadName(
+            (nested.first as Map).map((k, v) => MapEntry(k.toString(), v)));
         if (name.isNotEmpty) return name;
       }
     }
@@ -196,8 +195,7 @@ class _StoreImageEditorState extends State<StoreImageEditor> {
               itemCount: _images.length,
               separatorBuilder: (_, __) => const SizedBox(width: 8),
               itemBuilder: (context, index) {
-                final url =
-                    StoreImageEditor.thumbUrl(_images[index]);
+                final url = StoreImageEditor.thumbUrl(_images[index]);
                 return Stack(
                   children: [
                     ClipRRect(

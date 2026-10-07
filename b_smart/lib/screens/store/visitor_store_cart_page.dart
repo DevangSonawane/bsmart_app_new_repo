@@ -528,7 +528,7 @@ class _CartItemCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 12, 10, 0),
       child: Container(
-        height: 126,
+        height: 142,
         padding: const EdgeInsets.all(10),
         decoration: storeSoftCardDecoration(radius: 12),
         child: Row(
@@ -539,7 +539,7 @@ class _CartItemCard extends StatelessWidget {
                   imageUrl: line.item.imageUrl,
                   icon: line.item.icon,
                   width: 116,
-                  height: 106,
+                  height: 122,
                   borderRadius: 9,
                   debugLabel: 'store-cart-item',
                 ),
@@ -593,19 +593,34 @@ class _CartItemCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 4),
-                   Expanded(
-                     child: Text(
-                       '${StoreMockState.instance.money(line.unitPrice)}'
-                       '${line.quantity > 1 ? ' x ${line.quantity}' : ''}'
-                       '${line.variantLabel.isEmpty ? '' : ' · ${line.variantLabel}'}',
-                       style: const TextStyle(
-                         color: BStoreColors.primary,
-                         fontSize: 15,
-                         fontWeight: FontWeight.w900,
-                       ),
-                     ),
-                   ),
-                   Row(
+                  Text(
+                    '${StoreMockState.instance.money(line.unitPrice)}'
+                    '${line.quantity > 1 ? ' x ${line.quantity}' : ''}'
+                    '${line.variantLabel.isEmpty ? '' : ' · ${line.variantLabel}'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: BStoreColors.primary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    StoreMockState.instance.stockLabelFor(
+                      line.item,
+                      variant: line.variant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: BStoreColors.textSoft,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Row(
                     children: [
                       _QuantityStepper(
                         quantity: line.quantity,

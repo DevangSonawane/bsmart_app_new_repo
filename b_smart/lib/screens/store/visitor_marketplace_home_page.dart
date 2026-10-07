@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api/api_client.dart';
+import '../../services/page_cache_service.dart';
 import '../../services/supabase_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
@@ -41,6 +43,7 @@ class _VisitorMarketplaceHomePageState
   _VisitorStoreFilter _selectedFilter = _VisitorStoreFilter.all;
   late Future<_VisitorStoreOwner?> _ownerFuture;
   String _searchQuery = '';
+  final PageCacheService _pageCache = PageCacheService();
 
   @override
   void initState() {
@@ -73,9 +76,48 @@ class _VisitorMarketplaceHomePageState
     if (mounted) setState(() {});
   }
 
-  Future<_VisitorStoreOwner?> _loadOwner() async {
+  Future<_VisitorStoreOwner?> _loadOwner({bool forceNetwork = false}) async {
     final ownerId = widget.ownerUserId?.trim();
     if (ownerId == null || ownerId.isEmpty) return null;
+
+    final cacheParams = <String, dynamic>{'ownerId': ownerId};
+    final cached = forceNetwork
+        ? null
+        : await _pageCache.get('vendor_public', ownerId, cacheParams);
+
+    if (cached != null && !forceNetwork) {
+      try {
+        final decoded = jsonDecode(cached) as Map<String, dynamic>;
+        final user = _map(decoded['user'] ?? decoded);
+        final displayName = _firstString(user, const [
+          'full_name',
+          'fullName',
+          'displayName',
+          'name',
+          'username',
+        ]);
+        final avatarUrl = UrlHelper.absoluteUrl(
+          _firstString(user, const [
+                'avatar_url',
+                'avatarUrl',
+                'profile_picture',
+                'profilePicture',
+                'profile_image',
+                'profileImage',
+                'photoUrl',
+                'avatar',
+              ]) ??
+              '',
+        );
+        return _VisitorStoreOwner(
+          displayName: displayName ?? 'Store owner',
+          avatarUrl: avatarUrl,
+          avatarHeaders: null,
+        );
+      } on Exception catch (_) {
+        _pageCache.invalidate('vendor_public', ownerId);
+      }
+    }
 
     final user = await SupabaseService().getUserById(ownerId);
     if (user == null) return null;
@@ -108,11 +150,29 @@ class _VisitorMarketplaceHomePageState
       }
     }
 
-    return _VisitorStoreOwner(
+    final owner = _VisitorStoreOwner(
       displayName: displayName ?? 'Store owner',
       avatarUrl: avatarUrl,
       avatarHeaders: avatarHeaders,
     );
+
+    try {
+      await _pageCache.set(
+        'vendor_public',
+        ownerId,
+        cacheParams,
+        jsonEncode(<String, dynamic>{
+          'user': user,
+        }),
+      );
+    } on Exception catch (_) {}
+
+    return owner;
+  }
+
+  static Map<String, dynamic> _map(dynamic value) {
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return <String, dynamic>{};
   }
 
   static String? _firstString(Map<String, dynamic> source, List<String> keys) {
@@ -829,7 +889,7 @@ class _StoreItemsGrid extends StatelessWidget {
           crossAxisCount: 2,
           crossAxisSpacing: gap,
           mainAxisSpacing: 12,
-          childAspectRatio: columnWidth / 260,
+          childAspectRatio: columnWidth / 274,
           children: children,
         );
       },
@@ -1069,6 +1129,15 @@ class _ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stockLabel = StoreMockState.instance.stockLabelFor(item);
+    final stockQuantity = StoreMockState.instance.stockQuantityFor(item);
+    final stockColor = stockQuantity == null
+        ? const Color(0xFF078D92)
+        : stockQuantity <= 0
+            ? const Color(0xFFB3261E)
+            : stockQuantity <= 5
+                ? const Color(0xFFD97706)
+                : const Color(0xFF078D92);
     return InkWell(
       onTap: () => _openDetail(context),
       borderRadius: BorderRadius.circular(14),
@@ -1127,7 +1196,21 @@ class _ProductCard extends StatelessWidget {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
+                      if (stockLabel.isNotEmpty) ...[
+                        Text(
+                          stockLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: stockColor,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                      ] else
+                        const SizedBox(height: 6),
                       Row(
                         children: [
                           const Icon(
@@ -1232,7 +1315,7 @@ class _VisitorProductGrid extends StatelessWidget {
           crossAxisCount: 2,
           crossAxisSpacing: gap,
           mainAxisSpacing: 12,
-          childAspectRatio: columnWidth / 260,
+          childAspectRatio: columnWidth / 274,
           children: children,
         );
       },
@@ -1264,6 +1347,15 @@ class _VisitorProductGridCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stockLabel = StoreMockState.instance.stockLabelFor(item);
+    final stockQuantity = StoreMockState.instance.stockQuantityFor(item);
+    final stockColor = stockQuantity == null
+        ? const Color(0xFF078D92)
+        : stockQuantity <= 0
+            ? const Color(0xFFB3261E)
+            : stockQuantity <= 5
+                ? const Color(0xFFD97706)
+                : const Color(0xFF078D92);
     return InkWell(
       onTap: () => _openDetail(context),
       borderRadius: BorderRadius.circular(14),
@@ -1310,7 +1402,21 @@ class _VisitorProductGridCard extends StatelessWidget {
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
+                      if (stockLabel.isNotEmpty) ...[
+                        Text(
+                          stockLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: stockColor,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                      ] else
+                        const SizedBox(height: 6),
                       Row(
                         children: [
                           const Icon(

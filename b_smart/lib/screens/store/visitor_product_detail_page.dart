@@ -293,6 +293,14 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
     final product = VisitorProductDetailData(item: _item);
     final maxQuantity = _maxQuantity;
     final isOutOfStock = maxQuantity <= 0;
+    final stockLabel = StoreMockState.instance.stockLabelFor(
+      _item,
+      variant: _selectedVariant,
+    );
+    final stockQuantity = StoreMockState.instance.stockQuantityFor(
+      _item,
+      variant: _selectedVariant,
+    );
 
     return Theme(
       data: BStoreTheme.data(context),
@@ -350,7 +358,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                           ),
                         ),
                       ),
-                      _StockBadge(stock: _maxQuantity),
+                      _StockBadge(label: stockLabel, stock: stockQuantity),
                     ],
                   ),
                   const SizedBox(height: 11),
@@ -399,6 +407,21 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                             : () => _setQuantity(_quantity + 1),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    isOutOfStock
+                        ? 'This option is currently unavailable.'
+                        : stockQuantity == null
+                            ? 'Quantity is checked again before checkout.'
+                            : 'You can add up to $maxQuantity ${maxQuantity == 1 ? 'unit' : 'units'} for this option.',
+                    style: TextStyle(
+                      color: isOutOfStock
+                          ? const Color(0xFFB3261E)
+                          : BStoreColors.textSoft,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   if (_variants.isNotEmpty) ...[
                     const SizedBox(height: 14),
@@ -801,20 +824,17 @@ class _RatingLine extends StatelessWidget {
 }
 
 class _StockBadge extends StatelessWidget {
+  final String label;
   final int? stock;
 
-  const _StockBadge({required this.stock});
+  const _StockBadge({
+    required this.label,
+    required this.stock,
+  });
 
   @override
   Widget build(BuildContext context) {
     final inStock = (stock ?? 1) > 0;
-    final label = stock == null
-        ? 'In stock'
-        : !inStock
-            ? 'Out of stock'
-            : stock! <= 5
-                ? 'Only $stock left'
-                : 'In stock';
     final color = !inStock ? const Color(0xFFB3261E) : BStoreColors.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),

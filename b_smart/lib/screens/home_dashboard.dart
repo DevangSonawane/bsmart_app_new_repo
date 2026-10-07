@@ -327,6 +327,7 @@ class _HomeDashboardState extends State<HomeDashboard>
   final FollowsApi _followsApi = FollowsApi();
   final UsersApi _usersApi = UsersApi();
   final SuggestionsApi _suggestionsApi = SuggestionsApi();
+  final PageCacheService _pageCache = PageCacheService();
   String? _currentLocation;
   bool _locationLoading = false;
 
@@ -1544,16 +1545,6 @@ class _HomeDashboardState extends State<HomeDashboard>
     var vendorBlockIndex = 0;
     var insertCycleIndex = 0;
 
-    // Temporary test placement: surface suggested people at the very top.
-    final hasPeopleSuggestions = _followSuggestionsLoading ||
-        _followSuggestions.any(
-          (u) => !_dismissedSuggestionUserIds.contains(u.id),
-        );
-    if (hasPeopleSuggestions) {
-      rows.add(_FeedRenderRow.peopleSuggestions(peopleBlockIndex));
-      peopleBlockIndex++;
-    }
-
     FeedPost? nextAdForBlock(int idx) {
       final list = _adSuggestions;
       if (list.isEmpty) return null;
@@ -1569,8 +1560,8 @@ class _HomeDashboardState extends State<HomeDashboard>
       if (postCount % 5 != 0) continue;
 
       // After every 5 posts, insert ONE block in a repeating cycle:
-      // Reels → Ads → Vendors → (repeat)
-      final cycle = insertCycleIndex % 3;
+      // Reels -> Ads -> People -> Vendors -> (repeat)
+      final cycle = insertCycleIndex % 4;
       insertCycleIndex++;
 
       switch (cycle) {
@@ -1586,6 +1577,15 @@ class _HomeDashboardState extends State<HomeDashboard>
           }
           break;
         case 2:
+          final hasPeople = _followSuggestions.any(
+            (u) => !_dismissedSuggestionUserIds.contains(u.id),
+          );
+          if (_followSuggestionsLoading || hasPeople) {
+            rows.add(_FeedRenderRow.peopleSuggestions(peopleBlockIndex));
+            peopleBlockIndex++;
+          }
+          break;
+        case 3:
         default:
           final hasVendors = _vendorSuggestions.any(
             (u) => !_dismissedVendorSuggestionIds.contains(u.id),
@@ -1693,8 +1693,7 @@ class _HomeDashboardState extends State<HomeDashboard>
       _lastAutoRefreshAt = now;
       final store = StoreProvider.of<AppState>(context);
       _beginFeedSkeletonLoading();
-      unawaited(Future.wait(
-          [_loadData(store), _loadInitialFeed(forceNetwork: true)]));
+      unawaited(Future.wait([_loadData(store), _loadInitialFeed()]));
     });
   }
 
@@ -1836,26 +1835,57 @@ class _HomeDashboardState extends State<HomeDashboard>
     } finally {}
   }
 
-  Future<void> _loadInitialFeed({bool forceNetwork = false}) async {
+  Future<void> _loadInitialFeed({bool forceNetwork = false, bool isRefresh = false}) async {
     try {
       await primeMediaAuthHeaders(); // ensure auth headers ready before any image loads
       unawaited(_loadReelSuggestions(force: forceNetwork));
       final store = StoreProvider.of<AppState>(context);
+      final currentUserId = await CurrentUser.id;
+      final cacheParams = <String, dynamic>{'pageSize': _pageSize};
+      final cached = forceNetwork
+          ? null
+          : await _pageCache.get('home_feed', currentUserId ?? '', cacheParams);
+
+      if (cached != null && !forceNetwork) {
+        try {
+          final decoded = jsonDecode(cached) as List;
+          final items = decoded
+              .map((e) => FeedPost.fromJson(Map<String, dynamic>.from(e)))
+              .toList();
+          if (items.isNotEmpty && mounted) {
+            store.dispatch(SetFeedPosts(items));
+            setState(() {
+              _activeFeedPostId = items.first.id;
+              _activeFeedPostIdListenable.value = _activeFeedPostId;
+              _visibleCount = items.length;
+              _pageCursor = 2;
+              _pagingInFlight = false;
+              _noMorePages = items.isEmpty;
+            });
+            if (items.isNotEmpty) {
+              unawaited(_precacheFeedMedia(items));
+            }
+            return;
+          }
+        } on Exception catch (_) {
+          _pageCache.invalidate('home_feed', currentUserId ?? '');
+        }
+      }
+
       final isFirstLoad = store.state.feedState.posts.isEmpty || forceNetwork;
-      if (isFirstLoad) {
+      if (isFirstLoad && !isRefresh) {
         _prewarmedFeedIds.clear();
         _prewarmedFeedAvatarUrls.clear();
       }
 
-      // Only show full-screen spinner on genuine first load
-      if (isFirstLoad) {
+      // Only show full-screen spinner on genuine first load, not on pull-to-refresh
+      if (isFirstLoad && !isRefresh) {
         store.dispatch(SetFeedLoading(true));
         if (forceNetwork) {
           store.dispatch(SetFeedPosts(const []));
         }
       }
 
-      final currentUserId = await CurrentUser.id;
       List<FeedPost> items = const <FeedPost>[];
       try {
         items = await _feedService.fetchFeedFromBackend(
@@ -1913,7 +1943,7 @@ class _HomeDashboardState extends State<HomeDashboard>
         return;
       }
 
-      if (items.isNotEmpty) {
+      if (items.isNotEmpty && !isRefresh) {
         await _precacheFeedMedia(items);
         if (!mounted) {
           if (isFirstLoad) store.dispatch(SetFeedLoading(false));
@@ -1944,14 +1974,24 @@ class _HomeDashboardState extends State<HomeDashboard>
         _noMorePages = items.isEmpty || prefetchNoMore;
       });
 
-      if (isFirstLoad) store.dispatch(SetFeedLoading(false));
+      if (isFirstLoad && !isRefresh) store.dispatch(SetFeedLoading(false));
 
       // If list is too short to scroll, proactively load next page
-      if (items.isNotEmpty) {
+      // Skip prefetching on pull-to-refresh to keep it fast
+      if (items.isNotEmpty && !isRefresh) {
         _checkIfListNeedsMorePosts();
         // Ensure we have a full initial batch without requiring a scroll.
         unawaited(_prefetchUntil(minPosts: _pageSize, maxPages: 3));
       }
+
+      try {
+        await _pageCache.set(
+          'home_feed',
+          currentUserId ?? '',
+          cacheParams,
+          jsonEncode(items.map((e) => e.toJson()).toList()),
+        );
+      } on Exception catch (_) {}
     } finally {
       _endFeedSkeletonLoading();
     }
@@ -2420,8 +2460,8 @@ class _HomeDashboardState extends State<HomeDashboard>
       final currentUserId = await CurrentUser.id;
       final pageCache = PageCacheService();
       if (currentUserId != null && currentUserId.trim().isNotEmpty) {
-        await pageCache.invalidateAll(
-            ['home_feed', 'profile', 'post'], currentUserId);
+        await pageCache
+            .invalidateAll(['home_feed', 'profile', 'post'], currentUserId);
       }
     } on Exception catch (_) {}
   }
@@ -2973,17 +3013,15 @@ class _HomeDashboardState extends State<HomeDashboard>
     if (_feedScrollController.hasClients) {
       _feedScrollController.jumpTo(0);
     }
-    // Clear Redux posts so isFirstLoad = true in _loadInitialFeed
-    store.dispatch(SetFeedPosts(const []));
-    _beginFeedSkeletonLoading();
-    await Future.wait([_loadData(store), _loadInitialFeed(forceNetwork: true)]);
+    // Keep showing existing cached posts while refreshing in background
+    await Future.wait([_loadData(store), _loadInitialFeed(forceNetwork: true, isRefresh: true)]);
   }
 
   // Silent background refresh after story/route pop — preserve scroll
   Future<void> _onSilentRefresh() async {
     final store = StoreProvider.of<AppState>(context);
     _beginFeedSkeletonLoading();
-    await Future.wait([_loadData(store), _loadInitialFeed(forceNetwork: true)]);
+    await Future.wait([_loadData(store), _loadInitialFeed()]);
   }
 
   Future<void> _openStoryCamera() async {

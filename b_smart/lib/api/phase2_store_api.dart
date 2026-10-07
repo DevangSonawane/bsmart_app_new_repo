@@ -23,8 +23,7 @@ class Phase2StoreApi {
       key = '$path?${entries.map((e) => '${e.key}=${e.value}').join('&')}';
     }
     final hit = _getCache[key];
-    if (hit != null &&
-        DateTime.now().difference(hit.at) < _cacheTtl) {
+    if (hit != null && DateTime.now().difference(hit.at) < _cacheTtl) {
       return hit.data;
     }
     final data = await _client.get(path, queryParams: queryParams);
@@ -152,10 +151,11 @@ class Phase2StoreApi {
     int quantity = 1,
     Map<String, dynamic>? variant,
   }) async {
+    final cartVariant = _cartVariantPayload(variant);
     return _asMap(await _post('/cart/items', body: {
       'product_id': productId,
       'quantity': quantity,
-      if (variant != null && variant.isNotEmpty) 'variant': variant,
+      if (cartVariant.isNotEmpty) 'variant': cartVariant,
     }));
   }
 
@@ -164,10 +164,23 @@ class Phase2StoreApi {
     required int quantity,
     Map<String, dynamic>? variant,
   }) async {
+    final cartVariant = _cartVariantPayload(variant);
     return _asMap(await _patch('/cart/items/$productId', body: {
       'quantity': quantity,
-      if (variant != null && variant.isNotEmpty) 'variant': variant,
+      if (cartVariant.isNotEmpty) 'variant': cartVariant,
     }));
+  }
+
+  static Map<String, dynamic> _cartVariantPayload(
+    Map<String, dynamic>? variant,
+  ) {
+    if (variant == null || variant.isEmpty) return const {};
+    final payload = <String, dynamic>{};
+    for (final key in const ['color', 'size']) {
+      final value = variant[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) payload[key] = value;
+    }
+    return payload;
   }
 
   Future<void> removeCartItem(String productId) async {

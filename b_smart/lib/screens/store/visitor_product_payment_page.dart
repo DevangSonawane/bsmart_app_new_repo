@@ -99,8 +99,7 @@ class _VisitorProductPaymentPageState extends State<VisitorProductPaymentPage> {
                       trailing: _selectedMethod == 'razorpay'
                           ? const _SelectedPill()
                           : null,
-                      onTap: () =>
-                          setState(() => _selectedMethod = 'razorpay'),
+                      onTap: () => setState(() => _selectedMethod = 'razorpay'),
                     ),
                     const SizedBox(height: 10),
                     AnimatedBuilder(
@@ -588,13 +587,11 @@ class _PayButtonState extends State<_PayButton> {
     List<StoreMockCartLine> productLines,
   ) {
     final serverOrder = response['order'];
-    final serverMap = serverOrder is Map
-        ? Map<String, dynamic>.from(serverOrder)
-        : response;
-    final serverId = (serverMap['id'] ??
-            serverMap['_id'] ??
-            serverMap['order_id'])
-        ?.toString();
+    final serverMap =
+        serverOrder is Map ? Map<String, dynamic>.from(serverOrder) : response;
+    final serverId =
+        (serverMap['id'] ?? serverMap['_id'] ?? serverMap['order_id'])
+            ?.toString();
     return StoreMockOrder(
       id: (serverId == null || serverId.isEmpty)
           ? 'BS${DateTime.now().millisecondsSinceEpoch}'
@@ -628,6 +625,7 @@ class _PayButtonState extends State<_PayButton> {
     // Creates the backend order first (stays pending until verified).
     final response = await StoreMockState.instance.checkoutWithRazorpay(
       shippingAddress: address,
+      cartPrepared: true,
     );
     if (!mounted) return;
     final order = _orderFrom(response, productLines);
@@ -711,26 +709,14 @@ class _PayButtonState extends State<_PayButton> {
                     Navigator.of(context).maybePop();
                     return;
                   }
-                  final lines = List<StoreMockCartLine>.from(
-                    StoreMockState.instance.cartLines,
-                  );
-                  // Services have no cart per spec: only products go through
-                  // POST /api/orders/checkout.
-                  final productLines = lines
-                      .where((l) => l.item.type == StoreMockItemType.product)
-                      .toList();
-                  if (productLines.isEmpty) {
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                            'Services are booked directly, not via product checkout.'),
-                      ),
-                    );
-                    return;
-                  }
                   setState(() => _submitting = true);
                   try {
+                    // Services have no cart per spec: only products go through
+                    // POST /api/orders/checkout. This also refreshes the
+                    // server cart so optimistic local items cannot drift into
+                    // a backend "cart is empty" checkout error.
+                    final productLines =
+                        await StoreMockState.instance.prepareProductCheckout();
                     final address = widget.shippingAddress;
                     if (widget.paymentMethod == 'razorpay') {
                       await _payWithRazorpay(productLines, address);
@@ -739,6 +725,7 @@ class _PayButtonState extends State<_PayButton> {
                     final response =
                         await StoreMockState.instance.checkoutWithWallet(
                       shippingAddress: address,
+                      cartPrepared: true,
                     );
                     if (!context.mounted) return;
                     _goSuccess(
@@ -850,8 +837,7 @@ class VisitorProductPurchaseSuccessPage extends StatelessWidget {
                     _SuccessRow(label: 'Amount paid', value: amount),
                     const SizedBox(height: 10),
                     _SuccessRow(
-                        label: 'Payment method',
-                        value: paymentMethodLabel),
+                        label: 'Payment method', value: paymentMethodLabel),
                     const SizedBox(height: 10),
                     _SuccessRow(
                       label: _hasService(order) ? 'Fulfillment' : 'Delivery',
@@ -896,8 +882,7 @@ class VisitorProductPurchaseSuccessPage extends StatelessWidget {
                     StoreMockState.instance.refreshBuyerOrders();
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) =>
-                            const StoreOrderTrackingListPage(),
+                        builder: (_) => const StoreOrderTrackingListPage(),
                       ),
                     );
                   },

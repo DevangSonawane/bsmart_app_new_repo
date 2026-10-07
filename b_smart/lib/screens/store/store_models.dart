@@ -30,6 +30,15 @@ enum StoreMockItemType { product, service }
 
 enum StoreMockOrderStatus { newOrder, processing, shipped, completed }
 
+class StoreCheckoutException implements Exception {
+  final String message;
+
+  const StoreCheckoutException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 class StoreMockCatalogItem {
   final String id;
   final StoreMockItemType type;
@@ -117,7 +126,7 @@ class StoreMockCatalogItem {
       category: json['category'] as String,
       description: json['description'] as String,
       imageUrl: json['imageUrl'] as String? ?? '',
-      icon: IconData(json['iconCodePoint'] as int? ?? 0xe800, fontFamily: 'MaterialIcons'),
+      icon: StoreMockState._iconForCategory(json['category'] as String? ?? ''),
       price: (json['price'] as num?)?.toDouble() ?? 0.0,
       duration: json['duration'] as String? ?? '',
       rating: json['rating'] as String? ?? '',
@@ -261,10 +270,13 @@ class StoreMockState extends ChangeNotifier {
   DateTime? _catalogLoadedAt;
   DateTime? _cartLoadedAt;
   Object? _lastError;
+  Object? _lastCartSyncError;
+  Future<void> _cartSync = Future<void>.value();
 
   bool get catalogLoading => _catalogLoading;
   bool get cartLoading => _cartLoading;
   Object? get lastError => _lastError;
+  String? get lastErrorMessage => _lastError?.toString();
 
   List<StoreMockCatalogItem> get products =>
       _catalog.where((item) => item.type == StoreMockItemType.product).toList();
@@ -300,10 +312,49 @@ class StoreMockState extends ChangeNotifier {
     Map<String, dynamic>? variant,
   }) {
     if (item.type != StoreMockItemType.product) return 99;
+    return (stockQuantityFor(item, variant: variant) ?? 99).clamp(0, 99);
+  }
+
+  int? stockQuantityFor(
+    StoreMockCatalogItem item, {
+    Map<String, dynamic>? variant,
+  }) {
+    if (item.type != StoreMockItemType.product) return null;
     final variantLimit = _stockLimitFrom(_cleanVariant(variant));
-    if (variantLimit != null) return variantLimit.clamp(0, 99);
+    if (variantLimit != null) return variantLimit;
     final itemLimit = _stockLimitFrom(item.raw);
-    return (itemLimit ?? 99).clamp(0, 99);
+    if (itemLimit != null) return itemLimit;
+    final variants = variantsOf(item);
+    if (variants.isEmpty) return null;
+    var total = 0;
+    var sawStock = false;
+    for (final option in variants) {
+      final stock = int.tryParse(option['stock'] ?? '');
+      if (stock == null) continue;
+      sawStock = true;
+      total += stock.clamp(0, 1 << 30).toInt();
+    }
+    return sawStock ? total : null;
+  }
+
+  String stockLabelFor(
+    StoreMockCatalogItem item, {
+    Map<String, dynamic>? variant,
+  }) {
+    if (item.type != StoreMockItemType.product) return '';
+    final stock = stockQuantityFor(item, variant: variant);
+    if (stock == null) return 'Available';
+    if (stock <= 0) return 'Out of stock';
+    if (stock <= 5) return 'Only $stock left';
+    return '$stock in stock';
+  }
+
+  bool isAtStockLimit(
+    StoreMockCatalogItem item, {
+    Map<String, dynamic>? variant,
+  }) {
+    final quantity = quantityForVariant(item, variant);
+    return quantity >= maxQuantityFor(item, variant: variant);
   }
 
   static int? _stockLimitFrom(Map<String, dynamic> source) {
@@ -357,6 +408,18 @@ class StoreMockState extends ChangeNotifier {
     return cleaned;
   }
 
+  static Map<String, dynamic> _cartVariantPayload(
+    Map<String, dynamic>? variant,
+  ) {
+    if (variant == null || variant.isEmpty) return const {};
+    final payload = <String, dynamic>{};
+    for (final key in const ['color', 'size']) {
+      final value = variant[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) payload[key] = value;
+    }
+    return payload;
+  }
+
   void addToCart(
     StoreMockCatalogItem item, {
     int quantity = 1,
@@ -398,7 +461,14 @@ class StoreMockState extends ChangeNotifier {
     }
     notifyListeners();
     if (item.type == StoreMockItemType.product && syncQuantity > 0) {
-      unawaited(_syncAddCartItem(item.id, syncQuantity, variant: cleanVariant));
+      final cartVariant = _cartVariantPayload(cleanVariant);
+      _queueCartSync(
+        () => _api.addCartItem(
+          productId: item.id,
+          quantity: syncQuantity,
+          variant: cartVariant,
+        ),
+      );
     }
   }
 
@@ -445,18 +515,26 @@ class StoreMockState extends ChangeNotifier {
     }
     notifyListeners();
     if (item.type == StoreMockItemType.product) {
-      unawaited(
-          _syncUpdateCartItem(item.id, targetQuantity, variant: cleanVariant));
+      final cartVariant = _cartVariantPayload(cleanVariant);
+      _queueCartSync(
+        () => _api.updateCartItem(
+          productId: item.id,
+          quantity: targetQuantity,
+          variant: cartVariant,
+        ),
+      );
     }
   }
 
   void updateQuantity(String itemId, int quantity,
       {Map<String, dynamic>? variant}) {
-    final key = _variantKey(_cleanVariant(variant));
+    final cleanVariant = _cleanVariant(variant);
+    final key = _variantKey(cleanVariant);
     final index = _cartLines.indexWhere(
       (line) => line.item.id == itemId && line.variantKey == key,
     );
     if (index == -1) return;
+    final shouldRemove = quantity <= 0;
     if (quantity <= 0) {
       _cartLines.removeAt(index);
     } else {
@@ -473,8 +551,18 @@ class StoreMockState extends ChangeNotifier {
       quantity = targetQuantity;
     }
     notifyListeners();
-    unawaited(_syncUpdateCartItem(itemId, quantity.clamp(0, 99),
-        variant: _cleanVariant(variant)));
+    if (shouldRemove) {
+      _queueCartSync(() => _api.removeCartItem(itemId));
+    } else {
+      final cartVariant = _cartVariantPayload(cleanVariant);
+      _queueCartSync(
+        () => _api.updateCartItem(
+          productId: itemId,
+          quantity: quantity.clamp(1, 99),
+          variant: cartVariant,
+        ),
+      );
+    }
   }
 
   void removeFromCart(String itemId, {Map<String, dynamic>? variant}) {
@@ -487,7 +575,7 @@ class StoreMockState extends ChangeNotifier {
       );
     }
     notifyListeners();
-    unawaited(_syncRemoveCartItem(itemId));
+    _queueCartSync(() => _api.removeCartItem(itemId));
   }
 
   String money(double amount) => formatStoreMoney(amount, decimals: 2);
@@ -501,12 +589,33 @@ class StoreMockState extends ChangeNotifier {
     String? query,
     String? category,
     Duration maxAge = const Duration(seconds: 45),
-  }) {
-    if (_catalogLoading ||
+  }) async {
+    final userId = await CurrentUser.id;
+    final cacheParams = <String, dynamic>{
+      if (query != null && query.isNotEmpty) 'query': query,
+      if (category != null && category.isNotEmpty) 'category': category,
+    };
+    final cached = await _pageCache.get('store', userId ?? '', cacheParams);
+    if (!_catalogLoading &&
         _isFresh(_catalogLoadedAt, maxAge) &&
-            (query == null || query.isEmpty) &&
-            (category == null || category.isEmpty)) {
+        (query == null || query.isEmpty) &&
+        (category == null || category.isEmpty)) {
       return Future.value();
+    }
+    if (!_catalogLoading && cached != null) {
+      try {
+        final decoded = jsonDecode(cached) as List;
+        final items = decoded
+            .map((e) =>
+                StoreMockCatalogItem.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
+        _catalog = items;
+        _catalogLoadedAt = DateTime.now();
+        notifyListeners();
+        return;
+      } on Exception catch (_) {
+        _pageCache.invalidate('store', userId ?? '');
+      }
     }
     return refreshMarketplace(query: query, category: category);
   }
@@ -540,6 +649,19 @@ class StoreMockState extends ChangeNotifier {
           .toList();
       _catalogLoadedAt = DateTime.now();
       _lastError = null;
+      try {
+        final userId = await CurrentUser.id;
+        final cacheParams = <String, dynamic>{
+          if (query != null && query.isNotEmpty) 'query': query,
+          if (category != null && category.isNotEmpty) 'category': category,
+        };
+        await _pageCache.set(
+          'store',
+          userId ?? '',
+          cacheParams,
+          jsonEncode(_catalog.map((e) => e.toJson()).toList()),
+        );
+      } on Exception catch (_) {}
     } catch (e) {
       _lastError = e;
     } finally {
@@ -570,9 +692,46 @@ class StoreMockState extends ChangeNotifier {
     }
   }
 
+  Future<List<StoreMockCartLine>> prepareProductCheckout() async {
+    await ensureCartSynced();
+    try {
+      final data = await _api.getCart();
+      final items = cartLinesFromApi(data) ?? const <StoreMockCartLine>[];
+      _cartLines
+        ..clear()
+        ..addAll(items);
+      _cartLoadedAt = DateTime.now();
+      _lastError = null;
+      notifyListeners();
+    } catch (e) {
+      _lastError = e;
+      notifyListeners();
+      throw const StoreCheckoutException(
+        'Could not refresh your cart. Please try again.',
+      );
+    }
+
+    final productLines = _cartLines
+        .where((line) => line.item.type == StoreMockItemType.product)
+        .toList(growable: false);
+    if (productLines.isEmpty) {
+      if (_cartLines.isNotEmpty) {
+        throw const StoreCheckoutException(
+          'Services are booked directly, not via product checkout.',
+        );
+      }
+      throw const StoreCheckoutException(
+        'Your cart is empty. Please add a product again before checkout.',
+      );
+    }
+    return productLines;
+  }
+
   Future<Map<String, dynamic>> checkoutWithWallet({
     required Map<String, String> shippingAddress,
+    bool cartPrepared = false,
   }) async {
+    if (!cartPrepared) await prepareProductCheckout();
     final response = await _api.checkoutOrder(
       paymentMethod: 'wallet',
       shippingAddress: shippingAddress,
@@ -588,7 +747,9 @@ class StoreMockState extends ChangeNotifier {
   /// then call [verifyOrderPayment].
   Future<Map<String, dynamic>> checkoutWithRazorpay({
     required Map<String, String> shippingAddress,
+    bool cartPrepared = false,
   }) async {
+    if (!cartPrepared) await prepareProductCheckout();
     final response = await _api.checkoutOrder(
       paymentMethod: 'razorpay',
       shippingAddress: shippingAddress,
@@ -746,34 +907,39 @@ class StoreMockState extends ChangeNotifier {
   static double amountOf(Map<String, dynamic> m) => _number(
       m, const ['total_amount', 'amount', 'total', 'price', 'paid_amount']);
 
-  Future<void> _syncAddCartItem(String productId, int quantity,
-      {Map<String, dynamic>? variant}) async {
-    try {
-      await _api.addCartItem(
-          productId: productId, quantity: quantity, variant: variant);
-    } catch (e) {
-      _lastError = e;
-      notifyListeners();
-    }
+  void _queueCartSync(Future<dynamic> Function() operation) {
+    _cartSync = _cartSync.then((_) async {
+      try {
+        await operation();
+        _lastCartSyncError = null;
+      } catch (e) {
+        _lastCartSyncError = e;
+        try {
+          final data = await _api.getCart();
+          final items = cartLinesFromApi(data);
+          if (items != null) {
+            _cartLines
+              ..clear()
+              ..addAll(items);
+            _cartLoadedAt = DateTime.now();
+          }
+        } catch (_) {
+          // Keep the optimistic cart visible if the server cart cannot be
+          // refreshed; checkout will still stop with the sync error.
+        }
+        notifyListeners();
+      }
+    });
+    unawaited(_cartSync);
   }
 
-  Future<void> _syncUpdateCartItem(String productId, int quantity,
-      {Map<String, dynamic>? variant}) async {
-    try {
-      await _api.updateCartItem(
-          productId: productId, quantity: quantity, variant: variant);
-    } catch (e) {
-      _lastError = e;
-      notifyListeners();
-    }
-  }
-
-  Future<void> _syncRemoveCartItem(String productId) async {
-    try {
-      await _api.removeCartItem(productId);
-    } catch (e) {
-      _lastError = e;
-      notifyListeners();
+  Future<void> ensureCartSynced() async {
+    await _cartSync;
+    final error = _lastCartSyncError;
+    if (error != null) {
+      throw const StoreCheckoutException(
+        'Cart sync failed. Please try adding the product again.',
+      );
     }
   }
 
@@ -976,48 +1142,104 @@ class StoreMockState extends ChangeNotifier {
   /// `{fileName, fileUrl}`, so `fileUrl` has to win over the bare `fileName`,
   /// which is a filename and not a URL.
   static String firstImageUrl(Map<String, dynamic> json) {
+    String resolve(dynamic value) {
+      final raw = value?.toString().trim() ?? '';
+      if (raw.isEmpty || raw == 'null') return '';
+      return UrlHelper.normalizeUrl(raw);
+    }
+
+    String fromMap(Map<dynamic, dynamic> source) {
+      final map = source.map((key, value) => MapEntry(key.toString(), value));
+      for (final key in const [
+        'fileUrl',
+        'file_url',
+        'secure_url',
+        'downloadUrl',
+        'download_url',
+        'url',
+        'image_url',
+        'imageUrl',
+        'cover_image',
+        'coverImage',
+        'thumbnail',
+        'thumbnail_url',
+        'thumbnailUrl',
+        'src',
+        'path',
+        'fileName',
+        'filename',
+        'name',
+      ]) {
+        final resolved = resolve(map[key]);
+        if (resolved.isNotEmpty) return resolved;
+      }
+      for (final key in const ['image', 'cover', 'photo', 'asset', 'file']) {
+        final value = map[key];
+        if (value is Map) {
+          final resolved = fromMap(value);
+          if (resolved.isNotEmpty) return resolved;
+        } else {
+          final resolved = resolve(value);
+          if (resolved.isNotEmpty) return resolved;
+        }
+      }
+      return '';
+    }
+
+    String fromList(dynamic value) {
+      if (value is! List) return '';
+      for (final entry in value) {
+        final resolved = entry is Map ? fromMap(entry) : resolve(entry);
+        if (resolved.isNotEmpty) return resolved;
+      }
+      return '';
+    }
+
     // The influencer upload endpoints return `{fileName, fileUrl}`, so
     // `fileUrl` must be tried before the bare `fileName` (which is not a URL).
-    for (final key in const ['images', 'image_urls', 'media']) {
-      final images = json[key];
-      if (images is! List || images.isEmpty) continue;
-      final first = images.first;
-      if (first is Map) {
-        final value = _text(
-          first.map((key, value) => MapEntry(key.toString(), value)),
-          const [
-            'fileUrl',
-            'file_url',
-            'url',
-            'image_url',
-            'imageUrl',
-            'src',
-            'path',
-            'fileName',
-            'filename',
-          ],
-        );
-        final resolved = UrlHelper.absoluteUrl(value);
-        if (resolved.isNotEmpty) return resolved;
-      }
-      if (first is String) {
-        final resolved = UrlHelper.absoluteUrl(first);
-        if (resolved.isNotEmpty) return resolved;
-      }
+    for (final key in const [
+      'images',
+      'image_urls',
+      'imageUrls',
+      'media',
+      'photos',
+      'gallery',
+      'attachments',
+      'files',
+    ]) {
+      final resolved = fromList(json[key]);
+      if (resolved.isNotEmpty) return resolved;
     }
     // Single-image fallbacks.
     for (final key in const [
       'fileUrl',
       'file_url',
+      'secure_url',
+      'downloadUrl',
+      'download_url',
       'image_url',
       'imageUrl',
       'image',
+      'cover',
+      'cover_photo',
+      'coverPhoto',
+      'cover_image',
+      'coverImage',
       'thumbnail',
+      'thumbnail_url',
+      'thumbnailUrl',
       'url',
+      'src',
+      'path',
+      'fileName',
+      'filename',
     ]) {
       final value = json[key];
-      if (value is String && value.trim().isNotEmpty) {
-        final resolved = UrlHelper.absoluteUrl(value);
+      if (value is Map) {
+        final resolved = fromMap(value);
+        if (resolved.isNotEmpty) return resolved;
+      } else {
+        final resolved = resolve(value);
         if (resolved.isNotEmpty) return resolved;
       }
     }

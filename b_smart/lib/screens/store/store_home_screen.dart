@@ -88,32 +88,6 @@ class _StoreAddManagePage extends StatelessWidget {
             onAddService: addService,
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: _StoreAddChoiceCard(
-                  icon: LucideIcons.packagePlus,
-                  title: 'Product',
-                  subtitle: 'Photos, price, stock, delivery',
-                  color: BStoreColors.primary,
-                  onTap: addProduct,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _StoreAddChoiceCard(
-                  icon: LucideIcons.calendarPlus,
-                  title: 'Service',
-                  subtitle: 'Availability, sessions, pricing',
-                  color: BStoreColors.accentPurple,
-                  onTap: addService,
-                ),
-              ),
-            ],
-          ),
-        ),
         const SizedBox(height: 14),
         _StoreAddManageSection(
           title: 'My Products',
@@ -230,74 +204,6 @@ class _StoreAddHero extends StatelessWidget {
   }
 }
 
-class _StoreAddChoiceCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _StoreAddChoiceCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 118),
-          padding: const EdgeInsets.all(14),
-          decoration: BStoreDecorations.card(radius: 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: Icon(icon, color: color, size: 21),
-              ),
-              const Spacer(),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: BStoreColors.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                subtitle,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: BStoreColors.textMuted,
-                  fontSize: 11.5,
-                  height: 1.25,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _StoreAddManageSection extends StatefulWidget {
   final String title;
   final IconData icon;
@@ -361,6 +267,10 @@ class _StoreAddManageSectionState extends State<_StoreAddManageSection> {
                 label: Text(widget.addLabel),
                 style: TextButton.styleFrom(
                   foregroundColor: BStoreColors.primary,
+                  minimumSize: const Size(0, 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
                   textStyle: const TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w800,
@@ -369,7 +279,6 @@ class _StoreAddManageSectionState extends State<_StoreAddManageSection> {
               ),
             ],
           ),
-          const SizedBox(height: 10),
           FutureBuilder<List<Map<String, dynamic>>>(
             future: _itemsFuture,
             builder: (context, snapshot) {
