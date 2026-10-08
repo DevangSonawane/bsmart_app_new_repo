@@ -246,6 +246,15 @@ class _VisitorMarketplaceHomePageState
   @override
   Widget build(BuildContext context) {
     final store = StoreMockState.instance;
+    final categories = _headerCategories();
+    final selectedTab = switch (_selectedFilter) {
+      _VisitorStoreFilter.all => MarketplaceTab.all,
+      _VisitorStoreFilter.products => MarketplaceTab.products,
+      _VisitorStoreFilter.services => MarketplaceTab.services,
+    };
+    final headerNeedsStatusPadding =
+        !widget.showTopBar && !widget.showSellerHero;
+
     return SliverList.list(
       children: [
         if (widget.showTopBar) const _VisitorStoreTopBar(),
@@ -260,8 +269,8 @@ class _VisitorMarketplaceHomePageState
               );
             },
           ),
-        // Swiggy-style: user name, folder tabs, search below,
-        // white category card, then the listings grid.
+        // Swiggy-style: user name, folder tabs, search, filters,
+        // image/hero, then the listings grid.
         Builder(
           builder: (context) {
             final ownerId = widget.ownerUserId?.trim() ?? '';
@@ -291,14 +300,8 @@ class _VisitorMarketplaceHomePageState
                 ),
               ),
               onWishlistTap: () => openWishlist(context),
-              // Maroon bleeds from the top edge only when nothing (top
-              // bar / seller hero) is rendered above it.
-              topStatusPadding: !widget.showTopBar && !widget.showSellerHero,
-              selectedTab: switch (_selectedFilter) {
-                _VisitorStoreFilter.all => MarketplaceTab.all,
-                _VisitorStoreFilter.products => MarketplaceTab.products,
-                _VisitorStoreFilter.services => MarketplaceTab.services,
-              },
+              topStatusPadding: headerNeedsStatusPadding,
+              selectedTab: selectedTab,
               onTabSelected: (tab) => setState(() {
                 _selectedFilter = switch (tab) {
                   MarketplaceTab.all => _VisitorStoreFilter.all,
@@ -312,7 +315,7 @@ class _VisitorMarketplaceHomePageState
               onClearQuery: _searchQuery.isEmpty
                   ? null
                   : () => setState(() => _searchQuery = ''),
-              categories: _headerCategories(),
+              categories: categories,
               selectedCategory: _selectedCategory,
               onCategorySelected: (category) =>
                   setState(() => _selectedCategory = category),
@@ -739,8 +742,7 @@ class _StoreItemsContent extends StatelessWidget {
     Widget gridFor(List<StoreMockCatalogItem> items) => _StoreItemsGrid(
           children: [
             for (final item in items)
-              MarketplaceListingCard(
-                  item: item, ownerUserId: ownerUserId),
+              MarketplaceListingCard(item: item, ownerUserId: ownerUserId),
           ],
         );
     return switch (filter) {
@@ -786,9 +788,11 @@ class _StoreItemsContent extends StatelessWidget {
   }
 
   List<StoreMockCatalogItem> _inCategory(List<StoreMockCatalogItem> items) {
-    final selected = category?.trim() ?? '';
+    final selected = category?.trim().toLowerCase() ?? '';
     if (selected.isEmpty) return items;
-    return items.where((item) => item.category.trim() == selected).toList();
+    return items
+        .where((item) => item.category.trim().toLowerCase() == selected)
+        .toList();
   }
 
   static bool _belongsToOwner(Map<String, dynamic> item, String ownerId) {

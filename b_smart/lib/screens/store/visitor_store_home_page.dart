@@ -253,6 +253,13 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
   @override
   Widget build(BuildContext context) {
     final store = StoreMockState.instance;
+    final categories = _headerCategories();
+    final selectedTab = switch (_selectedFilter) {
+      _VisitorStoreFilter.all => MarketplaceTab.all,
+      _VisitorStoreFilter.products => MarketplaceTab.products,
+      _VisitorStoreFilter.services => MarketplaceTab.services,
+    };
+
     return SliverList.list(
       children: [
         const _VisitorStoreTopBar(),
@@ -286,11 +293,7 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
                 ),
               ),
               onWishlistTap: () => openWishlist(context),
-              selectedTab: switch (_selectedFilter) {
-                _VisitorStoreFilter.all => MarketplaceTab.all,
-                _VisitorStoreFilter.products => MarketplaceTab.products,
-                _VisitorStoreFilter.services => MarketplaceTab.services,
-              },
+              selectedTab: selectedTab,
               onTabSelected: (tab) => setState(() {
                 _selectedFilter = switch (tab) {
                   MarketplaceTab.all => _VisitorStoreFilter.all,
@@ -304,7 +307,7 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
               onClearQuery: _searchQuery.isEmpty
                   ? null
                   : () => setState(() => _searchQuery = ''),
-              categories: _headerCategories(),
+              categories: categories,
               selectedCategory: _selectedCategory,
               onCategorySelected: (category) =>
                   setState(() => _selectedCategory = category),
@@ -731,8 +734,7 @@ class _StoreItemsContent extends StatelessWidget {
     Widget gridFor(List<StoreMockCatalogItem> items) => _StoreItemsGrid(
           children: [
             for (final item in items)
-              MarketplaceListingCard(
-                  item: item, ownerUserId: ownerUserId),
+              MarketplaceListingCard(item: item, ownerUserId: ownerUserId),
           ],
         );
     return switch (filter) {
@@ -778,9 +780,11 @@ class _StoreItemsContent extends StatelessWidget {
   }
 
   List<StoreMockCatalogItem> _inCategory(List<StoreMockCatalogItem> items) {
-    final selected = category?.trim() ?? '';
+    final selected = category?.trim().toLowerCase() ?? '';
     if (selected.isEmpty) return items;
-    return items.where((item) => item.category.trim() == selected).toList();
+    return items
+        .where((item) => item.category.trim().toLowerCase() == selected)
+        .toList();
   }
 
   static bool _belongsToOwner(Map<String, dynamic> item, String ownerId) {

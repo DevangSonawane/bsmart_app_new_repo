@@ -6,14 +6,14 @@ import '../store_theme.dart';
 
 /// Shared Swiggy-style marketplace header.
 ///
-/// Order (matches Swiggy reference):
-///   0. User name row (like "ankita jha >")
-///   1. Folder tabs: All / Products / Services
-///   2. Full-width search bar below tabs
-///   3. Bottom filter card: single white card with category chips,
-///      no dividers — one unified thing.
-/// The listings grid is rendered below this header by the caller,
-/// filtered by the selected tab + category.
+/// Layout (matches Swiggy reference):
+///   DARK SECTION   -> user name row + curved folder tabs
+///   COLOURED PANEL -> search bar + category chips
+///
+/// The selected tab is painted in the SAME colour as the panel below it and
+/// flares outward with concave curves, so the tab and panel look like one
+/// continuous shape. The tab indicator slides between tabs, and every colour
+/// animates when the tab changes.
 ///
 /// Tab artwork: 3D icons from the Icons8 "3D Fluency" set
 /// (free with attribution to Icons8), stored locally under
@@ -33,10 +33,12 @@ class SwiggyMarketplaceHeader extends StatelessWidget {
   final List<String> categories;
   final String? selectedCategory;
   final ValueChanged<String?> onCategorySelected;
+  final bool showCategoryFilters;
+  final bool showAllCollage;
 
-  /// When true the maroon card bleeds from the very top edge (no title bar
-  /// above it): it drops its top margin, pads for the status bar, and
-  /// forces light status-bar icons like the Swiggy reference.
+  /// When true the header bleeds from the very top edge (no title bar above
+  /// it): it pads for the status bar and forces light status-bar icons like
+  /// the Swiggy reference.
   final bool topStatusPadding;
 
   const SwiggyMarketplaceHeader({
@@ -53,245 +55,304 @@ class SwiggyMarketplaceHeader extends StatelessWidget {
     this.categories = const [],
     this.selectedCategory,
     required this.onCategorySelected,
+    this.showCategoryFilters = true,
+    this.showAllCollage = true,
     this.topStatusPadding = false,
   });
 
   static const deepMaroon = BStoreColors.primary;
-  static const tabActive = Color(0xFF0AA4A8);
-  static const tabInactive = Color(0xFF066F73);
-  static const tabInactiveText = Color(0xFFD8F2F1);
+  static const _fallbackText = Color(0xFFD8F2F1);
+  static const _allCollageAsset =
+      'assets/bSmart_Store/Shopping and Home Services Marketplace.png';
+
+  static const _anim = Duration(milliseconds: 320);
+  static const _curve = Curves.easeOutCubic;
 
   @override
   Widget build(BuildContext context) {
     final name = userName?.trim() ?? '';
     final subtitle = userSubtitle?.trim() ?? '';
-    final card = Container(
-      margin: topStatusPadding
-          ? EdgeInsets.zero
-          : const EdgeInsets.fromLTRB(0, 10, 0, 0),
-      padding: topStatusPadding
-          ? EdgeInsets.only(top: MediaQuery.of(context).padding.top)
-          : null,
-      decoration: const BoxDecoration(
-        color: deepMaroon,
-        borderRadius: BorderRadius.vertical(
-          bottom: Radius.circular(24),
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
+    final theme = _MarketplaceHeaderTheme.forTab(selectedTab);
+
+    final header = Container(
+      margin:
+          topStatusPadding ? EdgeInsets.zero : const EdgeInsets.only(top: 10),
       child: Column(
         children: [
-          // ---- 0. User name row (like Swiggy's "ankita jha >") ----
-          if (name.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 12, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: onUserTap,
-                      behavior: HitTestBehavior.opaque,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w900,
+          // ───────────── DARK SECTION: name row + tabs ─────────────
+          AnimatedContainer(
+            duration: _anim,
+            curve: _curve,
+            color: theme.dark,
+            padding: EdgeInsets.only(
+              top: topStatusPadding ? MediaQuery.of(context).padding.top : 0,
+            ),
+            child: Column(
+              children: [
+                if (name.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 14, 0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: onUserTap,
+                            behavior: HitTestBehavior.opaque,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.normal,
+                                          height: 1.15,
+                                        ),
+                                      ),
+                                    ),
+                                    if (onUserTap != null) ...[
+                                      const SizedBox(width: 2),
+                                      const Icon(
+                                        LucideIcons.chevronRight,
+                                        size: 20,
+                                        color: Colors.white,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                if (subtitle.isNotEmpty)
+                                  Padding(
+                                    padding:
+                                        const EdgeInsets.only(top: 2, right: 8),
+                                    child: Text(
+                                      subtitle,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: theme.tabText,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.normal,
+                                      ),
+                                    ),
                                   ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (onWishlistTap != null)
+                          GestureDetector(
+                            onTap: onWishlistTap,
+                            behavior: HitTestBehavior.opaque,
+                            child: Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.25),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.25),
                                 ),
                               ),
-                              if (onUserTap != null) ...[
-                                const SizedBox(width: 2),
-                                const Icon(
-                                  LucideIcons.chevronRight,
-                                  size: 18,
-                                  color: Colors.white,
-                                ),
-                              ],
-                            ],
+                              child: const Icon(LucideIcons.heart,
+                                  size: 18, color: Colors.white),
+                            ),
                           ),
-                          if (subtitle.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 2, right: 8),
-                              child: Text(
-                                subtitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: tabInactiveText,
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 14),
+                _SwiggyTabBar(
+                  selectedTab: selectedTab,
+                  theme: theme,
+                  onTabSelected: onTabSelected,
+                ),
+              ],
+            ),
+          ),
+          // ───────────── PANEL: search + chips (same colour as active tab) ─────────────
+          AnimatedContainer(
+            duration: _anim,
+            curve: _curve,
+            decoration: BoxDecoration(
+              color: theme.active,
+              borderRadius: (showCategoryFilters || showAllCollage)
+                  ? const BorderRadius.vertical(
+                      bottom: Radius.circular(28),
+                    )
+                  : BorderRadius.zero,
+            ),
+            padding: EdgeInsets.only(
+              top: 14,
+              bottom: selectedTab == MarketplaceTab.all ? 4 : 14,
+            ),
+            child: Column(
+              children: [
+                // Search bar
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Container(
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 14),
+                        const Icon(LucideIcons.search,
+                            size: 20, color: Color(0xFF6B7280)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Theme(
+                            data: Theme.of(context).copyWith(
+                              inputDecorationTheme: const InputDecorationTheme(
+                                filled: true,
+                                fillColor: Colors.white,
                               ),
                             ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (onWishlistTap != null)
-                    GestureDetector(
-                      onTap: onWishlistTap,
-                      behavior: HitTestBehavior.opaque,
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.18),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.25),
+                            child: TextField(
+                              onChanged: onQueryChanged,
+                              textInputAction: TextInputAction.search,
+                              cursorColor: theme.active,
+                              decoration: InputDecoration(
+                                filled: true,
+                                fillColor: Colors.white,
+                                hintText: switch (selectedTab) {
+                                  MarketplaceTab.products =>
+                                    "Search for 'Products'",
+                                  MarketplaceTab.services =>
+                                    "Search for 'Services'",
+                                  MarketplaceTab.all => "Search for 'Cake'",
+                                },
+                                hintStyle: const TextStyle(
+                                  color: Color(0xFF9AA0AE),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.normal,
+                                ),
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                              style: const TextStyle(
+                                color: Color(0xFF060D35),
+                                fontSize: 13,
+                                fontWeight: FontWeight.normal,
+                              ),
+                            ),
                           ),
                         ),
-                        child: const Icon(LucideIcons.heart,
-                            size: 17, color: Colors.white),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          // ---- 1. Folder tabs: All / Products / Services ----
-          // Fluid sliding pill (Swiggy folder-tab feel) + 3D icons.
-          Padding(
-            padding: const EdgeInsets.fromLTRB(6, 7, 6, 0),
-            child: _SwiggyTabBar(
-              selectedTab: selectedTab,
-              onTabSelected: onTabSelected,
-            ),
-          ),
-          // ---- 2. Search bar below tabs ----
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 9, 12, 0),
-            child: Container(
-              height: 44,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.10),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  const SizedBox(width: 10),
-                  const Icon(LucideIcons.search,
-                      size: 18, color: Color(0xFF6B7280)),
-                  const SizedBox(width: 7),
-                  Expanded(
-                    child: Theme(
-                      data: Theme.of(context).copyWith(
-                        inputDecorationTheme: const InputDecorationTheme(
-                          filled: true,
-                          fillColor: Colors.white,
-                        ),
-                      ),
-                      child: TextField(
-                        onChanged: onQueryChanged,
-                        textInputAction: TextInputAction.search,
-                        cursorColor: BStoreColors.primary,
-                        decoration: InputDecoration(
-                          filled: true,
-                          fillColor: Colors.white,
-                          hintText: switch (selectedTab) {
-                            MarketplaceTab.products => "Search for 'Products'",
-                            MarketplaceTab.services => "Search for 'Services'",
-                            MarketplaceTab.all => "Search for 'Cake'",
-                          },
-                          hintStyle: const TextStyle(
-                            color: Color(0xFF9AA0AE),
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w500,
+                        if (onClearQuery != null)
+                          IconButton(
+                            onPressed: onClearQuery,
+                            icon: const Icon(LucideIcons.x,
+                                size: 18, color: Color(0xFF6B7280)),
+                            tooltip: 'Clear search',
                           ),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          isDense: true,
-                          contentPadding: EdgeInsets.zero,
+                        Container(
+                            width: 1,
+                            height: 24,
+                            color: const Color(0xFFE5E7EB)),
+                        IconButton(
+                          onPressed: null,
+                          icon: Icon(
+                            LucideIcons.mic,
+                            size: 21,
+                            color: theme.active,
+                          ),
                         ),
-                        style: const TextStyle(
-                          color: Color(0xFF060D35),
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                      ],
                     ),
                   ),
-                  if (onClearQuery != null)
-                    IconButton(
-                      onPressed: onClearQuery,
-                      icon: const Icon(LucideIcons.x,
-                          size: 16, color: Color(0xFF6B7280)),
-                      tooltip: 'Clear search',
-                    ),
-                  Container(
-                      width: 1, height: 22, color: const Color(0xFFE5E7EB)),
-                  const IconButton(
-                    onPressed: null,
-                    icon: Icon(LucideIcons.mic,
-                        size: 19, color: BStoreColors.primary),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // ---- 3. Bottom category filter tabs ----
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 16, 0, 0),
-            child: SizedBox(
-              height: 34,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    _CategoryTab(
-                      label: 'All',
-                      selected: selectedCategory == null,
-                      onTap: () => onCategorySelected(null),
-                    ),
-                    for (final category in categories)
-                      _CategoryTab(
-                        label: category,
-                        selected: selectedCategory == category,
-                        onTap: () => onCategorySelected(category),
-                      ),
-                  ],
                 ),
-              ),
+                if (showCategoryFilters && categories.isNotEmpty)
+                  MarketplaceCategoryFilterBar(
+                    categories: categories,
+                    selectedCategory: selectedCategory,
+                    selectedTab: selectedTab,
+                    onCategorySelected: onCategorySelected,
+                  ),
+                if (showAllCollage)
+                  AnimatedSwitcher(
+                    duration: _anim,
+                    switchInCurve: _curve,
+                    switchOutCurve: Curves.easeInCubic,
+                    child: selectedTab == MarketplaceTab.all
+                        ? const MarketplaceAllCollage()
+                        : const SizedBox.shrink(),
+                  ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
         ],
       ),
     );
-    if (!topStatusPadding) return card;
+
+    if (!topStatusPadding) return header;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
-      child: card,
+      child: header,
+    );
+  }
+
+  static bool _sameCategory(String? a, String? b) {
+    return (a ?? '').trim().toLowerCase() == (b ?? '').trim().toLowerCase();
+  }
+}
+
+class MarketplaceAllCollage extends StatelessWidget {
+  const MarketplaceAllCollage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      key: const ValueKey('all-marketplace-collage'),
+      padding: const EdgeInsets.fromLTRB(0, 4, 0, 4),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: AspectRatio(
+          aspectRatio: 1.62,
+          child: Image.asset(
+            SwiggyMarketplaceHeader._allCollageAsset,
+            fit: BoxFit.cover,
+            filterQuality: FilterQuality.medium,
+          ),
+        ),
+      ),
     );
   }
 }
 
+/* ───────────────────────── CURVED TAB BAR ───────────────────────── */
+
 class _SwiggyTabBar extends StatelessWidget {
   final MarketplaceTab selectedTab;
+  final _MarketplaceHeaderTheme theme;
   final ValueChanged<MarketplaceTab> onTabSelected;
 
   const _SwiggyTabBar({
     required this.selectedTab,
+    required this.theme,
     required this.onTabSelected,
   });
+
+  static const double _height = 76;
+  static const double _unselectedTop = 10;
 
   static const _tabs = [
     (
@@ -316,76 +377,167 @@ class _SwiggyTabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final totalWidth = constraints.maxWidth.isFinite
-            ? constraints.maxWidth
-            : MediaQuery.sizeOf(context).width;
-        final tabWidth = totalWidth / _tabs.length;
-        final selectedIndex =
-            _tabs.indexWhere((t) => t.$1 == selectedTab).clamp(0, 2);
-        return SizedBox(
-          height: 86,
-          child: Stack(
+    final selectedIndex = _tabs.indexWhere((t) => t.$1 == selectedTab);
+
+    return SizedBox(
+      height: _height,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final tabW = constraints.maxWidth / _tabs.length;
+
+          return Stack(
+            clipBehavior: Clip.none,
             children: [
-              // Fluid sliding active folder behind the tabs.
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 280),
-                curve: Curves.easeOutCubic,
-                left: selectedIndex * tabWidth + 3,
-                top: 0,
-                bottom: 0,
-                width: tabWidth - 6,
-                child: CustomPaint(
-                  painter: _SelectedFolderTabPainter(
-                    color: SwiggyMarketplaceHeader.tabActive,
-                    borderColor: Colors.white.withValues(alpha: 0.28),
-                  ),
-                ),
-              ),
-              Positioned.fill(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    for (var i = 0; i < _tabs.length; i++)
-                      Expanded(
-                        child: _SwiggyTopTab(
-                          label: _tabs[i].$2,
-                          iconAsset: _tabs[i].$3,
-                          fallbackIcon: _tabs[i].$4,
-                          selected: selectedTab == _tabs[i].$1,
-                          isFirst: i == 0,
-                          isLast: i == _tabs.length - 1,
-                          onTap: () => onTabSelected(_tabs[i].$1),
+              // 1) Unselected tab backgrounds (shorter, sit lower)
+              Row(
+                children: [
+                  for (var i = 0; i < _tabs.length; i++)
+                    Expanded(
+                      child: AnimatedContainer(
+                        duration: SwiggyMarketplaceHeader._anim,
+                        curve: SwiggyMarketplaceHeader._curve,
+                        margin: EdgeInsets.only(
+                          top: _unselectedTop,
+                          left: i == 0 ? 10 : 6,
+                          right: i == _tabs.length - 1 ? 10 : 6,
+                        ),
+                        child: TweenAnimationBuilder<Color?>(
+                          tween: ColorTween(end: theme.inactive),
+                          duration: SwiggyMarketplaceHeader._anim,
+                          curve: SwiggyMarketplaceHeader._curve,
+                          builder: (context, color, _) {
+                            return CustomPaint(
+                              painter: _InactiveTabPainter(
+                                color: color ?? theme.inactive,
+                                flareLeft: i > 0,
+                                flareRight: i < _tabs.length - 1,
+                              ),
+                              child: const SizedBox.expand(),
+                            );
+                          },
                         ),
                       ),
-                  ],
+                    ),
+                ],
+              ),
+
+              // 2) Sliding selected tab: same colour as the panel below,
+              //    with concave flares that melt into it.
+              AnimatedPositioned(
+                duration: SwiggyMarketplaceHeader._anim,
+                curve: SwiggyMarketplaceHeader._curve,
+                left: selectedIndex * tabW,
+                width: tabW,
+                top: 0,
+                bottom: 0,
+                child: TweenAnimationBuilder<Color?>(
+                  tween: ColorTween(end: theme.active),
+                  duration: SwiggyMarketplaceHeader._anim,
+                  curve: SwiggyMarketplaceHeader._curve,
+                  builder: (context, color, _) {
+                    return CustomPaint(
+                      painter: _CurvedTabPainter(
+                        color: color ?? theme.active,
+                        flareLeft: selectedIndex > 0,
+                        flareRight: selectedIndex < _tabs.length - 1,
+                      ),
+                    );
+                  },
                 ),
               ),
+
+              // 3) Icons + labels + tap targets
+              Row(
+                children: [
+                  for (var i = 0; i < _tabs.length; i++)
+                    Expanded(
+                      child: _TabLabel(
+                        label: _tabs[i].$2,
+                        iconAsset: _tabs[i].$3,
+                        fallbackIcon: _tabs[i].$4,
+                        selected: i == selectedIndex,
+                        theme: theme,
+                        onTap: () => onTabSelected(_tabs[i].$1),
+                      ),
+                    ),
+                ],
+              ),
             ],
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
 
-class _SwiggyTopTab extends StatelessWidget {
+class _InactiveTabPainter extends CustomPainter {
+  final Color color;
+  final bool flareLeft;
+  final bool flareRight;
+
+  const _InactiveTabPainter({
+    required this.color,
+    required this.flareLeft,
+    required this.flareRight,
+  });
+
+  static const double _flare = 16;
+  static const double _radius = 18;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final path = Path();
+
+    if (flareLeft) {
+      path.moveTo(-_flare, h);
+      path.quadraticBezierTo(0, h, 0, h - _flare);
+    } else {
+      path.moveTo(0, h + 1);
+      path.lineTo(0, _radius);
+    }
+
+    if (flareLeft) path.lineTo(0, _radius);
+    path.quadraticBezierTo(0, 0, _radius, 0);
+    path.lineTo(w - _radius, 0);
+    path.quadraticBezierTo(w, 0, w, _radius);
+
+    if (flareRight) {
+      path.lineTo(w, h - _flare);
+      path.quadraticBezierTo(w, h, w + _flare, h);
+      path.lineTo(w + _flare, h + 1);
+    } else {
+      path.lineTo(w, h + 1);
+    }
+
+    path.lineTo(flareLeft ? -_flare : 0, h + 1);
+    path.close();
+
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _InactiveTabPainter old) =>
+      old.color != color ||
+      old.flareLeft != flareLeft ||
+      old.flareRight != flareRight;
+}
+
+class _TabLabel extends StatelessWidget {
   final String label;
   final String iconAsset;
   final IconData fallbackIcon;
   final bool selected;
-  final bool isFirst;
-  final bool isLast;
+  final _MarketplaceHeaderTheme theme;
   final VoidCallback onTap;
 
-  const _SwiggyTopTab({
+  const _TabLabel({
     required this.label,
     required this.iconAsset,
     required this.fallbackIcon,
     required this.selected,
-    required this.isFirst,
-    required this.isLast,
+    required this.theme,
     required this.onTap,
   });
 
@@ -394,74 +546,50 @@ class _SwiggyTopTab extends StatelessWidget {
     return GestureDetector(
       onTap: selected ? null : onTap,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
+      child: AnimatedPadding(
+        duration: const Duration(milliseconds: 260),
         curve: Curves.easeOut,
-        margin: EdgeInsets.only(
-          left: isFirst ? 0 : 3,
-          right: isLast ? 0 : 3,
-          top: selected ? 0 : 10,
+        padding: EdgeInsets.only(
+          top: selected ? 0 : _SwiggyTabBar._unselectedTop,
+          bottom: 4,
         ),
-        decoration: selected
-            ? null
-            : ShapeDecoration(
-                color: SwiggyMarketplaceHeader.tabInactive,
-                shape: _FolderTabBorder(
-                  borderColor: Colors.white.withValues(alpha: 0.18),
-                ),
-              ),
-        padding: EdgeInsets.fromLTRB(4, selected ? 9 : 7, 4, 9),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.end,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // 3D icon with a fluid pop when selected.
             AnimatedScale(
-              duration: const Duration(milliseconds: 260),
+              duration: const Duration(milliseconds: 280),
               curve: Curves.easeOutBack,
-              scale: selected ? 1.10 : 1.0,
-              child: Image.asset(
-                iconAsset,
-                width: selected ? 34 : 31,
-                height: selected ? 34 : 31,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => Icon(
-                  fallbackIcon,
-                  size: 25,
-                  color: selected
-                      ? Colors.white
-                      : SwiggyMarketplaceHeader.tabInactiveText,
-                ),
-              ),
-            ),
-            const SizedBox(height: 3),
-            Flexible(
-              child: AnimatedDefaultTextStyle(
+              scale: selected ? 1.15 : 0.92,
+              child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOut,
-                style: TextStyle(
-                  color: selected
-                      ? Colors.white
-                      : SwiggyMarketplaceHeader.tabInactiveText,
-                  fontSize: selected ? 13 : 12,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                ),
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                opacity: selected ? 1 : 0.8,
+                child: Image.asset(
+                  iconAsset,
+                  width: 26,
+                  height: 26,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => Icon(
+                    fallbackIcon,
+                    size: 22,
+                    color: selected ? Colors.white : theme.tabText,
+                  ),
                 ),
               ),
             ),
             const SizedBox(height: 4),
-            AnimatedContainer(
+            AnimatedDefaultTextStyle(
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOut,
-              height: 2.5,
-              width: selected ? 34 : 0,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
+              style: TextStyle(
+                color: selected ? Colors.white : theme.tabText,
+                fontSize: selected ? 12.5 : 12,
+                fontWeight: FontWeight.normal,
+                height: 1.1,
+              ),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -471,162 +599,302 @@ class _SwiggyTopTab extends StatelessWidget {
   }
 }
 
-class _SelectedFolderTabPainter extends CustomPainter {
+/// Draws a tab with rounded top corners and concave "flares" at the bottom
+/// corners so it blends seamlessly into the coloured panel underneath.
+class _CurvedTabPainter extends CustomPainter {
   final Color color;
-  final Color borderColor;
+  final bool flareLeft;
+  final bool flareRight;
 
-  const _SelectedFolderTabPainter({
+  const _CurvedTabPainter({
     required this.color,
-    required this.borderColor,
+    required this.flareLeft,
+    required this.flareRight,
   });
+
+  static const double _flare = 20;
+  static const double _radius = 20;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final fillPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-    final borderPaint = Paint()
-      ..color = borderColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.1;
+    final w = size.width;
+    final h = size.height;
+    final path = Path();
 
-    final path = Path()
-      ..moveTo(22, 0)
-      ..lineTo(size.width - 22, 0)
-      ..quadraticBezierTo(size.width, 0, size.width, 22)
-      ..lineTo(size.width, size.height - 14)
-      ..quadraticBezierTo(
-        size.width,
-        size.height,
-        size.width - 16,
-        size.height,
-      )
-      ..lineTo(16, size.height)
-      ..quadraticBezierTo(0, size.height, 0, size.height - 14)
-      ..lineTo(0, 22)
-      ..quadraticBezierTo(0, 0, 22, 0)
-      ..close();
+    // bottom-left (flare or straight)
+    if (flareLeft) {
+      path.moveTo(-_flare, h);
+      path.quadraticBezierTo(0, h, 0, h - _flare);
+    } else {
+      path.moveTo(0, h);
+    }
 
-    canvas.drawPath(path, fillPaint);
-    canvas.drawPath(path, borderPaint);
+    // left edge + top-left corner
+    path.lineTo(0, _radius);
+    path.quadraticBezierTo(0, 0, _radius, 0);
+
+    // top edge + top-right corner
+    path.lineTo(w - _radius, 0);
+    path.quadraticBezierTo(w, 0, w, _radius);
+
+    // right edge + bottom-right (flare or straight)
+    if (flareRight) {
+      path.lineTo(w, h - _flare);
+      path.quadraticBezierTo(w, h, w + _flare, h);
+      path.lineTo(w + _flare, h + 2); // 2px overlap hides any seam
+    } else {
+      path.lineTo(w, h + 2);
+    }
+
+    path.lineTo(flareLeft ? -_flare : 0, h + 2);
+    path.close();
+
+    canvas.drawPath(path, Paint()..color = color);
   }
 
   @override
-  bool shouldRepaint(covariant _SelectedFolderTabPainter oldDelegate) {
-    return oldDelegate.color != color || oldDelegate.borderColor != borderColor;
+  bool shouldRepaint(covariant _CurvedTabPainter old) =>
+      old.color != color ||
+      old.flareLeft != flareLeft ||
+      old.flareRight != flareRight;
+}
+
+/* ───────────────────────── CATEGORY FILTERS ───────────────────────── */
+
+class MarketplaceCategoryFilterBar extends StatefulWidget {
+  final List<String> categories;
+  final String? selectedCategory;
+  final MarketplaceTab selectedTab;
+  final ValueChanged<String?> onCategorySelected;
+  final double topPadding;
+  final double height;
+
+  const MarketplaceCategoryFilterBar({
+    super.key,
+    required this.categories,
+    required this.selectedCategory,
+    required this.selectedTab,
+    required this.onCategorySelected,
+    this.topPadding = 14,
+    this.height = 52,
+  });
+
+  @override
+  State<MarketplaceCategoryFilterBar> createState() =>
+      _CategoryFilterBarState();
+}
+
+class _CategoryFilterBarState extends State<MarketplaceCategoryFilterBar> {
+  static const _allKey = '__all__';
+
+  final _scrollController = ScrollController();
+  final _viewportKey = GlobalKey();
+  final Map<String, GlobalKey> _filterKeys = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _syncFilterKeys();
+    _centerSelectedAfterLayout();
+  }
+
+  @override
+  void didUpdateWidget(covariant MarketplaceCategoryFilterBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncFilterKeys();
+    if (oldWidget.selectedCategory != widget.selectedCategory ||
+        oldWidget.categories.length != widget.categories.length) {
+      _centerSelectedAfterLayout();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _syncFilterKeys() {
+    final ids = {
+      _allKey,
+      for (final category in widget.categories) _keyForCategory(category),
+    };
+    _filterKeys.removeWhere((key, _) => !ids.contains(key));
+    for (final id in ids) {
+      _filterKeys.putIfAbsent(id, GlobalKey.new);
+    }
+  }
+
+  String _selectedKey() {
+    final selected = widget.selectedCategory;
+    if (selected == null || selected.trim().isEmpty) return _allKey;
+    return _keyForCategory(selected);
+  }
+
+  static String _keyForCategory(String category) {
+    return category.trim().toLowerCase();
+  }
+
+  void _centerSelectedAfterLayout() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _centerFilter(_selectedKey());
+    });
+  }
+
+  void _handleTap(String id, String? value) {
+    widget.onCategorySelected(value);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _centerFilter(id);
+    });
+  }
+
+  void _centerFilter(String id) {
+    if (!_scrollController.hasClients) return;
+    final filterContext = _filterKeys[id]?.currentContext;
+    final viewportContext = _viewportKey.currentContext;
+    if (filterContext == null || viewportContext == null) return;
+
+    final filterBox = filterContext.findRenderObject() as RenderBox?;
+    final viewportBox = viewportContext.findRenderObject() as RenderBox?;
+    if (filterBox == null || viewportBox == null) return;
+
+    final filterOffset = filterBox.localToGlobal(
+      Offset.zero,
+      ancestor: viewportBox,
+    );
+    final filterCenter = filterOffset.dx + filterBox.size.width / 2;
+    final targetOffset =
+        _scrollController.offset + filterCenter - viewportBox.size.width / 2;
+    final clampedOffset = targetOffset.clamp(
+      0.0,
+      _scrollController.position.maxScrollExtent,
+    );
+
+    _scrollController.animateTo(
+      clampedOffset,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = _MarketplaceHeaderTheme.forTab(widget.selectedTab);
+    return Padding(
+      padding: EdgeInsets.only(top: widget.topPadding),
+      child: SizedBox(
+        key: _viewportKey,
+        height: widget.height - widget.topPadding,
+        child: Stack(
+          children: [
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 0,
+              child: Container(
+                height: 1,
+                color: const Color(0xFFD1D5DB).withValues(alpha: 0.75),
+              ),
+            ),
+            SingleChildScrollView(
+              controller: _scrollController,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _CategoryChip(
+                    key: _filterKeys[_allKey],
+                    label: 'All',
+                    selected: widget.selectedCategory == null,
+                    theme: theme,
+                    onTap: () => _handleTap(_allKey, null),
+                  ),
+                  for (final category in widget.categories)
+                    _CategoryChip(
+                      key: _filterKeys[_keyForCategory(category)],
+                      label: category,
+                      selected: SwiggyMarketplaceHeader._sameCategory(
+                        widget.selectedCategory,
+                        category,
+                      ),
+                      theme: theme,
+                      onTap: () =>
+                          _handleTap(_keyForCategory(category), category),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
-class _FolderTabBorder extends ShapeBorder {
-  final Color borderColor;
-
-  const _FolderTabBorder({required this.borderColor});
-
-  @override
-  EdgeInsetsGeometry get dimensions => const EdgeInsets.all(1.1);
-
-  @override
-  Path getInnerPath(Rect rect, {TextDirection? textDirection}) {
-    return _buildPath(rect.deflate(1.1));
-  }
-
-  @override
-  Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
-    return _buildPath(rect);
-  }
-
-  @override
-  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {
-    final paint = Paint()
-      ..color = borderColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.1;
-    canvas.drawPath(_buildPath(rect.deflate(0.55)), paint);
-  }
-
-  @override
-  ShapeBorder scale(double t) => _FolderTabBorder(borderColor: borderColor);
-
-  Path _buildPath(Rect rect) {
-    final r = rect.shortestSide.clamp(0, 20).toDouble();
-    final bottomRadius = (r * 0.72).clamp(0, 14).toDouble();
-    return Path()
-      ..moveTo(rect.left + r, rect.top)
-      ..lineTo(rect.right - r, rect.top)
-      ..quadraticBezierTo(rect.right, rect.top, rect.right, rect.top + r)
-      ..lineTo(rect.right, rect.bottom - bottomRadius)
-      ..quadraticBezierTo(
-        rect.right,
-        rect.bottom,
-        rect.right - bottomRadius,
-        rect.bottom,
-      )
-      ..lineTo(rect.left + bottomRadius, rect.bottom)
-      ..quadraticBezierTo(
-        rect.left,
-        rect.bottom,
-        rect.left,
-        rect.bottom - bottomRadius,
-      )
-      ..lineTo(rect.left, rect.top + r)
-      ..quadraticBezierTo(rect.left, rect.top, rect.left + r, rect.top)
-      ..close();
-  }
-}
-
-class _CategoryTab extends StatelessWidget {
+class _CategoryChip extends StatelessWidget {
   final String label;
   final bool selected;
+  final _MarketplaceHeaderTheme theme;
   final VoidCallback onTap;
 
-  const _CategoryTab({
+  const _CategoryChip({
+    super.key,
     required this.label,
     required this.selected,
+    required this.theme,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final icon = _iconFor(label);
+    final icon = _categoryIconFor(label);
     return Container(
-      margin: const EdgeInsets.only(right: 16),
+      margin: const EdgeInsets.only(right: 18),
       child: GestureDetector(
         onTap: selected ? null : onTap,
         behavior: HitTestBehavior.opaque,
         child: SizedBox(
-          height: 34,
+          height: 38,
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
                     icon,
-                    size: 15,
+                    size: 14,
                     color: selected
                         ? Colors.white
-                        : SwiggyMarketplaceHeader.tabInactiveText,
+                        : Colors.white.withValues(alpha: 0.72),
                   ),
                   const SizedBox(width: 5),
-                  Text(
-                    label.toUpperCase(),
-                    style: TextStyle(
-                      color: selected
-                          ? Colors.white
-                          : SwiggyMarketplaceHeader.tabInactiveText,
-                      fontSize: 12.5,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 112),
+                    child: Text(
+                      label.toUpperCase(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: selected
+                            ? Colors.white
+                            : Colors.white.withValues(alpha: 0.72),
+                        fontSize: 11,
+                        fontWeight: FontWeight.normal,
+                        letterSpacing: 0.3,
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 5),
               AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOut,
-                width: selected ? 56 : 0,
-                height: 3,
+                curve: Curves.easeOutCubic,
+                width: selected ? 28 : 0,
+                height: 2,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(999),
@@ -638,55 +906,130 @@ class _CategoryTab extends StatelessWidget {
       ),
     );
   }
+}
 
-  IconData _iconFor(String value) {
-    final normalized = value.toLowerCase();
-    if (normalized == 'all') return LucideIcons.layoutGrid;
-    if (normalized.contains('offer') || normalized.contains('deal')) {
-      return LucideIcons.badgePercent;
-    }
-    if (normalized.contains('food') || normalized.contains('gourmet')) {
-      return LucideIcons.chefHat;
-    }
-    if (normalized.contains('service')) return LucideIcons.briefcaseBusiness;
-    if (normalized.contains('product')) return LucideIcons.package;
-    if (normalized.contains('bolt') || normalized.contains('fast')) {
-      return LucideIcons.zap;
-    }
-    if (normalized.contains('beauty') || normalized.contains('salon')) {
-      return LucideIcons.sparkles;
-    }
-    if (normalized.contains('health') || normalized.contains('wellness')) {
-      return LucideIcons.heartPulse;
-    }
-    if (normalized.contains('home') || normalized.contains('decor')) {
-      return LucideIcons.house;
-    }
-    if (normalized.contains('fashion') || normalized.contains('cloth')) {
-      return LucideIcons.shirt;
-    }
-    if (normalized.contains('book') || normalized.contains('learn')) {
-      return LucideIcons.bookOpen;
-    }
-    if (normalized.contains('tech') || normalized.contains('digital')) {
-      return LucideIcons.smartphone;
-    }
+IconData _categoryIconFor(String value) {
+  final normalized = value.toLowerCase();
+  if (normalized == 'all') return LucideIcons.layoutGrid;
+  if (normalized.contains('grocery')) return LucideIcons.shoppingBasket;
+  if (normalized.contains('mobile') ||
+      normalized.contains('phone') ||
+      normalized.contains('tablet')) {
+    return LucideIcons.smartphone;
+  }
+  if (normalized.contains('electronics') ||
+      normalized.contains('gadget') ||
+      normalized.contains('appliance')) {
+    return LucideIcons.plugZap;
+  }
+  if (normalized.contains('bag') || normalized.contains('luggage')) {
+    return LucideIcons.briefcase;
+  }
+  if (normalized.contains('footwear') || normalized.contains('shoe')) {
+    return LucideIcons.footprints;
+  }
+  if (normalized.contains('sport') || normalized.contains('fitness')) {
+    return LucideIcons.dumbbell;
+  }
+  if (normalized.contains('toy')) return LucideIcons.gamepad2;
+  if (normalized.contains('auto') || normalized.contains('vehicle')) {
+    return LucideIcons.car;
+  }
+  if (normalized.contains('business')) return LucideIcons.chartNoAxesCombined;
+  if (normalized.contains('education') || normalized.contains('stationery')) {
+    return LucideIcons.graduationCap;
+  }
+  if (normalized.contains('event')) return LucideIcons.calendarDays;
+  if (normalized.contains('offer') || normalized.contains('deal')) {
+    return LucideIcons.badgePercent;
+  }
+  if (normalized.contains('food') || normalized.contains('gourmet')) {
+    return LucideIcons.chefHat;
+  }
+  if (normalized.contains('service')) return LucideIcons.briefcaseBusiness;
+  if (normalized.contains('product')) return LucideIcons.package;
+  if (normalized.contains('bolt') || normalized.contains('fast')) {
+    return LucideIcons.zap;
+  }
+  if (normalized.contains('beauty') || normalized.contains('salon')) {
+    return LucideIcons.sparkles;
+  }
+  if (normalized.contains('health') || normalized.contains('wellness')) {
+    return LucideIcons.heartPulse;
+  }
+  if (normalized.contains('home') || normalized.contains('decor')) {
+    return LucideIcons.house;
+  }
+  if (normalized.contains('fashion') || normalized.contains('cloth')) {
+    return LucideIcons.shirt;
+  }
+  if (normalized.contains('book') || normalized.contains('learn')) {
+    return LucideIcons.bookOpen;
+  }
+  if (normalized.contains('tech') || normalized.contains('digital')) {
+    return LucideIcons.smartphone;
+  }
 
-    const fallbackIcons = [
-      LucideIcons.tag,
-      LucideIcons.shoppingBag,
-      LucideIcons.gem,
-      LucideIcons.star,
-      LucideIcons.badgeCheck,
-      LucideIcons.palette,
-      LucideIcons.gift,
-      LucideIcons.layers,
-    ];
-    final hash = normalized.codeUnits.fold<int>(
-      0,
-      (sum, code) => sum + code,
-    );
-    return fallbackIcons[hash % fallbackIcons.length];
+  const fallbackIcons = [
+    LucideIcons.tag,
+    LucideIcons.shoppingBag,
+    LucideIcons.gem,
+    LucideIcons.star,
+    LucideIcons.badgeCheck,
+    LucideIcons.palette,
+    LucideIcons.gift,
+    LucideIcons.layers,
+  ];
+  final hash = normalized.codeUnits.fold<int>(
+    0,
+    (sum, code) => sum + code,
+  );
+  return fallbackIcons[hash % fallbackIcons.length];
+}
+
+/* ───────────────────────── PER-TAB COLOURS ───────────────────────── */
+
+/// dark     -> header background (name row + tab strip)
+/// active   -> selected tab AND the panel below it (must be identical!)
+/// inactive -> unselected tabs
+class _MarketplaceHeaderTheme {
+  static const _allActive = Color(0xFF0A8F93);
+
+  final Color dark;
+  final Color active;
+  final Color inactive;
+  final Color tabText;
+
+  const _MarketplaceHeaderTheme({
+    required this.dark,
+    required this.active,
+    required this.inactive,
+    required this.tabText,
+  });
+
+  static const _all = _MarketplaceHeaderTheme(
+    dark: Color(0xFF063F42),
+    active: _allActive,
+    inactive: Color(0xFF0B5A5E),
+    tabText: SwiggyMarketplaceHeader._fallbackText,
+  );
+
+  static _MarketplaceHeaderTheme forTab(MarketplaceTab tab) {
+    return switch (tab) {
+      MarketplaceTab.all => _all,
+      MarketplaceTab.products => const _MarketplaceHeaderTheme(
+          dark: Color(0xFF0E1E4D),
+          active: Color(0xFF2A4BA0),
+          inactive: Color(0xFF1B367D),
+          tabText: Color(0xFFE3EAFF),
+        ),
+      MarketplaceTab.services => const _MarketplaceHeaderTheme(
+          dark: Color(0xFF24082F),
+          active: Color(0xFF5B1A87),
+          inactive: Color(0xFF421363),
+          tabText: Color(0xFFFBE3FF),
+        ),
+    };
   }
 }
 
@@ -727,8 +1070,8 @@ class SwiggyOfferOverlay extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
+                fontSize: 14,
+                fontWeight: FontWeight.normal,
                 letterSpacing: 0.2,
               ),
             ),
@@ -739,8 +1082,8 @@ class SwiggyOfferOverlay extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.85),
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w800,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.normal,
                 ),
               ),
           ],
