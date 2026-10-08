@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../services/razorpay_checkout_service.dart';
@@ -68,56 +70,55 @@ class _VisitorProductPaymentPageState extends State<VisitorProductPaymentPage> {
                   ),
                   children: [
                     const _PaymentHeader(),
-                    const SizedBox(height: 18),
-                    _AmountDueCard(amount: widget.amount),
-                    const SizedBox(height: 18),
-                    const Text(
-                      'Choose payment method',
-                      style: TextStyle(
-                        color: BStoreColors.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 9),
-                    _PaymentMethodCard(
-                      selected: _selectedMethod == 'wallet',
-                      icon: const Icon(LucideIcons.wallet, size: 28),
-                      title: 'Wallet / bCoins',
-                      subtitle: '1 coin = ₹1 · deducted instantly',
-                      trailing: _selectedMethod == 'wallet'
-                          ? const _SelectedPill()
-                          : null,
-                      onTap: () => setState(() => _selectedMethod = 'wallet'),
-                    ),
-                    const SizedBox(height: 8),
-                    _PaymentMethodCard(
-                      selected: _selectedMethod == 'razorpay',
-                      icon: const Icon(LucideIcons.creditCard, size: 28),
-                      title: 'Razorpay',
-                      subtitle: 'UPI · cards · netbanking',
-                      trailing: _selectedMethod == 'razorpay'
-                          ? const _SelectedPill()
-                          : null,
-                      onTap: () => setState(() => _selectedMethod = 'razorpay'),
-                    ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 14),
                     AnimatedBuilder(
                       animation: StoreAddressBook.instance,
-                      builder: (context, _) => _DeliveryAddressCard(
-                        address: _address,
-                        onChange: _pickAddress,
+                      builder: (context, _) => Column(
+                        children: [
+                          _AmountDueCard(
+                            amount: widget.amount,
+                            bCoinsSavings: widget.bCoinsSavings,
+                          ),
+                          const SizedBox(height: 18),
+                          const _SectionLabel('Pay with'),
+                          const SizedBox(height: 9),
+                          _PaymentMethodCard(
+                            selected: _selectedMethod == 'wallet',
+                            brandAsset: 'assets/store/payment/wallet.svg',
+                            title: 'Wallet / bCoins',
+                            subtitle: '1 coin = ₹1 · deducted instantly',
+                            onTap: () =>
+                                setState(() => _selectedMethod = 'wallet'),
+                          ),
+                          const SizedBox(height: 10),
+                          _PaymentMethodCard(
+                            selected: _selectedMethod == 'razorpay',
+                            brandAsset:
+                                'assets/store/payment/razorpay.svg',
+                            title: 'Razorpay',
+                            subtitle: 'UPI · cards · netbanking',
+                            onTap: () => setState(
+                                () => _selectedMethod = 'razorpay'),
+                          ),
+                          const SizedBox(height: 18),
+                          const _SectionLabel('Deliver to'),
+                          const SizedBox(height: 9),
+                          _DeliveryAddressCard(
+                            address: _address,
+                            onChange: _pickAddress,
+                          ),
+                          const SizedBox(height: 10),
+                          _BillingAddressCard(
+                            value: _useDeliveryAddress,
+                            onChanged: (value) {
+                              setState(() => _useDeliveryAddress = value);
+                            },
+                          ),
+                          const SizedBox(height: 14),
+                          const _SecurePaymentNote(),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    _BillingAddressCard(
-                      value: _useDeliveryAddress,
-                      onChanged: (value) {
-                        setState(() => _useDeliveryAddress = value);
-                      },
-                    ),
-                    const SizedBox(height: 13),
-                    const _SecurePaymentNote(),
                   ],
                 ),
               ),
@@ -151,36 +152,58 @@ class _PaymentHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 70,
-      child: Stack(
-        alignment: Alignment.topCenter,
+      height: 44,
+      child: Row(
         children: [
-          Align(
-            alignment: Alignment.topLeft,
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: BStoreColors.borderSoft),
+            ),
             child: IconButton(
               onPressed: () => Navigator.of(context).maybePop(),
-              icon: const Icon(LucideIcons.chevronLeft, size: 28),
+              icon: const Icon(LucideIcons.arrowLeft, size: 22),
               color: BStoreColors.textPrimary,
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 34, height: 34),
             ),
           ),
-          const Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              StoreBsmartWordmark(),
-              SizedBox(height: 14),
-              Text(
-                'Checkout',
-                style: TextStyle(
-                  color: BStoreColors.textPrimary,
-                  fontSize: 19,
-                  fontWeight: FontWeight.w900,
-                ),
+          const Expanded(
+            child: Text(
+              'Checkout',
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: BStoreColors.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
               ),
-            ],
+            ),
           ),
+          const SizedBox(width: 40),
         ],
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  final String label;
+
+  const _SectionLabel(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label.toUpperCase(),
+      style: const TextStyle(
+        color: BStoreColors.textSoft,
+        fontSize: 11,
+        letterSpacing: 0.8,
+        fontWeight: FontWeight.w900,
       ),
     );
   }
@@ -188,35 +211,105 @@ class _PaymentHeader extends StatelessWidget {
 
 class _AmountDueCard extends StatelessWidget {
   final String amount;
+  final double bCoinsSavings;
 
-  const _AmountDueCard({required this.amount});
+  const _AmountDueCard({
+    required this.amount,
+    this.bCoinsSavings = 0,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 13),
-      decoration: storeSoftCardDecoration(radius: 12),
-      child: Column(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0B1030), Color(0xFF1B2560)],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0B1030).withValues(alpha: 0.3),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
         children: [
-          const Text(
-            'Total due',
-            style: TextStyle(
-              color: Color(0xFF4B546D),
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
+          Positioned(
+            right: -40,
+            top: -48,
+            child: Container(
+              width: 140,
+              height: 140,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    const Color(0xFF078D92).withValues(alpha: 0.45),
+                    const Color(0xFF078D92).withValues(alpha: 0.0),
+                  ],
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 6),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              amount,
-              style: const TextStyle(
-                color: BStoreColors.primary,
-                fontSize: 28,
-                fontWeight: FontWeight.w900,
-              ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'AMOUNT PAYABLE',
+                  style: TextStyle(
+                    color: Color(0xFF9AA3C7),
+                    fontSize: 10.5,
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    amount,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 36,
+                      height: 1.0,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                if (bCoinsSavings > 0) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 9, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF139B54)
+                          .withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: const Color(0xFF139B54)
+                            .withValues(alpha: 0.45),
+                      ),
+                    ),
+                    child: const Text(
+                      'bCoins applied to this order',
+                      style: TextStyle(
+                        color: Color(0xFF5EEAD4),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
@@ -227,18 +320,16 @@ class _AmountDueCard extends StatelessWidget {
 
 class _PaymentMethodCard extends StatelessWidget {
   final bool selected;
-  final Widget icon;
+  final String brandAsset;
   final String title;
   final String? subtitle;
-  final Widget? trailing;
   final VoidCallback onTap;
 
   const _PaymentMethodCard({
     required this.selected,
-    required this.icon,
+    required this.brandAsset,
     required this.title,
     this.subtitle,
-    this.trailing,
     required this.onTap,
   });
 
@@ -248,15 +339,48 @@ class _PaymentMethodCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        constraints: const BoxConstraints(minHeight: 54),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: storeSoftCardDecoration(radius: 12),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected
+                ? BStoreColors.primary
+                : BStoreColors.borderSoft,
+            width: selected ? 1.8 : 1,
+          ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: BStoreColors.primary.withValues(alpha: 0.14),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ]
+              : null,
+        ),
         child: Row(
           children: [
             _RadioDot(selected: selected),
-            const SizedBox(width: 9),
-            _IconTile(child: icon),
-            const SizedBox(width: 9),
+            const SizedBox(width: 11),
+            Container(
+              width: 58,
+              height: 38,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF6F7F9),
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(color: BStoreColors.borderSoft),
+              ),
+              child: SvgPicture.asset(
+                brandAsset,
+                width: 48,
+                height: 30,
+                fit: BoxFit.contain,
+              ),
+            ),
+            const SizedBox(width: 11),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -268,12 +392,12 @@ class _PaymentMethodCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: BStoreColors.textPrimary,
-                      fontSize: 13,
+                      fontSize: 13.5,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                   if (subtitle != null) ...[
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     Text(
                       subtitle!,
                       maxLines: 1,
@@ -288,13 +412,6 @@ class _PaymentMethodCard extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            trailing ??
-                const Icon(
-                  LucideIcons.chevronRight,
-                  color: BStoreColors.textPrimary,
-                  size: 21,
-                ),
           ],
         ),
       ),
@@ -333,57 +450,6 @@ class _RadioDot extends StatelessWidget {
   }
 }
 
-class _IconTile extends StatelessWidget {
-  final Widget child;
-
-  const _IconTile({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 40,
-      height: 32,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE8EBEF)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.045),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: child,
-    );
-  }
-}
-
-class _SelectedPill extends StatelessWidget {
-  const _SelectedPill();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: BStoreColors.primary,
-        borderRadius: BorderRadius.circular(7),
-      ),
-      child: const Text(
-        'Selected',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
-}
-
 class _DeliveryAddressCard extends StatelessWidget {
   final ShipAddress? address;
   final VoidCallback onChange;
@@ -396,62 +462,97 @@ class _DeliveryAddressCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final address = this.address;
+    final hasAddress = address != null;
     return Container(
-      constraints: const BoxConstraints(minHeight: 54),
-      padding: const EdgeInsets.fromLTRB(10, 10, 4, 10),
-      decoration: storeSoftCardDecoration(radius: 12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: hasAddress
+              ? BStoreColors.borderSoft
+              : const Color(0xFFE87822).withValues(alpha: 0.55),
+          width: hasAddress ? 1 : 1.4,
+        ),
+      ),
       child: Row(
         children: [
           Container(
-            width: 36,
-            height: 36,
+            width: 44,
+            height: 44,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: BStoreColors.surfaceTint,
-              shape: BoxShape.circle,
+            decoration: BoxDecoration(
+              color: hasAddress
+                  ? const Color(0xFFE9F8E6)
+                  : const Color(0xFFFFF1E3),
+              borderRadius: BorderRadius.circular(13),
             ),
-            child: const Icon(
+            child: Icon(
               LucideIcons.mapPin,
-              color: BStoreColors.primary,
-              size: 18,
+              color: hasAddress
+                  ? const Color(0xFF139B54)
+                  : const Color(0xFFE87822),
+              size: 21,
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  address == null
-                      ? 'No delivery address'
-                      : '${address.label} · ${address.name}',
+                  hasAddress
+                      ? 'Deliver to ${address.name}'
+                      : 'No delivery address',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: BStoreColors.textPrimary,
-                    fontSize: 12.5,
+                    fontSize: 13.5,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  address == null
-                      ? 'Add an address to continue'
-                      : address.summaryLine,
+                  hasAddress
+                      ? address.summaryLine
+                      : 'Add an address to continue',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: BStoreColors.textSecondary,
                     fontSize: 11.5,
+                    height: 1.35,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
           ),
-          TextButton(
-            onPressed: onChange,
-            child: const Text('Change'),
+          const SizedBox(width: 4),
+          SizedBox(
+            height: 38,
+            child: FilledButton(
+              onPressed: onChange,
+              style: FilledButton.styleFrom(
+                backgroundColor: hasAddress
+                    ? const Color(0xFFF1F4F8)
+                    : BStoreColors.primary,
+                foregroundColor: hasAddress
+                    ? BStoreColors.textPrimary
+                    : Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              child: Text(hasAddress ? 'Change' : 'Add'),
+            ),
           ),
         ],
       ),
@@ -472,8 +573,8 @@ class _BillingAddressCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       constraints: const BoxConstraints(minHeight: 54),
-      padding: const EdgeInsets.fromLTRB(10, 7, 4, 7),
-      decoration: storeSoftCardDecoration(radius: 12),
+      padding: const EdgeInsets.fromLTRB(12, 9, 6, 9),
+      decoration: storeSoftCardDecoration(radius: 16),
       child: Row(
         children: [
           Container(
@@ -516,34 +617,78 @@ class _SecurePaymentNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
       children: [
-        Icon(LucideIcons.shieldCheck, color: BStoreColors.primary, size: 28),
-        SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Secure payment',
-                style: TextStyle(
-                  color: BStoreColors.textPrimary,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w900,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF0A9BA0), Color(0xFF078D92)],
                 ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: BStoreColors.primary.withValues(alpha: 0.3),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
               ),
-              SizedBox(height: 5),
-              Text(
-                'Your payment information is encrypted and processed securely.',
-                style: TextStyle(
-                  color: BStoreColors.textSecondary,
-                  fontSize: 11.5,
-                  height: 1.35,
-                  fontWeight: FontWeight.w600,
-                ),
+              child: const Icon(
+                LucideIcons.shieldCheck,
+                color: Colors.white,
+                size: 26,
               ),
-            ],
+            ),
+            const SizedBox(width: 12),
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0B1030),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF0B1030)
+                        .withValues(alpha: 0.3),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                LucideIcons.lockKeyhole,
+                color: Color(0xFF5EEAD4),
+                size: 24,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          '100% Secure Payments',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: BStoreColors.textPrimary,
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'All transactions are encrypted with 256-bit SSL security. Your card and UPI details are never stored on our servers.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: BStoreColors.textSecondary,
+            fontSize: 12,
+            height: 1.5,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ],
@@ -690,74 +835,130 @@ class _PayButtonState extends State<_PayButton> {
 
   @override
   Widget build(BuildContext context) {
+    final ready = !_submitting && widget.enabled;
     return Container(
       padding: EdgeInsets.fromLTRB(
         16,
         12,
         16,
-        MediaQuery.of(context).padding.bottom + 8,
+        MediaQuery.of(context).padding.bottom + 10,
       ),
-      color: BStoreColors.background,
-      child: SizedBox(
-        height: 46,
-        width: double.infinity,
-        child: FilledButton.icon(
-          onPressed: (_submitting || !widget.enabled)
-              ? null
-              : () async {
-                  if (StoreMockState.instance.cartLines.isEmpty) {
-                    Navigator.of(context).maybePop();
-                    return;
-                  }
-                  setState(() => _submitting = true);
-                  try {
-                    // Services have no cart per spec: only products go through
-                    // POST /api/orders/checkout. This also refreshes the
-                    // server cart so optimistic local items cannot drift into
-                    // a backend "cart is empty" checkout error.
-                    final productLines =
-                        await StoreMockState.instance.prepareProductCheckout();
-                    final address = widget.shippingAddress;
-                    if (widget.paymentMethod == 'razorpay') {
-                      await _payWithRazorpay(productLines, address);
-                      return;
-                    }
-                    final response =
-                        await StoreMockState.instance.checkoutWithWallet(
-                      shippingAddress: address,
-                      cartPrepared: true,
-                    );
-                    if (!context.mounted) return;
-                    _goSuccess(
-                      _orderFrom(response, productLines),
-                      'Wallet',
-                    );
-                  } catch (e) {
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Checkout failed: $e')),
-                    );
-                  } finally {
-                    if (mounted) setState(() => _submitting = false);
-                  }
-                },
-          icon: _submitting
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(LucideIcons.lockKeyhole, size: 18),
-          label: Text(
-            _submitting
-                ? 'Confirming...'
-                : widget.enabled
-                    ? 'Confirm and pay ${widget.amount}'
-                    : 'Add a delivery address to continue',
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
-          ),
-          style: BStoreButtons.filled(radius: 9),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(color: BStoreColors.borderSoft),
         ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    widget.amount,
+                    style: const TextStyle(
+                      color: BStoreColors.textPrimary,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  widget.bCoinsSavings > 0
+                      ? 'incl. bCoins savings'
+                      : 'Total payable',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: BStoreColors.textSecondary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            height: 50,
+            child: FilledButton.icon(
+              onPressed: !ready
+                  ? null
+                  : () async {
+                      if (StoreMockState.instance.cartLines.isEmpty) {
+                        Navigator.of(context).maybePop();
+                        return;
+                      }
+                      setState(() => _submitting = true);
+                      try {
+                        // Services have no cart per spec: only products go through
+                        // POST /api/orders/checkout. This also refreshes the
+                        // server cart so optimistic local items cannot drift into
+                        // a backend "cart is empty" checkout error.
+                        final productLines = await StoreMockState.instance
+                            .prepareProductCheckout();
+                        final address = widget.shippingAddress;
+                        if (widget.paymentMethod == 'razorpay') {
+                          await _payWithRazorpay(productLines, address);
+                          return;
+                        }
+                        final response = await StoreMockState.instance
+                            .checkoutWithWallet(
+                          shippingAddress: address,
+                          cartPrepared: true,
+                        );
+                        if (!context.mounted) return;
+                        _goSuccess(
+                          _orderFrom(response, productLines),
+                          'Wallet',
+                        );
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Checkout failed: $e')),
+                        );
+                      } finally {
+                        if (mounted) setState(() => _submitting = false);
+                      }
+                    },
+              icon: _submitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation(Colors.white),
+                      ),
+                    )
+                  : const Icon(LucideIcons.lockKeyhole, size: 17),
+              label: Text(
+                _submitting
+                    ? 'Paying…'
+                    : widget.enabled
+                        ? 'Pay Now'
+                        : 'Add Address',
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w900),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: BStoreColors.primary,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: const Color(0xFFD5DEE4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 26),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -791,49 +992,26 @@ class VisitorProductPurchaseSuccessPage extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 22),
             children: [
               const _SuccessHeader(),
-              const SizedBox(height: 48),
-              Center(
-                child: Container(
-                  width: 68,
-                  height: 68,
-                  decoration: const BoxDecoration(
-                    color: BStoreColors.surfaceTint,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    LucideIcons.circleCheck,
-                    color: BStoreColors.primary,
-                    size: 42,
-                  ),
-                ),
-              ),
               const SizedBox(height: 16),
-              const Text(
-                'Order confirmed',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: BStoreColors.textPrimary,
-                  fontSize: 21,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 7),
-              Text(
-                'Order #${order.id}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: BStoreColors.accentPurple,
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 18),
+              _SuccessHero(order: order, amount: amount),
+              const SizedBox(height: 16),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(13),
-                decoration: storeSoftCardDecoration(radius: 12),
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                decoration: storeSoftCardDecoration(radius: 16),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    const Text(
+                      'RECEIPT',
+                      style: TextStyle(
+                        color: BStoreColors.textSoft,
+                        fontSize: 11,
+                        letterSpacing: 0.8,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                     _SuccessRow(label: 'Amount paid', value: amount),
                     const SizedBox(height: 10),
                     _SuccessRow(
@@ -843,41 +1021,27 @@ class VisitorProductPurchaseSuccessPage extends StatelessWidget {
                       label: _hasService(order) ? 'Fulfillment' : 'Delivery',
                       value: _hasService(order) ? 'Scheduled' : 'Processing',
                     ),
-                    const Divider(height: 24, color: BStoreColors.border),
+                    const Divider(height: 20, color: BStoreColors.border),
                     Text(
                       _hasService(order)
-                          ? 'Your order has been confirmed successfully. We will notify you when the provider accepts the service request.'
-                          : 'Your order has been placed successfully. We will notify you when the seller starts delivery.',
+                          ? 'We will notify you when the provider accepts the service request.'
+                          : 'We will notify you when the seller starts delivery.',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: BStoreColors.textSecondary,
-                        fontSize: 13,
-                        height: 1.35,
+                        fontSize: 12.5,
+                        height: 1.4,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 16),
               SizedBox(
-                height: 46,
-                child: FilledButton(
-                  onPressed: () => Navigator.of(context).popUntil(
-                    (route) => route.isFirst,
-                  ),
-                  style: BStoreButtons.filled(),
-                  child: const Text(
-                    'Continue shopping',
-                    style:
-                        TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 46,
-                child: OutlinedButton.icon(
+                height: 52,
+                width: double.infinity,
+                child: FilledButton.icon(
                   onPressed: () {
                     StoreMockState.instance.refreshBuyerOrders();
                     Navigator.of(context).push(
@@ -891,9 +1055,37 @@ class VisitorProductPurchaseSuccessPage extends StatelessWidget {
                   icon: const Icon(LucideIcons.truck, size: 19),
                   label: const Text(
                     'Track Order',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
                   ),
-                  style: BStoreButtons.outlined(),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: BStoreColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 50,
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(context).popUntil(
+                    (route) => route.isFirst,
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: BStoreColors.textPrimary,
+                    side: const BorderSide(color: BStoreColors.borderSoft),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text(
+                    'Continue shopping',
+                    style:
+                        TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900),
+                  ),
                 ),
               ),
             ],
@@ -914,22 +1106,225 @@ class _SuccessHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 34,
+    return Row(
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: BStoreColors.borderSoft),
+          ),
+          child: IconButton(
+            onPressed: () => Navigator.of(context).maybePop(),
+            icon: const Icon(Icons.close_rounded, size: 22),
+            color: BStoreColors.textPrimary,
+            padding: EdgeInsets.zero,
+          ),
+        ),
+        const Spacer(),
+      ],
+    );
+  }
+}
+
+class _SuccessHero extends StatelessWidget {
+  final StoreMockOrder order;
+  final String amount;
+
+  const _SuccessHero({required this.order, required this.amount});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0B4F52), Color(0xFF0B1030)],
+          stops: [0.0, 1.0],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF078D92).withValues(alpha: 0.35),
+            blurRadius: 30,
+            offset: const Offset(0, 14),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
       child: Stack(
-        alignment: Alignment.center,
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: IconButton(
-              onPressed: () => Navigator.of(context).maybePop(),
-              icon: const Icon(LucideIcons.chevronLeft, size: 28),
-              color: BStoreColors.textPrimary,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+          Positioned(
+            left: -52,
+            top: -60,
+            child: Container(
+              width: 160,
+              height: 160,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    const Color(0xFF34D399).withValues(alpha: 0.4),
+                    const Color(0xFF34D399).withValues(alpha: 0.0),
+                  ],
+                ),
+              ),
             ),
           ),
-          const StoreBsmartWordmark(),
+          Positioned(
+            right: -40,
+            bottom: -56,
+            child: Container(
+              width: 130,
+              height: 130,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  width: 1.5,
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 24, 18, 22),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.5, end: 1.0),
+                  duration: const Duration(milliseconds: 550),
+                  curve: Curves.elasticOut,
+                  builder: (context, scale, child) => Transform.scale(
+                    scale: scale,
+                    child: child,
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                        width: 88,
+                        height: 88,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0xFF34D399)
+                                .withValues(alpha: 0.3),
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        width: 66,
+                        height: 66,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFF34D399),
+                              Color(0xFF078D92)
+                            ],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF34D399)
+                                  .withValues(alpha: 0.5),
+                              blurRadius: 24,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.check_rounded,
+                          color: Colors.white,
+                          size: 36,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Center(
+                  child: Text(
+                    'Order confirmed',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Center(
+                  child: Text(
+                    amount,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF5EEAD4),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                GestureDetector(
+                  onTap: () {
+                    Clipboard.setData(
+                        ClipboardData(text: order.id));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Order ID copied to clipboard'),
+                        behavior: SnackBarBehavior.floating,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color:
+                            Colors.white.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'ID ${order.id.toUpperCase()}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.85),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(
+                          LucideIcons.copy,
+                          color: Colors.white.withValues(alpha: 0.7),
+                          size: 13,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

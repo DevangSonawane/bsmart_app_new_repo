@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../services/wallet_service.dart';
-import 'shared/store_shared_widgets.dart';
 import 'shared/store_money.dart';
 import 'store_theme.dart';
 
@@ -46,6 +45,7 @@ class _StoreBCoinsPageState extends State<StoreBCoinsPage> {
   late final Future<int> _balanceFuture;
   int _coinsToApply = 0;
   bool _hasInitializedCoins = false;
+  double? _activeFraction;
 
   @override
   void initState() {
@@ -152,7 +152,7 @@ class _StoreBCoinsPageState extends State<StoreBCoinsPage> {
                       ),
                       children: [
                         const _BCoinsHeader(),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 14),
                         _BalanceCard(
                           balance: balance,
                           isLoading: isLoading,
@@ -164,18 +164,41 @@ class _StoreBCoinsPageState extends State<StoreBCoinsPage> {
                           coins: selected,
                           maxCoins: maxCoins,
                           value: _money(_savingsFor(selected)),
+                          activeFraction: _activeFraction,
                           onMinus: isLoading || selected <= 0
                               ? null
-                              : () => _setCoins(selected - _coinStep, balance),
+                              : () {
+                                  _activeFraction = null;
+                                  _setCoins(
+                                      selected - _coinStep, balance);
+                                },
                           onPlus: isLoading || selected >= maxCoins
                               ? null
-                              : () => _setCoins(selected + _coinStep, balance),
+                              : () {
+                                  _activeFraction = null;
+                                  _setCoins(
+                                      selected + _coinStep, balance);
+                                },
                           onSliderChanged: isLoading || maxCoins <= 0
                               ? null
-                              : (value) => _setCoins(value.round(), balance),
+                              : (value) {
+                                  _activeFraction = null;
+                                  _setCoins(value.round(), balance);
+                                },
                           onUseMaximum: isLoading || maxCoins <= 0
                               ? null
-                              : () => _setCoins(maxCoins, balance),
+                              : () {
+                                  _activeFraction = null;
+                                  _setCoins(maxCoins, balance);
+                                },
+                          onFraction: isLoading || maxCoins <= 0
+                              ? null
+                              : (fraction) {
+                                  _activeFraction = fraction;
+                                  _setCoins(
+                                      (maxCoins * fraction).round(),
+                                      balance);
+                                },
                           coinsText: _coins,
                         ),
                         const SizedBox(height: 12),
@@ -190,6 +213,7 @@ class _StoreBCoinsPageState extends State<StoreBCoinsPage> {
                         const SizedBox(height: 10),
                         _RemainingBalanceCard(
                           remainingBalance: math.max(0, balance - selected),
+                          balance: balance,
                           coinsText: _coins,
                         ),
                         const SizedBox(height: 10),
@@ -219,36 +243,38 @@ class _BCoinsHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 80,
-      child: Stack(
-        alignment: Alignment.topCenter,
+      height: 44,
+      child: Row(
         children: [
-          Align(
-            alignment: Alignment.topLeft,
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: BStoreColors.borderSoft),
+            ),
             child: IconButton(
               onPressed: () => Navigator.of(context).maybePop(),
-              icon: const Icon(LucideIcons.arrowLeft, size: 27),
+              icon: const Icon(LucideIcons.arrowLeft, size: 22),
               color: BStoreColors.textPrimary,
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 42, height: 42),
             ),
           ),
-          const Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              StoreBsmartWordmark(),
-              SizedBox(height: 14),
-              Text(
-                'Use bCoins',
-                style: TextStyle(
-                  color: BStoreColors.textPrimary,
-                  fontSize: 23,
-                  fontWeight: FontWeight.w900,
-                  height: 1.12,
-                ),
+          const Expanded(
+            child: Text(
+              'Use bCoins',
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: BStoreColors.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
               ),
-            ],
+            ),
           ),
+          const SizedBox(width: 40),
         ],
       ),
     );
@@ -271,54 +297,127 @@ class _BalanceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-      decoration: BStoreDecorations.card(radius: 14),
-      child: Row(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF141021), Color(0xFF2A1B4E), Color(0xFF4A2E0A)],
+          stops: [0.0, 0.6, 1.0],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFF5B301).withValues(alpha: 0.25),
+            blurRadius: 28,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
         children: [
-          const _BCoinsLogo(size: 66),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Available balance',
-                  style: TextStyle(
-                    color: BStoreColors.textSecondary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+          Positioned(
+            right: -46,
+            top: -52,
+            child: Container(
+              width: 150,
+              height: 150,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    const Color(0xFFF5B301).withValues(alpha: 0.35),
+                    const Color(0xFFF5B301).withValues(alpha: 0.0),
+                  ],
                 ),
-                const SizedBox(height: 6),
-                isLoading
-                    ? const LinearProgressIndicator(minHeight: 3)
-                    : FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text.rich(
-                          TextSpan(
-                            text: coinsText(balance),
-                            children: const [
-                              TextSpan(
-                                text: ' bCoins',
-                                style: TextStyle(fontSize: 18),
-                              ),
-                            ],
+              ),
+            ),
+          ),
+          Positioned(
+            right: 70,
+            top: 22,
+            child: Transform.rotate(
+              angle: 0.35,
+              child: const Icon(
+                LucideIcons.coins,
+                color: Color(0xFFF5B301),
+                size: 56,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.2),
                           ),
-                          style: const TextStyle(
-                            color: BStoreColors.textPrimary,
-                            fontSize: 28,
+                        ),
+                        child: const Text(
+                          'WALLET BALANCE',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9.5,
+                            letterSpacing: 1.1,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
                       ),
-                const SizedBox(height: 4),
-                Text(
-                  '= $value value',
-                  style: const TextStyle(
-                    color: BStoreColors.textSecondary,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
+                      const SizedBox(height: 10),
+                      isLoading
+                          ? const SizedBox(
+                              height: 38,
+                              width: 38,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation(
+                                    Color(0xFFF5B301)),
+                              ),
+                            )
+                          : FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text.rich(
+                                TextSpan(
+                                  text: coinsText(balance),
+                                  children: const [
+                                    TextSpan(
+                                      text: ' b',
+                                      style: TextStyle(
+                                        fontSize: 22,
+                                        color: Color(0xFFF5B301),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 38,
+                                  height: 1.0,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '= $value value  ·  1 coin = ₹1',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -338,6 +437,8 @@ class _ApplyCard extends StatelessWidget {
   final VoidCallback? onPlus;
   final ValueChanged<double>? onSliderChanged;
   final VoidCallback? onUseMaximum;
+  final ValueChanged<double>? onFraction;
+  final double? activeFraction;
   final String Function(int amount) coinsText;
 
   const _ApplyCard({
@@ -348,6 +449,8 @@ class _ApplyCard extends StatelessWidget {
     required this.onPlus,
     required this.onSliderChanged,
     required this.onUseMaximum,
+    required this.onFraction,
+    required this.activeFraction,
     required this.coinsText,
   });
 
@@ -401,7 +504,62 @@ class _ApplyCard extends StatelessWidget {
               _StepperButton(icon: LucideIcons.plus, onPressed: onPlus),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              for (final entry in const [
+                ('25%', 0.25),
+                ('50%', 0.5),
+                ('75%', 0.75),
+                ('MAX', 1.0),
+              ])
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                        right: entry.$1 == 'MAX' ? 0 : 8),
+                    child: Builder(
+                      builder: (context) {
+                        final isActive =
+                            activeFraction == entry.$2;
+                        return OutlinedButton(
+                          onPressed: maxCoins <= 0
+                              ? null
+                              : () => onFraction?.call(entry.$2),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor:
+                                BStoreColors.textPrimary,
+                            backgroundColor: isActive
+                                ? const Color(0xFFFFF3D1)
+                                : Colors.white,
+                            side: BorderSide(
+                              color: isActive
+                                  ? const Color(0xFFF5B301)
+                                  : BStoreColors.borderSoft,
+                              width: isActive ? 1.6 : 1,
+                            ),
+                            overlayColor:
+                                const Color(0xFFF5B301)
+                                    .withValues(alpha: 0.15),
+                            shape: RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 10),
+                            textStyle: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          child: Text(entry.$1),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
           if (maxCoins <= 0)
             Container(
               width: double.infinity,
@@ -423,14 +581,14 @@ class _ApplyCard extends StatelessWidget {
           else
             SliderTheme(
               data: SliderTheme.of(context).copyWith(
-                activeTrackColor: BStoreColors.primary,
-                inactiveTrackColor: BStoreColors.border,
-                thumbColor: Colors.white,
-                overlayColor:
-                    BStoreColors.primary.withValues(alpha: 0.12),
-                trackHeight: 5,
+                activeTrackColor: const Color(0xFFF5B301),
+                inactiveTrackColor: const Color(0xFFF0E3BE),
+                thumbColor: const Color(0xFFE87822),
+                overlayColor: const Color(0xFFF5B301)
+                    .withValues(alpha: 0.18),
+                trackHeight: 6,
                 thumbShape:
-                    const RoundSliderThumbShape(enabledThumbRadius: 10),
+                    const RoundSliderThumbShape(enabledThumbRadius: 11),
               ),
               child: Slider(
                 min: 0,
@@ -499,59 +657,100 @@ class _OrderTotalCard extends StatelessWidget {
 
 class _RemainingBalanceCard extends StatelessWidget {
   final int remainingBalance;
+  final int balance;
   final String Function(int amount) coinsText;
 
   const _RemainingBalanceCard({
     required this.remainingBalance,
+    required this.balance,
     required this.coinsText,
   });
 
   @override
   Widget build(BuildContext context) {
+    final usedFraction = balance <= 0
+        ? 0.0
+        : ((balance - remainingBalance) / balance).clamp(0.0, 1.0);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BStoreDecorations.card(radius: 14),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BStoreDecorations.card(radius: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: BStoreColors.primary, width: 2),
-            ),
-            child: const Icon(
-              LucideIcons.walletCards,
-              color: BStoreColors.textPrimary,
-              size: 21,
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFFF5B301), Color(0xFFE87822)],
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  LucideIcons.walletCards,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Remaining balance',
+                      style: TextStyle(
+                        color: BStoreColors.textPrimary,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${coinsText(remainingBalance)} of ${coinsText(balance)} bCoins',
+                      style: const TextStyle(
+                        color: BStoreColors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: SizedBox(
+              height: 8,
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: ((1 - usedFraction) * 1000).round(),
+                    child: Container(color: const Color(0xFFF5B301)),
+                  ),
+                  Expanded(
+                    flex: (usedFraction * 1000).round() + 1,
+                    child: Container(color: const Color(0xFFF0E3BE)),
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Remaining balance',
-                  style: TextStyle(
-                    color: BStoreColors.textPrimary,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '${coinsText(remainingBalance)} bCoins',
-                  style: const TextStyle(
-                    color: BStoreColors.textSecondary,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+          const SizedBox(height: 6),
+          Text(
+            usedFraction <= 0
+                ? 'Nothing applied yet'
+                : '${(usedFraction * 100).round()}% of balance in use',
+            style: const TextStyle(
+              color: BStoreColors.textSecondary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          const Icon(LucideIcons.chevronRight, size: 21),
         ],
       ),
     );
@@ -622,13 +821,43 @@ class _ApplyButton extends StatelessWidget {
         MediaQuery.of(context).padding.bottom + 12,
       ),
       decoration: BStoreDecorations.topPanel(),
-      child: SizedBox(
-        width: double.infinity,
-        height: 48,
-        child: FilledButton(
-          onPressed: enabled ? onPressed : null,
-          style: BStoreButtons.filled(radius: 10),
-          child: Text('Apply ${coinsText(coins)} bCoins'),
+      child: Opacity(
+        opacity: enabled ? 1.0 : 0.55,
+        child: Container(
+          width: double.infinity,
+          height: 52,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFF5B301), Color(0xFFE87822)],
+            ),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFF5B301).withValues(alpha: 0.4),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: FilledButton(
+            onPressed: enabled ? onPressed : null,
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.transparent,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: Colors.transparent,
+              disabledForegroundColor: Colors.white,
+              shadowColor: Colors.transparent,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: Text(
+              'Apply ${coinsText(coins)} bCoins',
+              style: const TextStyle(
+                  fontSize: 15, fontWeight: FontWeight.w900),
+            ),
+          ),
         ),
       ),
     );
@@ -657,34 +886,6 @@ class _StepperButton extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
       child: Icon(icon, size: 24),
-    );
-  }
-}
-
-class _BCoinsLogo extends StatelessWidget {
-  final double size;
-
-  const _BCoinsLogo({required this.size});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: BStoreColors.primary, width: 3),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        'b',
-        style: TextStyle(
-          color: BStoreColors.primary,
-          fontSize: size * 0.58,
-          fontWeight: FontWeight.w900,
-          height: 1,
-        ),
-      ),
     );
   }
 }

@@ -213,20 +213,38 @@ class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
         final error = !loading && liveOrders.isEmpty
             ? StoreMockState.instance.lastError
             : null;
+        final topInset = widget.showHeader
+            ? 12.0
+            : MediaQuery.of(context).padding.top + 12;
         return SliverList.list(
           children: [
-            if (widget.showHeader)
-              const _OrdersTopBar(title: 'Orders'),
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+              padding: EdgeInsets.fromLTRB(18, topInset, 18, 0),
               child: Container(
-                height: 40,
-                decoration: storeSoftCardDecoration(radius: 10),
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF0B1030), Color(0xFF1B2560)],
+                  ),
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0B1030)
+                          .withValues(alpha: 0.3),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
                 child: Row(
                   children: [
                     Expanded(
                       child: _OrderModeTab(
+                        icon: LucideIcons.shoppingBag,
                         label: 'Buy',
+                        count: _buyerOrders.length,
                         selected: _orderMode == _OrderMode.buy,
                         onTap: () =>
                             setState(() => _orderMode = _OrderMode.buy),
@@ -234,7 +252,9 @@ class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
                     ),
                     Expanded(
                       child: _OrderModeTab(
+                        icon: LucideIcons.store,
                         label: 'Sell',
+                        count: _liveOrders.length,
                         selected: _orderMode == _OrderMode.sell,
                         onTap: () =>
                             setState(() => _orderMode = _OrderMode.sell),
@@ -249,6 +269,8 @@ class _SelfStoreOrdersPageState extends State<SelfStoreOrdersPage> {
                 padding: EdgeInsets.fromLTRB(18, 16, 18, 0),
                 child: LinearProgressIndicator(),
               ),
+            if (!loading && liveOrders.isNotEmpty)
+              _MotionStrip(orders: liveOrders),
             const SizedBox(height: 8),
             for (final order in liveOrders)
               _OrderSummaryCard(
@@ -301,28 +323,73 @@ String _plainStatusLabel(StoreMockOrderStatus status) {
   };
 }
 
-class _OrdersTopBar extends StatelessWidget {
-  final String title;
+class _MotionStrip extends StatelessWidget {
+  final List<StoreMockOrder> orders;
 
-  const _OrdersTopBar({required this.title});
+  const _MotionStrip({required this.orders});
 
   @override
   Widget build(BuildContext context) {
+    final active = orders
+        .where((o) => o.status != StoreMockOrderStatus.completed)
+        .toList();
+    final value = active.fold<double>(0, (sum, o) => sum + o.paidAmount);
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        26,
-        MediaQuery.of(context).padding.top + 6,
-        18,
-        0,
-      ),
-      child: Text(
-        title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: Color(0xFF060D35),
-          fontSize: 18,
-          fontWeight: FontWeight.w800,
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [Color(0xFF0B1030), Color(0xFF2A1B5E)],
+          ),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                LucideIcons.activity,
+                color: Color(0xFF5EEAD4),
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${active.length} ACTIVE',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.65),
+                      fontSize: 10,
+                      letterSpacing: 1.1,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${StoreMockState.instance.money(value)} in motion',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -330,38 +397,80 @@ class _OrdersTopBar extends StatelessWidget {
 }
 
 class _OrderModeTab extends StatelessWidget {
+  final IconData icon;
   final String label;
+  final int count;
   final bool selected;
   final VoidCallback onTap;
 
   const _OrderModeTab({
+    required this.icon,
     required this.label,
+    required this.count,
     required this.selected,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? Colors.white : BStoreColors.textSecondary;
-    final bg = selected ? BStoreColors.primary : Colors.transparent;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        margin: const EdgeInsets.all(3),
+        height: 46,
         decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(8),
+          gradient: selected
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF0A9BA0), Color(0xFF078D92)],
+                )
+              : null,
+          borderRadius: BorderRadius.circular(14),
         ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: selected
+                  ? Colors.white
+                  : const Color(0xFF9AA3C7),
             ),
-          ),
+            const SizedBox(width: 7),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected
+                    ? Colors.white
+                    : const Color(0xFF9AA3C7),
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(width: 7),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: selected
+                    ? Colors.white.withValues(alpha: 0.22)
+                    : Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  color: selected
+                      ? Colors.white
+                      : const Color(0xFF9AA3C7),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -395,6 +504,23 @@ class _OrderSummaryCard extends StatelessWidget {
     return count;
   }
 
+  Color get _stripe {
+    return switch (order.status) {
+      StoreMockOrderStatus.newOrder => const Color(0xFF078D92),
+      StoreMockOrderStatus.processing => const Color(0xFFE87822),
+      StoreMockOrderStatus.shipped => const Color(0xFF2442B5),
+      StoreMockOrderStatus.completed => const Color(0xFF139B54),
+    };
+  }
+
+  String get _shortId {
+    final id = order.id.trim().toUpperCase();
+    if (id.isEmpty) return 'ORDER';
+    final clean = id.replaceAll(RegExp(r'[^A-Z0-9]'), '');
+    if (clean.isEmpty) return 'ORDER';
+    return '#${clean.substring(0, clean.length > 8 ? 8 : clean.length)}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final firstLine = order.lines.isEmpty ? null : order.lines.first;
@@ -402,11 +528,25 @@ class _OrderSummaryCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
       child: InkWell(
         onTap: onViewOrder,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: storeSoftCardDecoration(radius: 14),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border(
+              left: BorderSide(color: _stripe, width: 4),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               StoreProductThumb(
                 imageUrl: firstLine?.item.imageUrl ?? '',
@@ -419,12 +559,25 @@ class _OrderSummaryCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
+                      _shortId,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF8B90A2),
+                        fontSize: 10,
+                        letterSpacing: 0.8,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
                       _title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Color(0xFF060D35),
                         fontSize: 14,
+                        height: 1.25,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -439,12 +592,12 @@ class _OrderSummaryCard extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     _StatusPill(status: order.status),
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 mainAxisSize: MainAxisSize.min,
@@ -458,10 +611,18 @@ class _OrderSummaryCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Icon(
-                    LucideIcons.chevronRight,
-                    color: Color(0xFF596174),
-                    size: 20,
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F4F8),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: const Icon(
+                      LucideIcons.chevronRight,
+                      color: Color(0xFF060D35),
+                      size: 17,
+                    ),
                   ),
                 ],
               ),

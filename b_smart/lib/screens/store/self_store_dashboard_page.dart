@@ -3,12 +3,13 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api/phase2_store_api.dart';
 import '../../services/auth/auth_service.dart';
-import '../../services/wallet_service.dart';
+import 'self_store_orders_page.dart';
 import 'self_store_products_page.dart';
 import 'self_store_services_manage_page.dart';
 import 'shared/store_shared_widgets.dart';
 import 'shared/store_money.dart';
 import 'store_models.dart';
+import 'store_theme.dart';
 import 'store_role_setup_screen.dart';
 import 'store_role_switch_sheet.dart';
 
@@ -30,7 +31,6 @@ class _DashboardData {
   final int openOrders;
   final int newBookings;
   final double orderVolume;
-  final int walletCoins;
   final List<_ActivityItem> activity;
 
   const _DashboardData({
@@ -39,7 +39,6 @@ class _DashboardData {
     required this.openOrders,
     required this.newBookings,
     required this.orderVolume,
-    required this.walletCoins,
     required this.activity,
   });
 
@@ -49,7 +48,6 @@ class _DashboardData {
     openOrders: 0,
     newBookings: 0,
     orderVolume: 0,
-    walletCoins: 0,
     activity: [],
   );
 }
@@ -65,19 +63,17 @@ class _SelfStoreDashboardPageState extends State<SelfStoreDashboardPage> {
 
   static Future<_DashboardData> _load() async {
     final api = Phase2StoreApi();
-    // Parallel: one round-trip instead of five sequential ones.
+    // Parallel: one round-trip instead of four sequential ones.
     final results = await Future.wait<dynamic>([
       api.myProducts().catchError((_) => <Map<String, dynamic>>[]),
       api.myServices().catchError((_) => <Map<String, dynamic>>[]),
       api.sellerOrders().catchError((_) => <Map<String, dynamic>>[]),
       api.sellerServiceBookings().catchError((_) => <Map<String, dynamic>>[]),
-      WalletService().getCoinBalance().catchError((_) => 0),
     ]);
     final products = List<Map<String, dynamic>>.from(results[0] as List);
     final services = List<Map<String, dynamic>>.from(results[1] as List);
     final orders = List<Map<String, dynamic>>.from(results[2] as List);
     final bookings = List<Map<String, dynamic>>.from(results[3] as List);
-    final coins = (results[4] as num?)?.toInt() ?? 0;
 
     var openOrders = 0;
     var volume = 0.0;
@@ -123,69 +119,496 @@ class _SelfStoreDashboardPageState extends State<SelfStoreDashboardPage> {
       openOrders: openOrders,
       newBookings: newBookings,
       orderVolume: volume,
-      walletCoins: coins,
       activity: activity,
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    // The tab shell no longer shows its own title bar above this page, so the
+    // first block carries the status-bar inset itself.
+    final topInset =
+        widget.showHeader ? 14.0 : MediaQuery.of(context).padding.top + 12;
     return SliverList.list(
       children: [
         if (widget.showHeader) const _SelfDashboardHeader(),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-          child: _RevenueCard(dataFuture: _dataFuture),
+          padding: EdgeInsets.fromLTRB(16, topInset, 16, 0),
+          child: _CommandDeck(dataFuture: _dataFuture),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-          child: _StatsGrid(dataFuture: _dataFuture),
-        ),
-        const _DashboardSectionHeading('Quick actions'),
+        const _DashboardSectionHeading('Manage'),
+        _ManageSection(dataFuture: _dataFuture),
+        const _DashboardSectionHeading('Recent activity'),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              Expanded(
-                child: _QuickActionButton(
-                  label: 'Add Service',
-                  tone: StoreDashboardTone.teal,
-                  onTap: () async {
-                    if (!await StoreRoleGate.ensureInfluencer(context)) return;
-                    if (!context.mounted) return;
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const StoreAddServiceFlowScreen(),
-                      ),
-                    );
-                  },
+          child: _ActivityCard(dataFuture: _dataFuture),
+        ),
+      ],
+    );
+  }
+}
+
+class _CommandDeck extends StatelessWidget {
+  final Future<_DashboardData> dataFuture;
+
+  const _CommandDeck({required this.dataFuture});
+
+  static const _neon = Color(0xFF5EEAD4);
+  static const _ink = Color(0xFF0B1030);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_ink, Color(0xFF16215C), Color(0xFF2A1B5E)],
+          stops: [0.0, 0.55, 1.0],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF078D92).withValues(alpha: 0.35),
+            blurRadius: 30,
+            offset: const Offset(0, 14),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Positioned(
+            right: -56,
+            top: -64,
+            child: Container(
+              width: 180,
+              height: 180,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    const Color(0xFF078D92).withValues(alpha: 0.5),
+                    const Color(0xFF078D92).withValues(alpha: 0.0),
+                  ],
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _QuickActionButton(
-                  label: 'Add Product',
-                  tone: StoreDashboardTone.purple,
-                  onTap: () async {
-                    if (!await StoreRoleGate.ensureInfluencer(context)) return;
-                    if (!context.mounted) return;
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const StoreAddProductFlowScreen(),
+            ),
+          ),
+          Positioned(
+            left: -48,
+            bottom: -72,
+            child: Container(
+              width: 150,
+              height: 150,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    const Color(0xFF684AC8).withValues(alpha: 0.45),
+                    const Color(0xFF684AC8).withValues(alpha: 0.0),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+            child: FutureBuilder<_DashboardData>(
+              future: dataFuture,
+              builder: (context, snapshot) {
+                final data = snapshot.data ?? _DashboardData.empty;
+                final loading =
+                    snapshot.connectionState != ConnectionState.done;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.18),
+                            ),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _PulseDot(),
+                              SizedBox(width: 6),
+                              Text(
+                                'SELLER STUDIO · LIVE',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  letterSpacing: 1.1,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Total volume',
+                      style: TextStyle(
+                        color: Color(0xFF9AA3C7),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
                       ),
-                    );
-                  },
+                    ),
+                    const SizedBox(height: 4),
+                    loading
+                        ? const SizedBox(
+                            height: 40,
+                            width: 40,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor:
+                                  AlwaysStoppedAnimation(_neon),
+                            ),
+                          )
+                        : FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              formatStoreMoney(data.orderVolume),
+                              style: const TextStyle(
+                                color: _neon,
+                                fontSize: 38,
+                                height: 1.0,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Across all non-cancelled orders',
+                      style: TextStyle(
+                        color: Color(0xFF9AA3C7),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      height: 1,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.white.withValues(alpha: 0.0),
+                            Colors.white.withValues(alpha: 0.22),
+                            Colors.white.withValues(alpha: 0.0),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _GlassStat(
+                          icon: LucideIcons.box,
+                          value: loading ? '–' : '${data.products}',
+                          label: 'Products',
+                        ),
+                        _GlassStat(
+                          icon: LucideIcons.briefcaseBusiness,
+                          value: loading ? '–' : '${data.services}',
+                          label: 'Services',
+                        ),
+                        _GlassStat(
+                          icon: LucideIcons.shoppingBag,
+                          value: loading ? '–' : '${data.openOrders}',
+                          label: 'Open orders',
+                        ),
+                        _GlassStat(
+                          icon: LucideIcons.calendarDays,
+                          value: loading ? '–' : '${data.newBookings}',
+                          label: 'Bookings',
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PulseDot extends StatefulWidget {
+  const _PulseDot();
+
+  @override
+  State<_PulseDot> createState() => _PulseDotState();
+}
+
+class _PulseDotState extends State<_PulseDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: Tween(begin: 1.0, end: 0.35).animate(_controller),
+      child: Container(
+        width: 8,
+        height: 8,
+        decoration: const BoxDecoration(
+          color: Color(0xFF34D399),
+          shape: BoxShape.circle,
+        ),
+      ),
+    );
+  }
+}
+
+class _GlassStat extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+
+  const _GlassStat({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        margin: const EdgeInsets.only(right: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.14),
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: const Color(0xFF9AA3C7), size: 15),
+            const SizedBox(height: 6),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ManageSection extends StatelessWidget {
+  final Future<_DashboardData> dataFuture;
+
+  const _ManageSection({required this.dataFuture});
+
+  void _openProducts(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const SelfStoreProductsScreen(),
+      ),
+    );
+  }
+
+  void _openServices(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const SelfStoreServicesManageScreen(),
+      ),
+    );
+  }
+
+  void _openOrders(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const SelfStoreOrdersPage(showHeader: false),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<_DashboardData>(
+      future: dataFuture,
+      builder: (context, snapshot) {
+        final data = snapshot.data ?? _DashboardData.empty;
+        final attention = data.openOrders + data.newBookings;
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            children: [
+              _ManageNavCard(
+                icon: LucideIcons.package,
+                tint: BStoreColors.primary,
+                tintSoft: BStoreColors.primarySoft,
+                title: 'My Products',
+                subtitle: '${data.products} listed',
+                onTap: () => _openProducts(context),
+              ),
+              const SizedBox(height: 10),
+              _ManageNavCard(
+                icon: LucideIcons.briefcaseBusiness,
+                tint: BStoreColors.accentPurple,
+                tintSoft: BStoreColors.accentPurpleSoft,
+                title: 'My Services',
+                subtitle: '${data.services} live',
+                onTap: () => _openServices(context),
+              ),
+              const SizedBox(height: 10),
+              _ManageNavCard(
+                icon: LucideIcons.shoppingBag,
+                tint: const Color(0xFFE87822),
+                tintSoft: const Color(0xFFFFF1E3),
+                title: 'Orders & Bookings',
+                subtitle: attention > 0
+                    ? '$attention need attention'
+                    : 'All caught up',
+                alert: attention > 0,
+                onTap: () => _openOrders(context),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ManageNavCard extends StatelessWidget {
+  final IconData icon;
+  final Color tint;
+  final Color tintSoft;
+  final String title;
+  final String subtitle;
+  final bool alert;
+  final VoidCallback onTap;
+
+  const _ManageNavCard({
+    required this.icon,
+    required this.tint,
+    required this.tintSoft,
+    required this.title,
+    required this.subtitle,
+    this.alert = false,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BStoreDecorations.card(radius: 16),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: tintSoft,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: tint, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF060D35),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: alert
+                            ? const Color(0xFFE87822)
+                            : const Color(0xFF8B90A2),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F4F8),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  LucideIcons.chevronRight,
+                  color: Color(0xFF060D35),
+                  size: 17,
                 ),
               ),
             ],
           ),
         ),
-        const _DashboardSectionHeading('My listings'),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: _StoreProductsServicesToggle(),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -373,257 +796,6 @@ class _SelfDashboardHeader extends StatelessWidget {
   }
 }
 
-class _StatsGrid extends StatelessWidget {
-  final Future<_DashboardData> dataFuture;
-
-  const _StatsGrid({required this.dataFuture});
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<_DashboardData>(
-      future: dataFuture,
-      builder: (context, snapshot) {
-        final data = snapshot.data ?? _DashboardData.empty;
-        return GridView.count(
-          padding: EdgeInsets.zero,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 4,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-          childAspectRatio: 0.74,
-          children: [
-            _DashboardStatCard(
-              icon: LucideIcons.briefcaseBusiness,
-              label: 'Services',
-              value: '${data.services}',
-              suffix: 'live',
-              tone: StoreDashboardTone.teal,
-            ),
-            _DashboardStatCard(
-              icon: LucideIcons.box,
-              label: 'Products',
-              value: '${data.products}',
-              suffix: 'listed',
-              tone: StoreDashboardTone.purple,
-            ),
-            _DashboardStatCard(
-              icon: LucideIcons.calendarDays,
-              label: 'Bookings',
-              value: '${data.newBookings}',
-              suffix: 'new',
-              tone: StoreDashboardTone.teal,
-            ),
-            _DashboardStatCard(
-              icon: LucideIcons.shoppingBag,
-              label: 'Orders',
-              value: '${data.openOrders}',
-              suffix: 'open',
-              tone: StoreDashboardTone.purple,
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _RevenueCard extends StatelessWidget {
-  final Future<_DashboardData> dataFuture;
-
-  const _RevenueCard({required this.dataFuture});
-
-  static String _money(double amount) => formatStoreMoney(amount);
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<_DashboardData>(
-      future: dataFuture,
-      builder: (context, snapshot) {
-        final data = snapshot.data ?? _DashboardData.empty;
-        final loading = snapshot.connectionState != ConnectionState.done;
-        return Container(
-          constraints: const BoxConstraints(minHeight: 132),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(22),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
-                blurRadius: 25,
-                offset: const Offset(0, 12),
-              ),
-            ],
-          ),
-          child: loading
-              ? const Center(child: CircularProgressIndicator())
-              : Row(
-                  children: [
-                    Expanded(
-                      flex: 6,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Order volume',
-                            style: TextStyle(
-                              color: Color(0xFF333956),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              _money(data.orderVolume),
-                              style: const TextStyle(
-                                color: Color(0xFF078D92),
-                                fontSize: 32,
-                                fontWeight: FontWeight.w400,
-                                fontFamily: 'serif',
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          const Text(
-                            'Across all non-cancelled orders',
-                            style: TextStyle(
-                              color: Color(0xFF596174),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                        width: 1, height: 82, color: const Color(0xFFD7D9DE)),
-                    const SizedBox(width: 18),
-                    Expanded(
-                      flex: 4,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text(
-                            'Wallet balance',
-                            style: TextStyle(
-                              color: Color(0xFF333956),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 9),
-                          FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              formatStoreMoney(data.walletCoins.toDouble(),
-                                  decimals: 0),
-                              style: const TextStyle(
-                                color: Color(0xFF078D92),
-                                fontSize: 31,
-                                fontWeight: FontWeight.w400,
-                                fontFamily: 'serif',
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-        );
-      },
-    );
-  }
-}
-
-class _DashboardStatCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final String suffix;
-  final StoreDashboardTone tone;
-
-  const _DashboardStatCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.suffix,
-    required this.tone,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(6, 9, 6, 9),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.07),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: tone.background,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: tone.color, size: 18),
-          ),
-          const Spacer(),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Color(0xFF060D35),
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 3),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: RichText(
-              text: TextSpan(
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF333956),
-                ),
-                children: [
-                  TextSpan(
-                    text: value,
-                    style: TextStyle(
-                      color: tone.color,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  TextSpan(text: ' $suffix'),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _DashboardSectionHeading extends StatelessWidget {
   final String title;
 
@@ -639,74 +811,6 @@ class _DashboardSectionHeading extends StatelessWidget {
           color: Color(0xFF060D35),
           fontSize: 17,
           fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
-}
-
-class _QuickActionButton extends StatelessWidget {
-  final String label;
-  final StoreDashboardTone tone;
-  final VoidCallback onTap;
-
-  const _QuickActionButton({
-    required this.label,
-    required this.tone,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(13),
-      elevation: 0,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(13),
-        child: Container(
-          height: 58,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(13),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: tone.color,
-                  shape: BoxShape.circle,
-                ),
-                child:
-                    const Icon(LucideIcons.plus, color: Colors.white, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF060D35),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -787,396 +891,3 @@ class _RecentActivityRow extends StatelessWidget {
   }
 }
 
-class _StoreProductsServicesToggle extends StatefulWidget {
-  const _StoreProductsServicesToggle();
-
-  @override
-  State<_StoreProductsServicesToggle> createState() =>
-      _StoreProductsServicesToggleState();
-}
-
-class _StoreProductsServicesToggleState
-    extends State<_StoreProductsServicesToggle> {
-  bool _showProducts = true;
-  late Future<List<Map<String, dynamic>>> _itemsFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _itemsFuture = _load();
-  }
-
-  Future<List<Map<String, dynamic>>> _load() async {
-    if (_showProducts) {
-      return Phase2StoreApi().myProducts();
-    }
-    return Phase2StoreApi().myServices();
-  }
-
-  void _switchToProducts() {
-    setState(() {
-      _showProducts = true;
-      _itemsFuture = _load();
-    });
-  }
-
-  void _switchToServices() {
-    setState(() {
-      _showProducts = false;
-      _itemsFuture = _load();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFFF5F6F8),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: _ToggleTab(
-                  label: 'Products',
-                  active: _showProducts,
-                  onTap: _switchToProducts,
-                ),
-              ),
-              Expanded(
-                child: _ToggleTab(
-                  label: 'Services',
-                  active: !_showProducts,
-                  onTap: _switchToServices,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        FutureBuilder<List<Map<String, dynamic>>>(
-          future: _itemsFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const SizedBox(
-                height: 120,
-                child: Center(child: CircularProgressIndicator()),
-              );
-            }
-            final items = snapshot.data ?? const <Map<String, dynamic>>[];
-            if (items.isEmpty) {
-              return Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  _showProducts
-                      ? 'No products yet. Add your first product to get started.'
-                      : 'No services yet. Add your first service to get started.',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Color(0xFF333956),
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              );
-            }
-            final previewItems = items.take(2).toList();
-            return Column(
-              children: [
-                for (var i = 0; i < previewItems.length; i++) ...[
-                  _DashboardListingPreviewCard(
-                    item: previewItems[i],
-                    isProduct: _showProducts,
-                    onTap: _openFullManager,
-                  ),
-                  if (i != previewItems.length - 1) const SizedBox(height: 8),
-                ],
-                if (items.length > 2) ...[
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 44,
-                    child: OutlinedButton.icon(
-                      onPressed: _openFullManager,
-                      icon: const Icon(LucideIcons.list, size: 17),
-                      label: Text(
-                        'View more ${_showProducts ? 'products' : 'services'}',
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF29304D),
-                        backgroundColor: const Color(0xFFF5F6F8),
-                        side: BorderSide.none,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  void _openFullManager() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => _showProducts
-            ? const SelfStoreProductsScreen()
-            : const SelfStoreServicesManageScreen(),
-      ),
-    );
-  }
-}
-
-class _DashboardListingPreviewCard extends StatelessWidget {
-  final Map<String, dynamic> item;
-  final bool isProduct;
-  final VoidCallback onTap;
-
-  const _DashboardListingPreviewCard({
-    required this.item,
-    required this.isProduct,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final title = _listingText(item, const ['name', 'title'], 'Item');
-    final amount = _listingNumber(
-      item,
-      isProduct
-          ? const ['selling_price', 'price', 'amount']
-          : const ['price', 'amount'],
-    );
-    final status = _listingStatus(item, isProduct);
-    final detail = isProduct ? _productDetail(item) : _serviceDetail(item);
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE9ECEF)),
-          ),
-          child: Row(
-            children: [
-              StoreItemImage(
-                imageUrl: _listingImageUrl(item),
-                icon: isProduct
-                    ? LucideIcons.package
-                    : LucideIcons.briefcaseBusiness,
-                width: 66,
-                height: 66,
-                debugLabel: isProduct
-                    ? 'dashboard-product-preview'
-                    : 'dashboard-service-preview',
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF060D35),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      formatCompactStoreMoney(amount),
-                      style: const TextStyle(
-                        color: Color(0xFF078D92),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      detail,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF596174),
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  _ListingStatusPill(label: status.$1, color: status.$2),
-                  const SizedBox(height: 16),
-                  const Icon(
-                    LucideIcons.chevronRight,
-                    color: Color(0xFF29304D),
-                    size: 20,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  static String _productDetail(Map<String, dynamic> item) {
-    final stock = _listingNumber(item, const ['stock_quantity']);
-    final category = _listingText(item, const ['category'], 'Product');
-    return '${stock.round()} in stock · $category';
-  }
-
-  static String _serviceDetail(Map<String, dynamic> item) {
-    final rateType = _listingText(item, const ['rate_type'], '');
-    final category = _listingText(item, const ['category'], 'Service');
-    final suffix = switch (rateType) {
-      'per_hour' => 'Per hour',
-      'per_session' => 'Per session',
-      'starting_from' => 'Starting from',
-      _ => 'Service',
-    };
-    return '$suffix · $category';
-  }
-
-  static (String, Color) _listingStatus(
-    Map<String, dynamic> item,
-    bool isProduct,
-  ) {
-    if (isProduct) {
-      final status =
-          _listingText(item, const ['status'], 'active').toLowerCase();
-      if (status == 'draft') return ('Draft', const Color(0xFF8A6B11));
-      final stock = _listingNumber(item, const ['stock_quantity']);
-      if (stock <= 0) return ('Out', const Color(0xFFE87822));
-      return ('Live', const Color(0xFF139B54));
-    }
-    if (item['visible_to_customers'] == false) {
-      return ('Draft', const Color(0xFF8A6B11));
-    }
-    return ('Live', const Color(0xFF139B54));
-  }
-}
-
-class _ListingStatusPill extends StatelessWidget {
-  final String label;
-  final Color color;
-
-  const _ListingStatusPill({required this.label, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 10.5,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
-}
-
-String _listingText(
-  Map<String, dynamic> source,
-  List<String> keys,
-  String fallback,
-) {
-  for (final key in keys) {
-    final value = source[key]?.toString().trim();
-    if (value != null && value.isNotEmpty && value != 'null') return value;
-  }
-  return fallback;
-}
-
-double _listingNumber(Map<String, dynamic> source, List<String> keys) {
-  for (final key in keys) {
-    final value = source[key];
-    if (value is num) return value.toDouble();
-    final parsed = double.tryParse(value?.toString() ?? '');
-    if (parsed != null) return parsed;
-  }
-  return 0;
-}
-
-String _listingImageUrl(Map<String, dynamic> item) {
-  return StoreMockState.firstImageUrl(item);
-}
-
-class _ToggleTab extends StatelessWidget {
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  const _ToggleTab({
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: active ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          boxShadow: active
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : null,
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: active ? const Color(0xFF060D35) : const Color(0xFF596174),
-              fontSize: 13,
-              fontWeight: active ? FontWeight.w900 : FontWeight.w600,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

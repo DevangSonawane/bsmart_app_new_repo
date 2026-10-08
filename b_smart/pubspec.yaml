@@ -118,5 +118,6 @@ flutter:
     - assets/bSmart_Store/mockimages/
     - assets/bSmart_Store/mobilephone/
     - assets/store/marketplace/
+    - assets/store/payment/
     - assets/sounds/
     - assets/translations/

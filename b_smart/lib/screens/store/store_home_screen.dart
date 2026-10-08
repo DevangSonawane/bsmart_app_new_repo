@@ -1138,11 +1138,18 @@ class _StoreScreenState extends State<StoreScreen> {
                         slivers: [
                           // Home tab is the Swiggy-style marketplace: its
                           // maroon header bleeds from the very top, so the
-                          // white title/profile bar is hidden here. The
-                          // Create tab also skips it — the hero leads.
+                          // white title/profile bar is hidden here. Create,
+                          // My Store, Orders and Cart also skip it — their
+                          // content leads.
                           if (!isHomeMarketplace &&
                               selectedItem.section !=
-                                  _StoreNavSection.add)
+                                  _StoreNavSection.add &&
+                              selectedItem.section !=
+                                  _StoreNavSection.myStore &&
+                              selectedItem.section !=
+                                  _StoreNavSection.orders &&
+                              selectedItem.section !=
+                                  _StoreNavSection.cart)
                             _MarketplaceHeaderSliver(
                               title: selectedItem.label.isEmpty
                                   ? 'Create'
