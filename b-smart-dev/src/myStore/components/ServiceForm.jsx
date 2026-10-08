@@ -7,7 +7,7 @@ import {
   Stepper, SectionCard, ImageGallery, Dropdown, HighlightsList, CompletenessCard, Checkbox,
   inputCls, labelCls, MAX_IMAGES, MAX_HIGHLIGHTS,
 } from '../../components/productForm/ProductFormFields';
-import { SERVICE_CATEGORIES, RATE_TYPES, DURATIONS, METHODS, defaultAvailability, servicePrice, isBlankSubservice, validateService, validateSubservices } from '../data/serviceFields';
+import { SERVICE_CATEGORIES, RATE_TYPES, DURATIONS, METHODS, defaultAvailability, defaultServiceTime, servicePrice, isBlankSubservice, validateService, validateServiceTime, validateSubservices } from '../data/serviceFields';
 
 const STEPS = [
   { label: 'Service Details', subtitle: 'Add basic information' },
@@ -61,6 +61,8 @@ export default function ServiceForm({ service }) {
     name: item.name || '', hours: item.hours == null ? '' : String(item.hours), price: item.price == null ? '' : String(item.price),
   })) : [emptySubservice()]);
   const [availability, setAvailability] = useState(() => service?.availability ? structuredClone(service.availability) : defaultAvailability());
+  const [serviceTime, setServiceTime] = useState(() => service?.serviceTime ? { ...service.serviceTime } : defaultServiceTime());
+  const [serviceAreas, setServiceAreas] = useState(service?.serviceAreas?.length ? [...service.serviceAreas] : ['']);
   const uploader = useMediaUploader(service?.images || [], MAX_IMAGES);
   const { images } = uploader;
   const mainIndex = Math.min(mainImageIndex, Math.max(0, images.length - 1));
@@ -79,11 +81,12 @@ export default function ServiceForm({ service }) {
     setActiveStep(step);
     [step1Ref, step2Ref, step3Ref][step - 1].current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+  const areaCount = serviceAreas.map((area) => area.trim()).filter(Boolean).length;
   const completeness = useMemo(() => [
     { label: 'Service Details', done: !!(form.name.trim() && form.category && form.description.trim()) },
     { label: 'Pricing', done: form.price !== '' && Number.isFinite(Number(form.price)) && Number(form.price) >= 0 && !!form.duration && !validateSubservices(subservices) },
-    { label: 'Availability & Publish', done: availability.some((day) => day.slots.length) && !validateService(form, availability, true) && (form.method !== 'At my location' || !!form.address.trim()) },
-  ], [form, availability, subservices]);
+    { label: 'Availability & Publish', done: availability.some((day) => day.slots.length) && !validateService(form, availability, true) && !validateServiceTime(serviceTime) && areaCount > 0 && (form.method !== 'At my location' || !!form.address.trim()) },
+  ], [form, availability, serviceTime, areaCount, subservices]);
   const firstIncomplete = completeness.findIndex((section) => !section.done);
   const autoTarget = firstIncomplete === -1 ? 3 : firstIncomplete + 1;
   const [lastAutoTarget, setLastAutoTarget] = useState(autoTarget);
@@ -94,7 +97,7 @@ export default function ServiceForm({ service }) {
   const changeSlots = (day, update) => setAvailability((current) => current.map((entry) => entry.day === day ? { ...entry, slots: update(entry.slots) } : entry));
   const save = async (draft) => {
     if (saving) return;
-    const message = validateService(form, availability, draft, subservices);
+    const message = validateService(form, availability, draft, subservices, serviceTime, serviceAreas);
     setError(message);
     if (message) {
       requestAnimationFrame(() => errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
@@ -111,6 +114,8 @@ export default function ServiceForm({ service }) {
         availability,
         images: uploadedImages,
         draft,
+        serviceTime,
+        serviceAreas,
       });
       if (service?.id) {
         await influencerServiceService.update(service.id, payload);
@@ -176,6 +181,26 @@ export default function ServiceForm({ service }) {
               </div>
             </div>
             {form.method === 'At my location' && <div><label htmlFor="service-address" className={labelCls}>Service Address *</label><input id="service-address" value={form.address} onChange={set('address')} required placeholder="Where customers should visit" className={inputCls} /></div>}
+            <div>
+              <label className={labelCls}>Service hours *</label>
+              <div className="flex items-center gap-2">
+                <input type="time" aria-label="Service start time" value={serviceTime.start} onChange={(event) => setServiceTime((current) => ({ ...current, start: event.target.value }))} className={`${inputCls} min-w-0 px-2`} />
+                <span className="text-gray-400">–</span>
+                <input type="time" aria-label="Service end time" value={serviceTime.end} onChange={(event) => setServiceTime((current) => ({ ...current, end: event.target.value }))} className={`${inputCls} min-w-0 px-2`} />
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>Service areas *</label>
+              <div className="space-y-2">
+                {serviceAreas.map((area, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <input value={area} onChange={(event) => setServiceAreas((current) => current.map((item, i) => i === index ? event.target.value : item))} placeholder="e.g. Malad" className={inputCls} />
+                    <button type="button" aria-label={`Remove service area ${index + 1}`} onClick={() => setServiceAreas((current) => { const next = current.filter((_, i) => i !== index); return next.length ? next : ['']; })} className="text-gray-400 hover:text-red-500 flex-shrink-0"><X size={16} /></button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={() => setServiceAreas((current) => [...current, ''])} className="flex items-center gap-1 text-xs font-semibold text-[#fa3f5e] hover:text-insta-purple mt-2"><Plus size={13} /> Add Area</button>
+            </div>
             <div>
               <label className={labelCls}>Weekly availability</label>
               <div className="divide-y divide-gray-100 dark:divide-gray-800 border border-gray-200 dark:border-gray-800 rounded-lg">

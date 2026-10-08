@@ -70,6 +70,11 @@ const availabilityFromApi = (value = {}) => {
   }));
 };
 
+const serviceTimeFromApi = (value = {}) => ({
+  start: value.start || value.service_start || '09:00',
+  end: value.end || value.service_end || '17:00',
+});
+
 const availabilityToApi = (availability = []) => DAYS.reduce((acc, day) => {
   const entry = availability.find((item) => item.day === day);
   acc[day.toLowerCase()] = (entry?.slots || [])
@@ -101,6 +106,8 @@ export const normalizeInfluencerService = (service = {}) => {
       price: item.price ?? '',
     })),
     method: METHOD_FROM_API[service.service_method] || service.method || 'At customer location',
+    serviceTime: serviceTimeFromApi(service.service_time || service.serviceTime || {}),
+    serviceAreas: service.service_area || service.serviceArea || service.serviceAreas || [],
     availability: availabilityFromApi(service.weekly_availability || service.availability),
     visible: service.visible_to_customers ?? service.visible ?? true,
     status: service.status === 'draft' || service.status === 'Draft' ? 'Draft' : 'Published',
@@ -113,7 +120,7 @@ export const normalizeInfluencerService = (service = {}) => {
   };
 };
 
-export const serviceFormToApiPayload = ({ form, highlights, subservices, availability, images, draft }) => ({
+export const serviceFormToApiPayload = ({ form, highlights, subservices, availability, images, draft, serviceTime, serviceAreas = [] }) => ({
   images,
   name: form.name.trim(),
   category: form.category,
@@ -129,6 +136,8 @@ export const serviceFormToApiPayload = ({ form, highlights, subservices, availab
     price: Number(item.price) || 0,
   })),
   service_method: METHOD_TO_API[form.method] || 'at_customer_location',
+  service_time: { start: serviceTime?.start || '09:00', end: serviceTime?.end || '17:00' },
+  service_area: serviceAreas.map((area) => area.trim()).filter(Boolean),
   weekly_availability: availabilityToApi(availability),
   visible_to_customers: Boolean(form.visible),
   status: draft ? 'draft' : 'active',

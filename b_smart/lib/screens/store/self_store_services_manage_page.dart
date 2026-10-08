@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../api/api_client.dart';
 import '../../api/phase2_store_api.dart';
 import '../../api/upload_api.dart';
 import '../../services/page_cache_service.dart';
@@ -16,6 +17,8 @@ import 'store_role_setup_screen.dart';
 import 'store_theme.dart';
 import 'shared/store_shared_widgets.dart';
 import 'shared/store_money.dart';
+
+const _servicesCacheGroup = 'store_my_services';
 
 class SelfStoreServicesManageScreen extends StatefulWidget {
   const SelfStoreServicesManageScreen({super.key});
@@ -108,34 +111,89 @@ class _SelfStoreServicesManagePageState
     }
   }
 
-  /// Loads my services from the personal endpoint. The `/influencer-services/my`
-  /// route already scopes to the current seller, so we do not second-guess it
-  /// with client-side ownership checks.
+  /// Loads my services from the personal endpoint. Keep this cache separate
+  /// from products/marketplace caches so "My" screens cannot bleed into each
+  /// other if a previous tab has already filled the page cache.
   static Future<List<Map<String, dynamic>>> _loadMyServices(
       {bool forceNetwork = false}) async {
     final myId = await CurrentUser.id;
     final pageCache = PageCacheService();
     final cacheParams = <String, dynamic>{};
-    final cached =
-        forceNetwork ? null : await pageCache.get('store', myId ?? '', cacheParams);
+    final cached = forceNetwork
+        ? null
+        : await pageCache.get(_servicesCacheGroup, myId ?? '', cacheParams);
 
     if (cached != null) {
       try {
         final decoded = jsonDecode(cached) as List;
         return decoded.cast<Map<String, dynamic>>();
       } on Exception catch (_) {
-        await pageCache.invalidate('store', myId ?? '');
+        await pageCache.invalidate(_servicesCacheGroup, myId ?? '');
       }
     }
 
-    final items = await Phase2StoreApi().myServices();
+    final items = _onlyCurrentOwner(await Phase2StoreApi().myServices(), myId);
     if (myId != null && myId.isNotEmpty) {
       try {
+        await pageCache.invalidate('store', myId);
         await pageCache.set(
-            'store', myId, cacheParams, jsonEncode(items));
+            _servicesCacheGroup, myId, cacheParams, jsonEncode(items));
       } on Exception catch (_) {}
     }
     return items;
+  }
+
+  static List<Map<String, dynamic>> _onlyCurrentOwner(
+    List<Map<String, dynamic>> items,
+    String? myId,
+  ) {
+    final id = myId?.trim();
+    if (id == null || id.isEmpty) return items;
+    return items.where((item) {
+      final ownerIds = _ownerIdsFrom(item);
+      return ownerIds.isEmpty || ownerIds.contains(id);
+    }).toList();
+  }
+
+  static Set<String> _ownerIdsFrom(Map<String, dynamic> item) {
+    final ids = <String>{};
+    void add(dynamic value) {
+      final id = value?.toString().trim();
+      if (id != null && id.isNotEmpty) ids.add(id);
+    }
+
+    for (final key in const [
+      'user_id',
+      'userId',
+      'owner_id',
+      'ownerId',
+      'seller_id',
+      'sellerId',
+      'vendor_id',
+      'vendorId',
+      'influencer_id',
+      'influencerId',
+      'created_by',
+      'createdBy',
+    ]) {
+      add(item[key]);
+    }
+    for (final key in const [
+      'user',
+      'owner',
+      'seller',
+      'vendor',
+      'influencer'
+    ]) {
+      final nested = item[key];
+      if (nested is Map) {
+        add(nested['id'] ??
+            nested['_id'] ??
+            nested['user_id'] ??
+            nested['userId']);
+      }
+    }
+    return ids;
   }
 
   static int _bookingsFor(
@@ -789,31 +847,98 @@ class StoreAddServiceFlowScreen extends StatefulWidget {
 }
 
 class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
-  int _step = 1;
-  bool _publishing = false;
-  String _serviceMethod = 'At customer location';
-  String? _category;
-  String _duration = '1 hour';
-  String _currency = 'INR';
-  String _rateUnit = 'per hour';
-  String _advanceNotice = '24 hours';
-  final _serviceNameController = TextEditingController();
-  final _descriptionController = TextEditingController();
-  final _amountController = TextEditingController();
-  final _weekdays = const [
+  // Mirrors React ServiceForm.jsx + serviceFields.js: same options, validation,
+  // and payload. No Flutter-only fields (currency / advance notice).
+  static const _categories = [
+    'Home Services',
+    'Business Consulting',
+    'Health & Wellness',
+    'Photography',
+    'Delivery',
+    'Education',
+    'Other',
+  ];
+  static const _rateTypes = [
+    'Starting from',
+    'Fixed price',
+    'Per hour',
+    'Per session',
+  ];
+  static const _durations = [
+    '30 minutes',
+    '1 hour',
+    '2 hours',
+    '2–3 hours',
+    'Half day',
+    'Full day',
+  ];
+  static const _methods = [
+    'At customer location',
+    'Online',
+    'At my location',
+  ];
+  static const _days = [
     'Monday',
     'Tuesday',
     'Wednesday',
     'Thursday',
-    'Friday'
+    'Friday',
+    'Saturday',
+    'Sunday',
   ];
+  static const _maxImages = 10;
+  static const _maxHighlights = 5;
+
+  int _step = 1;
+  bool _publishing = false;
+  int _mainImageIndex = 0;
+  String _method = 'At customer location';
+  String _category = 'Home Services';
+  String _duration = '1 hour';
+  String _rateType = 'Starting from';
+  bool _visible = true;
+  final _picker = ImagePicker();
+  final _nameController = TextEditingController();
+  final _providerController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _priceController = TextEditingController();
+  final _addressController = TextEditingController();
+  final List<TextEditingController> _highlightControllers = [
+    TextEditingController(),
+    TextEditingController(),
+    TextEditingController(),
+  ];
+  final List<_ServiceSubservice> _subservices = [_ServiceSubservice()];
+  String _serviceStart = '09:00';
+  String _serviceEnd = '17:00';
+  final List<TextEditingController> _serviceAreaControllers = [
+    TextEditingController(),
+  ];
+  final List<_AvailDay> _availability = [
+    for (var i = 0; i < _days.length; i++)
+      _AvailDay(_days[i], [if (i < 5) _Slot('09:00', '17:00')]),
+  ];
+  // Pending picks (not yet uploaded) + already-uploaded covers. Upload happens
+  // once at publish so ordering incl. main image is preserved like React.
+  final _pendingImages = <XFile>[];
   final _coverImages = <UploadedImage>[];
 
   @override
   void dispose() {
-    _serviceNameController.dispose();
+    _nameController.dispose();
+    _providerController.dispose();
     _descriptionController.dispose();
-    _amountController.dispose();
+    _priceController.dispose();
+    _addressController.dispose();
+    for (final c in _highlightControllers) {
+      c.dispose();
+    }
+    for (final s in _subservices) {
+      s.dispose();
+    }
+    for (final c in _serviceAreaControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -826,27 +951,49 @@ class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
         child: Column(
           children: [
             _FlowHeader(
-              title: _step == 1 ? 'Add Service' : 'Availability & publish',
-              trailing: _step == 1 ? 'Save draft' : null,
+              title: _step == 1
+                  ? 'Add Service'
+                  : _step == 2
+                      ? 'Pricing'
+                      : 'Availability & publish',
+              trailing: 'Save draft',
+              onSaveDraft: _publishing ? null : () => _saveService(draft: true),
               onBack: () {
                 if (_step == 1) {
                   Navigator.of(context).pop();
                 } else {
-                  setState(() => _step = 1);
+                  setState(() => _step = _step - 1);
                 }
               },
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(26, 10, 26, 2),
+              child: _FlowSteps(
+                step: _step,
+                totalSteps: 3,
+                labels: const ['Details', 'Pricing', 'Availability'],
+                onStepTap: (i) => setState(() => _step = i),
+              ),
+            ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
-                children: _step == 1 ? _basicsStep() : _availabilityStep(),
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+                children: _step == 1
+                    ? _detailsStep()
+                    : _step == 2
+                        ? _pricingStep()
+                        : _availabilityStep(),
               ),
             ),
             _FlowFooter(
               step: _step,
-              onContinue: () => setState(() => _step = 2),
+              totalSteps: 3,
+              onContinue: () => setState(() => _step = _step + 1),
+              onBack:
+                  _step == 1 ? null : () => setState(() => _step = _step - 1),
               publishing: _publishing,
-              onPublish: _publishService,
+              publishLabel: 'Publish Service',
+              onPublish: () => _saveService(draft: false),
             ),
           ],
         ),
@@ -854,152 +1001,392 @@ class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
     );
   }
 
-  List<Widget> _basicsStep() {
+  List<Widget> _detailsStep() {
     return [
-      const _ServiceStepHeader(stepText: '1 of 2', title: 'Basics'),
+      const _ServiceStepHeader(stepText: '1 of 3', title: 'Service Details'),
       const SizedBox(height: 14),
-      _CoverUploadCard(
-        images: _coverImages,
-        onChanged: (list) => setState(() => _coverImages
-          ..clear()
-          ..addAll(list)),
+      _ServicePhotoCard(
+        pending: _pendingImages,
+        uploaded: _coverImages,
+        mainIndex: _mainImageIndex,
+        onPick: _pickServiceImages,
+        onSetMain: (i) => setState(() => _mainImageIndex = i),
+        onRemovePending: (i) => setState(() {
+          _pendingImages.removeAt(i);
+          if (_mainImageIndex >= _totalImageCount) _mainImageIndex = 0;
+        }),
+        onRemoveUploaded: (i) => setState(() {
+          _coverImages.removeAt(i); // index within uploaded list
+          if (_mainImageIndex >= _totalImageCount) _mainImageIndex = 0;
+        }),
       ),
       const SizedBox(height: 14),
       _InputShell(
-        label: 'Service name',
-        hint: 'Enter service name',
-        controller: _serviceNameController,
+        label: 'Service Name * (${_nameController.text.length}/150)',
+        hint: 'Home Cleaning',
+        controller: _nameController,
+      ),
+      const SizedBox(height: 12),
+      _InputShell(
+        label: 'Provider (optional)',
+        hint: 'Your business name',
+        controller: _providerController,
+      ),
+      const SizedBox(height: 12),
+      _ServiceHighlightsEditor(
+        controllers: _highlightControllers,
+        max: _maxHighlights,
+        onChanged: () => setState(() {}),
       ),
       const SizedBox(height: 12),
       _DropdownShell<String>(
-        label: 'Category',
+        label: 'Category *',
         value: _category,
         hint: 'Select category',
-        items: const ['Home', 'Business', 'Wellness', 'Education', 'Events'],
-        onChanged: (value) => setState(() => _category = value),
+        items: _categories,
+        onChanged: (value) => setState(() => _category = value ?? _category),
       ),
       const SizedBox(height: 12),
       _InputShell(
-        label: 'Description',
-        hint: 'Describe your service',
+        label:
+            'Short Description * (${_descriptionController.text.length}/500)',
+        hint: 'Describe your service...',
         controller: _descriptionController,
         minHeight: 94,
         maxLines: 4,
       ),
+    ];
+  }
+
+  List<Widget> _pricingStep() {
+    return [
+      const _ServiceStepHeader(stepText: '2 of 3', title: 'Pricing'),
+      const SizedBox(height: 14),
+      _InputShell(
+        label: 'Price (₹) *',
+        hint: 'Enter amount',
+        controller: _priceController,
+        keyboardType: TextInputType.number,
+        prefixText: '₹ ',
+      ),
       const SizedBox(height: 12),
-      _PriceRateRow(
-        currency: _currency,
-        amountController: _amountController,
-        rateUnit: _rateUnit,
-        onCurrencyChanged: (value) =>
-            setState(() => _currency = value ?? _currency),
-        onUnitChanged: (value) =>
-            setState(() => _rateUnit = value ?? _rateUnit),
+      _DropdownShell<String>(
+        label: 'Rate *',
+        value: _rateType,
+        items: _rateTypes,
+        onChanged: (value) => setState(() => _rateType = value ?? _rateType),
+      ),
+      const SizedBox(height: 12),
+      _DropdownShell<String>(
+        label: 'Duration *',
+        value: _duration,
+        items: _durations,
+        onChanged: (value) => setState(() => _duration = value ?? _duration),
+      ),
+      const SizedBox(height: 12),
+      _SubservicesEditor(
+        subservices: _subservices,
+        onChanged: () => setState(() {}),
       ),
     ];
   }
 
   List<Widget> _availabilityStep() {
     return [
-      const _SectionLabel('Service method'),
+      const _SectionLabel('Service method *'),
+      const SizedBox(height: 10),
+      Row(
+        children: [
+          for (var i = 0; i < _methods.length; i++) ...[
+            Expanded(
+              child: _MethodCard(
+                icon: _methods[i] == 'Online'
+                    ? LucideIcons.globe
+                    : LucideIcons.mapPin,
+                label: _methods[i],
+                selected: _method == _methods[i],
+                onTap: () => setState(() => _method = _methods[i]),
+              ),
+            ),
+            if (i < _methods.length - 1) const SizedBox(width: 12),
+          ],
+        ],
+      ),
+      if (_method == 'At my location') ...[
+        const SizedBox(height: 12),
+        _InputShell(
+          label: 'Service Address *',
+          hint: 'Where customers should visit',
+          controller: _addressController,
+        ),
+      ],
+      const SizedBox(height: 16),
+      const _SectionLabel('Service hours *'),
       const SizedBox(height: 10),
       Row(
         children: [
           Expanded(
-            child: _MethodCard(
-              icon: LucideIcons.mapPin,
-              label: 'At customer location',
-              selected: _serviceMethod == 'At customer location',
-              onTap: () =>
-                  setState(() => _serviceMethod = 'At customer location'),
+            child: _TimeBox(
+              value: _serviceStart,
+              placeholder: 'Start',
+              onTap: () => _pickServiceTime(true),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _MethodCard(
-              icon: LucideIcons.globe,
-              label: 'Online',
-              selected: _serviceMethod == 'Online',
-              onTap: () => setState(() => _serviceMethod = 'Online'),
-            ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 6),
+            child: Text('–'),
           ),
-          const SizedBox(width: 12),
           Expanded(
-            child: _MethodCard(
-              icon: LucideIcons.house,
-              label: 'At my location',
-              selected: _serviceMethod == 'At my location',
-              onTap: () => setState(() => _serviceMethod = 'At my location'),
+            child: _TimeBox(
+              value: _serviceEnd,
+              placeholder: 'End',
+              onTap: () => _pickServiceTime(false),
             ),
           ),
         ],
       ),
       const SizedBox(height: 16),
-      _DropdownShell<String>(
-        label: 'Duration',
-        value: _duration,
-        items: const ['30 minutes', '1 hour', '90 minutes', '2 hours'],
-        onChanged: (value) => setState(() => _duration = value ?? _duration),
+      const _SectionLabel('Service areas *'),
+      const SizedBox(height: 10),
+      _ServiceAreasEditor(
+        controllers: _serviceAreaControllers,
+        onChanged: () => setState(() {}),
       ),
-      const SizedBox(height: 18),
+      const SizedBox(height: 16),
       const _SectionLabel('Weekly availability'),
       const SizedBox(height: 10),
-      _AvailabilityPanel(weekdays: _weekdays),
+      _EditableAvailabilityPanel(
+        days: _availability,
+        onChanged: () => setState(() {}),
+      ),
       const SizedBox(height: 16),
-      _DropdownShell<String>(
-        label: 'Advance notice',
-        value: _advanceNotice,
-        items: const ['2 hours', '12 hours', '24 hours', '48 hours'],
-        onChanged: (value) =>
-            setState(() => _advanceNotice = value ?? _advanceNotice),
+      Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'Visible to customers when published',
+              style: TextStyle(
+                color: Color(0xFF060D35),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Switch.adaptive(
+            value: _visible,
+            onChanged: (v) => setState(() => _visible = v),
+          ),
+        ],
       ),
     ];
   }
 
-  Future<void> _publishService() async {
-    final name = _serviceNameController.text.trim();
-    final description = _descriptionController.text.trim();
-    final category = _category?.trim();
-    final price = _serviceNumber(
-      {'price': _amountController.text},
-      const ['price'],
+  int get _totalImageCount => _pendingImages.length + _coverImages.length;
+
+  Future<void> _pickServiceTime(bool isStart) async {
+    final parts = (isStart ? _serviceStart : _serviceEnd).split(':');
+    final initial = parts.length == 2
+        ? TimeOfDay(
+            hour: int.tryParse(parts[0]) ?? 9,
+            minute: int.tryParse(parts[1]) ?? 0,
+          )
+        : const TimeOfDay(hour: 9, minute: 0);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
     );
-    if (name.isEmpty ||
-        description.isEmpty ||
-        category == null ||
-        category.isEmpty ||
-        price <= 0) {
+    if (picked == null) return;
+    setState(() {
+      final v =
+          '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+      if (isStart) {
+        _serviceStart = v;
+      } else {
+        _serviceEnd = v;
+      }
+    });
+  }
+
+  String? _validateServiceTime() {
+    if (_serviceStart.isEmpty || _serviceEnd.isEmpty) {
+      return 'Enter service start and end times.';
+    }
+    if (_serviceEnd.compareTo(_serviceStart) <= 0) {
+      return 'Service start time must be before end time.';
+    }
+    return null;
+  }
+
+  Future<void> _pickServiceImages() async {
+    try {
+      final images = await _picker.pickMultiImage();
+      if (images.isEmpty || !mounted) return;
+      setState(() {
+        final room = _maxImages - _totalImageCount;
+        if (room <= 0) return;
+        _pendingImages.addAll(images.take(room));
+      });
+    } catch (_) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Add service name, category, description and price.'),
-        ),
+        const SnackBar(content: Text('Image picker is not available.')),
+      );
+    }
+  }
+
+  String? _validateSubservices() {
+    for (final s in _subservices) {
+      final name = s.nameController.text.trim();
+      final hoursRaw = s.hoursController.text.trim();
+      final priceRaw = s.priceController.text.trim();
+      if (name.isEmpty && hoursRaw.isEmpty && priceRaw.isEmpty) continue;
+      if (name.isEmpty) return 'Enter a name for each subservice.';
+      final hours = double.tryParse(hoursRaw);
+      if (hoursRaw.isEmpty || hours == null || hours <= 0) {
+        return 'Enter hours greater than zero for each subservice.';
+      }
+      final price = double.tryParse(priceRaw);
+      if (priceRaw.isEmpty || price == null || price < 0) {
+        return 'Enter a valid price for each subservice.';
+      }
+    }
+    return null;
+  }
+
+  String? _validateService({required bool draft}) {
+    if (!draft) {
+      if (_nameController.text.trim().isEmpty ||
+          _descriptionController.text.trim().isEmpty) {
+        return 'Enter a service name and description.';
+      }
+      final price = double.tryParse(_priceController.text.trim());
+      if (_priceController.text.trim().isEmpty || price == null || price < 0) {
+        return 'Enter a valid price of zero or more.';
+      }
+      final subError = _validateSubservices();
+      if (subError != null) return subError;
+      if (!_availability.any((d) => d.slots.isNotEmpty)) {
+        return 'Add at least one availability slot.';
+      }
+      if (_method == 'At my location' &&
+          _addressController.text.trim().isEmpty) {
+        return 'Enter your service address.';
+      }
+    }
+    // service_time + service_area are required on every create (POST),
+    // including draft saves — so they are checked even for drafts.
+    final timeError = _validateServiceTime();
+    if (timeError != null) return timeError;
+    if (_serviceAreaControllers
+        .map((c) => c.text.trim())
+        .where((a) => a.isNotEmpty)
+        .isEmpty) {
+      return 'Add at least one service area.';
+    }
+    for (final day in _availability) {
+      final sorted = [...day.slots]..sort((a, b) => a.start.compareTo(b.start));
+      for (var i = 0; i < sorted.length; i++) {
+        final s = sorted[i];
+        if (s.start.isEmpty ||
+            s.end.isEmpty ||
+            s.end.compareTo(s.start) <= 0 ||
+            (i > 0 && sorted[i - 1].end.compareTo(s.start) > 0)) {
+          return '${day.day}: use valid start and end times without overlapping slots.';
+        }
+      }
+    }
+    return null;
+  }
+
+  Future<void> _saveService({required bool draft}) async {
+    final error = _validateService(draft: draft);
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error)),
       );
       return;
     }
+    if (_publishing) return;
     setState(() => _publishing = true);
     try {
-      // Cover photos are already uploaded when picked (see
-      // _CoverUploadCard): send the returned file references straight to
-      // POST /influencer-services `images` — re-uploading server file names
-      // as local paths is what made publish fail before.
-      final images = _coverImages.map((img) => img.toJson()).toList();
+      // Upload pending picks first, then merge with already-uploaded covers
+      // preserving main-image-first ordering like React.
+      var uploaded = <UploadedImage>[..._coverImages];
+      if (_pendingImages.isNotEmpty) {
+        final byteFiles = <MultipartBytesFile>[];
+        for (final img in _pendingImages) {
+          final bytes = await img.readAsBytes();
+          if (bytes.isEmpty) continue;
+          byteFiles.add(MultipartBytesFile(
+            bytes: bytes,
+            filename: influencerUploadFilename(img.name, img.path),
+          ));
+        }
+        if (byteFiles.isNotEmpty) {
+          final fresh = await UploadApi().uploadInfluencerServiceImages(
+            byteFiles: byteFiles,
+          );
+          uploaded = [...uploaded, ...fresh];
+        }
+      }
+      // Pending uploads were appended in pick order above; rotate the
+      // merged list so the chosen main image goes first like React.
+      final refs = uploaded.map((img) => img.toJson()).toList();
+      final orderedRefs = refs.isEmpty
+          ? <Map<String, String>>[]
+          : [
+              refs[_mainImageIndex.clamp(0, refs.length - 1)],
+              for (var i = 0; i < refs.length; i++)
+                if (i != _mainImageIndex.clamp(0, refs.length - 1)) refs[i],
+            ];
       await Phase2StoreApi().createService({
-        'images': images,
-        'name': name,
-        'category': category,
-        'provider': 'B-Smart Store',
-        'short_description': description,
-        'key_highlights': const ['Published from B-Smart Store'],
-        'price': price,
-        'rate_type': _rateTypeFor(_rateUnit),
+        'images': orderedRefs,
+        'name': _nameController.text.trim(),
+        'category': _category,
+        'provider': _providerController.text.trim(),
+        'short_description': _descriptionController.text.trim(),
+        'key_highlights': _highlightControllers
+            .map((c) => c.text.trim())
+            .where((h) => h.isNotEmpty)
+            .toList(),
+        'price': double.tryParse(_priceController.text.trim()) ?? 0,
+        'rate_type': _rateTypeFor(_rateType),
         'duration': _duration,
-        'subservices': const [],
-        'service_method': _methodFor(_serviceMethod),
-        'weekly_availability': _defaultWeeklyAvailability(),
-        'visible_to_customers': true,
+        'subservices': _subservices
+            .where((s) =>
+                s.nameController.text.trim().isNotEmpty ||
+                s.hoursController.text.trim().isNotEmpty ||
+                s.priceController.text.trim().isNotEmpty)
+            .map((s) => {
+                  'name': s.nameController.text.trim(),
+                  'hours': double.tryParse(s.hoursController.text.trim()) ?? 0,
+                  'price': double.tryParse(s.priceController.text.trim()) ?? 0,
+                })
+            .toList(),
+        'service_method': _methodFor(_method),
+        'service_time': {'start': _serviceStart, 'end': _serviceEnd},
+        'service_area': _serviceAreaControllers
+            .map((c) => c.text.trim())
+            .where((a) => a.isNotEmpty)
+            .toList(),
+        'weekly_availability': {
+          for (final d in _availability)
+            d.day.toLowerCase(): [
+              for (final s in d.slots)
+                if (s.start.isNotEmpty && s.end.isNotEmpty)
+                  {'start': s.start, 'end': s.end},
+            ],
+        },
+        'visible_to_customers': _visible,
+        'status': draft ? 'draft' : 'active',
       });
       if (!mounted) return;
       Navigator.of(context).pop(true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(draft ? 'Draft saved.' : 'Service published.'),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1014,11 +1401,13 @@ class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
 class _FlowHeader extends StatelessWidget {
   final String title;
   final String? trailing;
+  final VoidCallback? onSaveDraft;
   final VoidCallback onBack;
 
   const _FlowHeader({
     required this.title,
     this.trailing,
+    this.onSaveDraft,
     required this.onBack,
   });
 
@@ -1026,50 +1415,159 @@ class _FlowHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        10,
-        MediaQuery.of(context).padding.top + 10,
-        18,
+        6,
+        MediaQuery.of(context).padding.top + 8,
+        12,
         0,
       ),
       child: SizedBox(
-        height: 38,
-        child: Stack(
-          alignment: Alignment.center,
+        height: 44,
+        child: Row(
           children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: IconButton(
-                onPressed: onBack,
-                icon: const Icon(LucideIcons.arrowLeft, size: 22),
-                color: const Color(0xFF060D35),
-              ),
+            IconButton(
+              onPressed: onBack,
+              icon: const Icon(LucideIcons.arrowLeft, size: 22),
+              color: const Color(0xFF060D35),
             ),
-            Text(
-              title,
-              style: const TextStyle(
-                color: Color(0xFF060D35),
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            if (trailing != null)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () {},
-                  child: Text(
-                    trailing!,
-                    style: const TextStyle(
-                      color: Color(0xFF684AC8),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF060D35),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
+            ),
+            SizedBox(
+              width: 92,
+              child: trailing == null
+                  ? const SizedBox.shrink()
+                  : TextButton(
+                      onPressed: onSaveDraft,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      child: Text(
+                        trailing!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF684AC8),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _FlowSteps extends StatelessWidget {
+  final int step;
+  final int totalSteps;
+  final List<String> labels;
+  final ValueChanged<int> onStepTap;
+
+  const _FlowSteps({
+    required this.step,
+    required this.totalSteps,
+    required this.labels,
+    required this.onStepTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (var i = 1; i <= totalSteps; i++) ...[
+          Expanded(
+            child: InkWell(
+              onTap: () => onStepTap(i),
+              borderRadius: BorderRadius.circular(8),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      if (i > 1)
+                        const Expanded(
+                          child: Divider(
+                            color: Color(0xFFD5DEE4),
+                            thickness: 2,
+                          ),
+                        )
+                      else
+                        const Spacer(),
+                      Container(
+                        width: 26,
+                        height: 26,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i < step
+                              ? const Color(0xFF078D92)
+                              : i == step
+                                  ? const Color(0xFF060D35)
+                                  : Colors.white,
+                          border: Border.all(
+                            color: i <= step
+                                ? Colors.transparent
+                                : const Color(0xFFD5DEE4),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: i < step
+                            ? const Icon(Icons.check_rounded,
+                                color: Colors.white, size: 15)
+                            : Text(
+                                '$i',
+                                style: TextStyle(
+                                  color: i == step
+                                      ? Colors.white
+                                      : const Color(0xFF8B90A2),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                      ),
+                      if (i < totalSteps)
+                        const Expanded(
+                          child: Divider(
+                            color: Color(0xFFD5DEE4),
+                            thickness: 2,
+                          ),
+                        )
+                      else
+                        const Spacer(),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    labels[i - 1],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: i == step
+                          ? const Color(0xFF060D35)
+                          : const Color(0xFF8B90A2),
+                      fontSize: 10.5,
+                      fontWeight: i == step ? FontWeight.w800 : FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -1414,57 +1912,6 @@ InputDecoration _inputDecoration({
   );
 }
 
-class _PriceRateRow extends StatelessWidget {
-  final String currency;
-  final TextEditingController amountController;
-  final String rateUnit;
-  final ValueChanged<String?> onCurrencyChanged;
-  final ValueChanged<String?> onUnitChanged;
-
-  const _PriceRateRow({
-    required this.currency,
-    required this.amountController,
-    required this.rateUnit,
-    required this.onCurrencyChanged,
-    required this.onUnitChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _DropdownShell<String>(
-          label: 'Currency',
-          value: currency,
-          items: const ['INR'],
-          onChanged: onCurrencyChanged,
-        ),
-        const SizedBox(height: 12),
-        _InputShell(
-          label: 'Price or rate (₹)',
-          hint: 'Enter amount',
-          controller: amountController,
-          keyboardType: TextInputType.number,
-          prefixText: '₹ ',
-        ),
-        const SizedBox(height: 12),
-        _DropdownShell<String>(
-          label: 'Unit',
-          value: rateUnit,
-          items: const [
-            'starting from',
-            'fixed',
-            'per hour',
-            'per session',
-          ],
-          onChanged: onUnitChanged,
-        ),
-      ],
-    );
-  }
-}
-
 class _MethodCard extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1522,249 +1969,88 @@ class _MethodCard extends StatelessWidget {
   }
 }
 
-class _AvailabilityPanel extends StatelessWidget {
-  final List<String> weekdays;
-
-  const _AvailabilityPanel({required this.weekdays});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: storeSoftCardDecoration(radius: 10),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          for (var i = 0; i < weekdays.length; i++) ...[
-            _AvailabilityRow(day: weekdays[i]),
-            const Divider(height: 1, color: Color(0xFFE8EBF0)),
-          ],
-          const _UnavailableRow(day: 'Saturday'),
-          const Divider(height: 1, color: Color(0xFFE8EBF0)),
-          const _UnavailableRow(day: 'Sunday'),
-        ],
-      ),
-    );
-  }
-}
-
-class _AvailabilityRow extends StatelessWidget {
-  final String day;
-
-  const _AvailabilityRow({required this.day});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 44,
-      child: Row(
-        children: [
-          SizedBox(
-            width: 86,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 12),
-              child: Text(
-                day,
-                style: const TextStyle(
-                  color: Color(0xFF060D35),
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-          const Expanded(child: _SmallTimeBox(text: '9:00 AM')),
-          const SizedBox(width: 6),
-          const Text('-', style: TextStyle(color: Color(0xFF8B90A2))),
-          const SizedBox(width: 6),
-          const Expanded(child: _SmallTimeBox(text: '5:00 PM')),
-          IconButton(
-            onPressed: () {},
-            icon: const Icon(LucideIcons.plus, size: 17),
-            color: const Color(0xFF29304D),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _UnavailableRow extends StatelessWidget {
-  final String day;
-
-  const _UnavailableRow({required this.day});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 44,
-      child: Row(
-        children: [
-          SizedBox(
-            width: 86,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 12),
-              child: Text(
-                day,
-                style: const TextStyle(
-                  color: Color(0xFF060D35),
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-          const Expanded(
-            child: Text(
-              'Unavailable',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Color(0xFF29304D),
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          IconButton(
-            onPressed: () {},
-            icon: const Icon(LucideIcons.plus, size: 17),
-            color: const Color(0xFF29304D),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SmallTimeBox extends StatelessWidget {
-  final String text;
-
-  const _SmallTimeBox({required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 30,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFD5DEE4)),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              text,
-              style: const TextStyle(
-                color: Color(0xFF060D35),
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(width: 5),
-            const Icon(LucideIcons.chevronDown, size: 12),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _FlowFooter extends StatelessWidget {
   final int step;
+  final int totalSteps;
   final VoidCallback onContinue;
+  final VoidCallback? onBack;
   final VoidCallback onPublish;
+  final String publishLabel;
   final bool publishing;
 
   const _FlowFooter({
     required this.step,
+    this.totalSteps = 2,
     required this.onContinue,
+    this.onBack,
     required this.onPublish,
+    this.publishLabel = 'Publish',
     this.publishing = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (step == 1) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
-        child: SizedBox(
-          height: 50,
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: onContinue,
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF078D92),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text(
-              'Continue',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
-            ),
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+    final primary = SizedBox(
+      height: 50,
+      child: FilledButton(
+        onPressed:
+            publishing ? null : (step < totalSteps ? onContinue : onPublish),
+        style: FilledButton.styleFrom(
+          backgroundColor: const Color(0xFF078D92),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
         ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
-      child: Row(
-        children: [
-          Expanded(
-            child: SizedBox(
-              height: 50,
-              child: OutlinedButton(
-                onPressed: () {},
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF078D92),
-                  side: const BorderSide(color: Color(0xFF078D92)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+        child: publishing
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation(Colors.white),
                 ),
-                child: const Text(
-                  'Preview',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+              )
+            : FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  step < totalSteps ? 'Continue' : publishLabel,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w900),
                 ),
               ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: SizedBox(
-              height: 50,
-              child: FilledButton(
-                onPressed: publishing ? null : onPublish,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF078D92),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: publishing
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          'Publish Service',
-                          style: TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.w900),
-                        ),
-                      ),
-              ),
-            ),
-          ),
-        ],
       ),
+    );
+    return Padding(
+      padding: EdgeInsets.fromLTRB(18, 10, 18, 12 + bottomPad),
+      child: onBack == null
+          ? SizedBox(width: double.infinity, child: primary)
+          : Row(
+              children: [
+                SizedBox(
+                  height: 50,
+                  child: OutlinedButton(
+                    onPressed: publishing ? null : onBack,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF060D35),
+                      side: const BorderSide(color: Color(0xFFD5DEE4)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                    ),
+                    child: const Text(
+                      'Back',
+                      style:
+                          TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: primary),
+              ],
+            ),
     );
   }
 }
@@ -1840,14 +2126,648 @@ String _serviceText(
 String _serviceImageUrl(Map<String, dynamic> json) =>
     StoreMockState.firstImageUrl(json);
 
-String _rateTypeFor(String rateUnit) {
-  return switch (rateUnit) {
-    'per hour' => 'per_hour',
-    'per session' => 'per_session',
-    'fixed' => 'fixed',
+String _rateTypeFor(String rateType) {
+  return switch (rateType) {
+    'Fixed price' => 'fixed',
+    'Per hour' => 'per_hour',
+    'Per session' => 'per_session',
     // API enum: starting_from, fixed, per_hour, per_session.
     _ => 'starting_from',
   };
+}
+
+class _ServiceSubservice {
+  final TextEditingController nameController = TextEditingController();
+  final TextEditingController hoursController = TextEditingController();
+  final TextEditingController priceController = TextEditingController();
+
+  void dispose() {
+    nameController.dispose();
+    hoursController.dispose();
+    priceController.dispose();
+  }
+}
+
+class _Slot {
+  String start;
+  String end;
+  _Slot(this.start, this.end);
+}
+
+class _AvailDay {
+  final String day;
+  final List<_Slot> slots;
+  _AvailDay(this.day, this.slots);
+}
+
+class _ServicePhotoCard extends StatelessWidget {
+  final List<XFile> pending;
+  final List<UploadedImage> uploaded;
+  final int mainIndex;
+  final VoidCallback onPick;
+  final ValueChanged<int> onSetMain;
+  final ValueChanged<int> onRemovePending;
+  final ValueChanged<int> onRemoveUploaded;
+
+  const _ServicePhotoCard({
+    required this.pending,
+    required this.uploaded,
+    required this.mainIndex,
+    required this.onPick,
+    required this.onSetMain,
+    required this.onRemovePending,
+    required this.onRemoveUploaded,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final total = pending.length + uploaded.length;
+    if (total == 0) {
+      return InkWell(
+        onTap: onPick,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 150,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFD5DEE4), width: 1.2),
+          ),
+          child: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(LucideIcons.cloudUpload,
+                    color: Color(0xFF684AC8), size: 36),
+                SizedBox(height: 12),
+                Text(
+                  'Add service photos',
+                  style: TextStyle(
+                    color: Color(0xFF060D35),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 5),
+                Text(
+                  'JPG, PNG up to 10MB (max 10)',
+                  style: TextStyle(
+                    color: Color(0xFF29304D),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 110,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: total,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final isMain = index == mainIndex;
+              final isPending = index < pending.length;
+              Widget thumb;
+              if (isPending) {
+                thumb = FutureBuilder(
+                  future: pending[index].readAsBytes(),
+                  builder: (context, snap) {
+                    if (!snap.hasData) {
+                      return const SizedBox(width: 110, height: 110);
+                    }
+                    return Image.memory(
+                      snap.data!,
+                      width: 110,
+                      height: 110,
+                      fit: BoxFit.cover,
+                    );
+                  },
+                );
+              } else {
+                final img = uploaded[index - pending.length];
+                thumb = StoreItemImage(
+                  imageUrl: img.fileUrl.isNotEmpty ? img.fileUrl : img.fileName,
+                  icon: LucideIcons.image,
+                  width: 110,
+                  height: 110,
+                  fit: BoxFit.cover,
+                );
+              }
+              return GestureDetector(
+                onTap: () => onSetMain(index),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color:
+                          isMain ? const Color(0xFF078D92) : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Stack(
+                      children: [
+                        thumb,
+                        if (isMain)
+                          const Positioned(
+                            left: 4,
+                            bottom: 4,
+                            child: ColoredBox(
+                              color: Colors.black54,
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                child: Text(
+                                  'Main',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        Positioned(
+                          right: 4,
+                          top: 4,
+                          child: GestureDetector(
+                            onTap: () => isPending
+                                ? onRemovePending(index)
+                                : onRemoveUploaded(index - pending.length),
+                            child: const CircleAvatar(
+                              radius: 12,
+                              backgroundColor: Colors.black87,
+                              child: Icon(Icons.close_rounded,
+                                  color: Colors.white, size: 14),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        TextButton(
+          onPressed: onPick,
+          child: const Text(
+            '+ Add more (max 10)',
+            style: TextStyle(
+              color: Color(0xFF078D92),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ServiceHighlightsEditor extends StatelessWidget {
+  final List<TextEditingController> controllers;
+  final int max;
+  final VoidCallback onChanged;
+
+  const _ServiceHighlightsEditor({
+    required this.controllers,
+    required this.max,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Key Highlights',
+          style: TextStyle(
+            color: Color(0xFF29304D),
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 7),
+        for (var i = 0; i < controllers.length; i++) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: _InputShell(
+                  label: 'Highlight ${i + 1}',
+                  hint: 'e.g. All equipment included',
+                  controller: controllers[i],
+                ),
+              ),
+              IconButton(
+                onPressed: () {
+                  controllers[i].dispose();
+                  controllers.removeAt(i);
+                  onChanged();
+                },
+                icon: const Icon(Icons.close_rounded, size: 18),
+                color: const Color(0xFF8B90A2),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
+        if (controllers.length < max)
+          TextButton(
+            onPressed: () {
+              controllers.add(TextEditingController());
+              onChanged();
+            },
+            child: const Text(
+              '+ Add Highlight (Max 5)',
+              style: TextStyle(
+                color: Color(0xFF078D92),
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _TimeBox extends StatelessWidget {
+  final String value;
+  final String placeholder;
+  final VoidCallback onTap;
+
+  const _TimeBox({
+    required this.value,
+    required this.placeholder,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        height: 44,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: const Color(0xFFD5DEE4)),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          value.isEmpty ? placeholder : value,
+          style: TextStyle(
+            color: value.isEmpty
+                ? const Color(0xFF8B90A2)
+                : const Color(0xFF060D35),
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ServiceAreasEditor extends StatelessWidget {
+  final List<TextEditingController> controllers;
+  final VoidCallback onChanged;
+
+  const _ServiceAreasEditor({
+    required this.controllers,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (var i = 0; i < controllers.length; i++) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: _InputShell(
+                  label: 'Area ${i + 1}',
+                  hint: 'e.g. Malad',
+                  controller: controllers[i],
+                ),
+              ),
+              IconButton(
+                onPressed: () {
+                  if (controllers.length <= 1) {
+                    controllers[i].clear();
+                  } else {
+                    controllers[i].dispose();
+                    controllers.removeAt(i);
+                  }
+                  onChanged();
+                },
+                icon: const Icon(Icons.close_rounded, size: 18),
+                color: const Color(0xFF8B90A2),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: () {
+              controllers.add(TextEditingController());
+              onChanged();
+            },
+            child: const Text(
+              '+ Add Area',
+              style: TextStyle(
+                color: Color(0xFF078D92),
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SubservicesEditor extends StatefulWidget {
+  final List<_ServiceSubservice> subservices;
+  final VoidCallback onChanged;
+
+  const _SubservicesEditor({
+    required this.subservices,
+    required this.onChanged,
+  });
+
+  @override
+  State<_SubservicesEditor> createState() => _SubservicesEditorState();
+}
+
+class _SubservicesEditorState extends State<_SubservicesEditor> {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Subservices',
+          style: TextStyle(
+            color: Color(0xFF29304D),
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 7),
+        for (var i = 0; i < widget.subservices.length; i++) ...[
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              border: Border.all(color: const Color(0xFFD5DEE4)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: [
+                _InputShell(
+                  label: 'Service Name',
+                  hint: 'Service name',
+                  controller: widget.subservices[i].nameController,
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _InputShell(
+                        label: 'Hr',
+                        hint: 'Hr',
+                        controller: widget.subservices[i].hoursController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _InputShell(
+                        label: 'Price (₹)',
+                        hint: '0',
+                        controller: widget.subservices[i].priceController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () {
+                        if (widget.subservices.length <= 1) return;
+                        setState(() {
+                          widget.subservices[i].dispose();
+                          widget.subservices.removeAt(i);
+                        });
+                        widget.onChanged();
+                      },
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      color: const Color(0xFF8B90A2),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        TextButton(
+          onPressed: () {
+            setState(() => widget.subservices.add(_ServiceSubservice()));
+            widget.onChanged();
+          },
+          child: const Text(
+            '+ Add Subservice',
+            style: TextStyle(
+              color: Color(0xFF078D92),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EditableAvailabilityPanel extends StatefulWidget {
+  final List<_AvailDay> days;
+  final VoidCallback onChanged;
+
+  const _EditableAvailabilityPanel({
+    required this.days,
+    required this.onChanged,
+  });
+
+  @override
+  State<_EditableAvailabilityPanel> createState() =>
+      _EditableAvailabilityPanelState();
+}
+
+class _EditableAvailabilityPanelState
+    extends State<_EditableAvailabilityPanel> {
+  Future<void> _pickTime(_Slot slot, bool isStart) async {
+    final parts = (isStart ? slot.start : slot.end).split(':');
+    final initial = parts.length == 2
+        ? TimeOfDay(
+            hour: int.tryParse(parts[0]) ?? 9,
+            minute: int.tryParse(parts[1]) ?? 0,
+          )
+        : const TimeOfDay(hour: 9, minute: 0);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+    );
+    if (picked == null) return;
+    setState(() {
+      final v =
+          '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+      if (isStart) {
+        slot.start = v;
+      } else {
+        slot.end = v;
+      }
+    });
+    widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: storeSoftCardDecoration(radius: 10),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          for (final day in widget.days) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        day.day,
+                        style: const TextStyle(
+                          color: Color(0xFF060D35),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (day.slots.isEmpty)
+                        const Text(
+                          'Unavailable',
+                          style: TextStyle(
+                            color: Color(0xFF8B90A2),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      IconButton(
+                        onPressed: () {
+                          setState(() => day.slots.add(_Slot('', '')));
+                          widget.onChanged();
+                        },
+                        icon: const Icon(LucideIcons.plus, size: 17),
+                        color: const Color(0xFF29304D),
+                      ),
+                    ],
+                  ),
+                  for (var i = 0; i < day.slots.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => _pickTime(day.slots[i], true),
+                              child: Container(
+                                height: 36,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                      color: const Color(0xFFD5DEE4)),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  day.slots[i].start.isEmpty
+                                      ? 'Start'
+                                      : day.slots[i].start,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 6),
+                            child: Text('–'),
+                          ),
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => _pickTime(day.slots[i], false),
+                              child: Container(
+                                height: 36,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                      color: const Color(0xFFD5DEE4)),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  day.slots[i].end.isEmpty
+                                      ? 'End'
+                                      : day.slots[i].end,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () {
+                              setState(() => day.slots.removeAt(i));
+                              widget.onChanged();
+                            },
+                            icon: const Icon(Icons.close_rounded, size: 17),
+                            color: const Color(0xFF8B90A2),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: Color(0xFFE8EBF0)),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 String _methodFor(String method) {
@@ -1855,20 +2775,5 @@ String _methodFor(String method) {
     'Online' => 'online',
     'At my location' => 'at_my_location',
     _ => 'at_customer_location',
-  };
-}
-
-Map<String, List<Map<String, String>>> _defaultWeeklyAvailability() {
-  const available = [
-    {'start': '09:00', 'end': '17:00'},
-  ];
-  return const {
-    'monday': available,
-    'tuesday': available,
-    'wednesday': available,
-    'thursday': available,
-    'friday': available,
-    'saturday': [],
-    'sunday': [],
   };
 }

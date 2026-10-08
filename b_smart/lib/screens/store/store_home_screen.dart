@@ -10,6 +10,7 @@ import 'self_store_dashboard_page.dart';
 import 'self_store_orders_page.dart';
 import 'self_store_products_page.dart';
 import 'self_store_services_manage_page.dart';
+import 'shared/store_money.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_bcoins_page.dart';
 import 'store_order_tracking_page.dart';
@@ -55,149 +56,404 @@ class StoreScreen extends StatefulWidget {
   State<StoreScreen> createState() => _StoreScreenState();
 }
 
-class _StoreAddManagePage extends StatelessWidget {
+class _StoreAddManagePage extends StatefulWidget {
   const _StoreAddManagePage();
 
   @override
+  State<_StoreAddManagePage> createState() => _StoreAddManagePageState();
+}
+
+class _StoreAddManagePageState extends State<_StoreAddManagePage> {
+  late Future<List<Map<String, dynamic>>> _productsFuture;
+  late Future<List<Map<String, dynamic>>> _servicesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLists();
+  }
+
+  void _loadLists() {
+    _productsFuture = Phase2StoreApi().myProducts();
+    _servicesFuture = Phase2StoreApi().myServices();
+  }
+
+  void _reloadLists() => setState(_loadLists);
+
+  Future<void> _addProduct() async {
+    if (!await StoreRoleGate.ensureInfluencer(context)) return;
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const StoreAddProductFlowScreen(),
+      ),
+    );
+    if (mounted) _reloadLists();
+  }
+
+  Future<void> _addService() async {
+    if (!await StoreRoleGate.ensureInfluencer(context)) return;
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const StoreAddServiceFlowScreen(),
+      ),
+    );
+    if (mounted) _reloadLists();
+  }
+
+  void _viewAllProducts() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const SelfStoreProductsScreen(),
+      ),
+    );
+  }
+
+  void _viewAllServices() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const SelfStoreServicesManageScreen(),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    Future<void> addProduct() async {
-      if (!await StoreRoleGate.ensureInfluencer(context)) return;
-      if (!context.mounted) return;
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => const StoreAddProductFlowScreen(),
-        ),
-      );
-    }
-
-    Future<void> addService() async {
-      if (!await StoreRoleGate.ensureInfluencer(context)) return;
-      if (!context.mounted) return;
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => const StoreAddServiceFlowScreen(),
-        ),
-      );
-    }
-
     return SliverList.list(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            MediaQuery.of(context).padding.top + 12,
+            16,
+            0,
+          ),
           child: _StoreAddHero(
-            onAddProduct: addProduct,
-            onAddService: addService,
+            productsFuture: _productsFuture,
+            servicesFuture: _servicesFuture,
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _CreateOptionCard(
+                    icon: LucideIcons.packagePlus,
+                    tint: BStoreColors.primary,
+                    tintSoft: BStoreColors.primarySoft,
+                    title: 'Sell a product',
+                    subtitle: 'List an item with price & stock',
+                    onTap: _addProduct,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _CreateOptionCard(
+                    icon: LucideIcons.calendarPlus,
+                    tint: BStoreColors.accentPurple,
+                    tintSoft: BStoreColors.accentPurpleSoft,
+                    title: 'Offer a service',
+                    subtitle: 'Set rates, hours & areas',
+                    onTap: _addService,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
         _StoreAddManageSection(
           title: 'My Products',
           icon: LucideIcons.package,
           addLabel: 'Add Product',
-          onAdd: addProduct,
-          api: const _ProductApi(),
+          onAdd: _addProduct,
+          onViewAll: _viewAllProducts,
+          itemsFuture: _productsFuture,
+          onRetry: _reloadLists,
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 20),
         _StoreAddManageSection(
           title: 'My Services',
           icon: LucideIcons.briefcaseBusiness,
           addLabel: 'Add Service',
-          onAdd: addService,
-          api: const _ServiceApi(),
+          onAdd: _addService,
+          onViewAll: _viewAllServices,
+          itemsFuture: _servicesFuture,
+          onRetry: _reloadLists,
         ),
       ],
     );
   }
 }
 
+class _CreateOptionCard extends StatelessWidget {
+  final IconData icon;
+  final Color tint;
+  final Color tintSoft;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _CreateOptionCard({
+    required this.icon,
+    required this.tint,
+    required this.tintSoft,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          height: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BStoreDecorations.card(radius: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: tintSoft,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: tint, size: 22),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: BStoreColors.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: BStoreColors.textMuted,
+                  fontSize: 11,
+                  height: 1.3,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _StoreAddHero extends StatelessWidget {
-  final VoidCallback onAddProduct;
-  final VoidCallback onAddService;
+  final Future<List<Map<String, dynamic>>> productsFuture;
+  final Future<List<Map<String, dynamic>>> servicesFuture;
 
   const _StoreAddHero({
-    required this.onAddProduct,
-    required this.onAddService,
+    required this.productsFuture,
+    required this.servicesFuture,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
       decoration: BoxDecoration(
-        color: BStoreColors.textPrimary,
-        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF0B8B8F),
+            Color(0xFF3E6EA5),
+            Color(0xFF4A3A9E),
+          ],
+          stops: [0.0, 0.55, 1.0],
+        ),
+        borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            color: const Color(0xFF0A7C80).withValues(alpha: 0.35),
+            blurRadius: 28,
+            offset: const Offset(0, 12),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
         children: [
-          const Row(
-            children: [
-              Icon(LucideIcons.sparkles, color: Colors.white, size: 22),
-              SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  'Create a listing',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 21,
-                    fontWeight: FontWeight.w900,
-                  ),
+          // Layered glow art.
+          Positioned(
+            right: -50,
+            top: -56,
+            child: Container(
+              width: 168,
+              height: 168,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    Colors.white.withValues(alpha: 0.22),
+                    Colors.white.withValues(alpha: 0.0),
+                  ],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Add something customers can buy or book from your store.',
-            style: TextStyle(
-              color: Color(0xFFD9DEE8),
-              fontSize: 12.5,
-              height: 1.35,
-              fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: onAddProduct,
-                  icon: const Icon(LucideIcons.packagePlus, size: 17),
-                  label: const Text('Product'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: BStoreColors.primary,
-                    foregroundColor: Colors.white,
-                    fixedSize: const Size.fromHeight(44),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
+          Positioned(
+            right: 66,
+            bottom: -64,
+            child: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  width: 1.5,
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: onAddService,
-                  icon: const Icon(LucideIcons.calendarPlus, size: 17),
-                  label: const Text('Service'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: BStoreColors.accentPurple,
-                    foregroundColor: Colors.white,
-                    fixedSize: const Size.fromHeight(44),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+            ),
+          ),
+          Positioned(
+            right: 92,
+            bottom: -38,
+            child: Container(
+              width: 68,
+              height: 68,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.08),
+              ),
+            ),
+          ),
+          // Faint dot grid, bottom-left.
+          Positioned(
+            left: 18,
+            bottom: 14,
+            child: _DotGrid(
+              rows: 3,
+              columns: 8,
+              color: Colors.white.withValues(alpha: 0.28),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(LucideIcons.sparkles,
+                                color: Colors.white, size: 13),
+                            SizedBox(width: 5),
+                            Text(
+                              'SELLER STUDIO',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                letterSpacing: 1.2,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: 'Create a\n',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 25,
+                                height: 1.15,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            TextSpan(
+                              text: 'listing',
+                              style: TextStyle(
+                                color: Color(0xFFFFE08A),
+                                fontSize: 27,
+                                height: 1.15,
+                                fontStyle: FontStyle.italic,
+                                fontFamily: 'Georgia',
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Sell products or offer services — pick a type below to get started.',
+                        style: TextStyle(
+                          color: Color(0xFFD9DEE8),
+                          fontSize: 12,
+                          height: 1.4,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          _HeroStat(
+                            icon: LucideIcons.package,
+                            future: productsFuture,
+                            singular: 'Product',
+                            plural: 'Products',
+                          ),
+                          const SizedBox(width: 8),
+                          _HeroStat(
+                            icon: LucideIcons.briefcaseBusiness,
+                            future: servicesFuture,
+                            singular: 'Service',
+                            plural: 'Services',
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 10),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: _ListingFan(future: productsFuture),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -205,32 +461,221 @@ class _StoreAddHero extends StatelessWidget {
   }
 }
 
-class _StoreAddManageSection extends StatefulWidget {
+class _DotGrid extends StatelessWidget {
+  final int rows;
+  final int columns;
+  final Color color;
+
+  const _DotGrid({
+    required this.rows,
+    required this.columns,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var r = 0; r < rows; r++)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var c = 0; c < columns; c++)
+                Container(
+                  width: 3,
+                  height: 3,
+                  margin: EdgeInsets.only(
+                    right: c == columns - 1 ? 0 : 6,
+                    bottom: r == rows - 1 ? 0 : 6,
+                  ),
+                  decoration:
+                      BoxDecoration(shape: BoxShape.circle, color: color),
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+class _HeroStat extends StatelessWidget {
+  final IconData icon;
+  final Future<List<Map<String, dynamic>>> future;
+  final String singular;
+  final String plural;
+
+  const _HeroStat({
+    required this.icon,
+    required this.future,
+    required this.singular,
+    required this.plural,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 13),
+          const SizedBox(width: 6),
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: future,
+            builder: (context, snapshot) {
+              final count = snapshot.data?.length;
+              return Text(
+                count == null ? '–' : '$count',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              );
+            },
+          ),
+          const SizedBox(width: 4),
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: future,
+            builder: (context, snapshot) {
+              final count = snapshot.data?.length ?? 0;
+              return Text(
+                count == 1 ? singular : plural,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.85),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ListingFan extends StatelessWidget {
+  final Future<List<Map<String, dynamic>>> future;
+
+  const _ListingFan({required this.future});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        final urls = (snapshot.data ?? const <Map<String, dynamic>>[])
+            .map(StoreMockState.firstImageUrl)
+            .where((url) => url.isNotEmpty)
+            .take(3)
+            .toList();
+        if (urls.isEmpty) {
+          return Column(
+            children: [
+              for (var i = 0; i < 2; i++)
+                Container(
+                  margin: EdgeInsets.only(top: i == 0 ? 0 : 8),
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Icon(
+                    i == 0 ? LucideIcons.package : LucideIcons.calendarPlus,
+                    color: Colors.white.withValues(alpha: 0.85),
+                    size: 24,
+                  ),
+                ),
+            ],
+          );
+        }
+        return SizedBox(
+          width: 84,
+          height: 176,
+          child: Stack(
+            children: [
+              for (var i = 0; i < urls.length; i++)
+                Positioned(
+                  top: i * 52.0,
+                  left: (i % 2) * 12.0,
+                  child: Transform.rotate(
+                    angle: (i - 1) * 0.12,
+                    child: Container(
+                      width: 64,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white, width: 2.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.25),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: SafeNetworkImage(
+                        url: urls[i],
+                        width: 64,
+                        height: 72,
+                        fit: BoxFit.cover,
+                        debugLabel: 'hero-listing-fan',
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _StoreAddManageSection extends StatelessWidget {
   final String title;
   final IconData icon;
   final String addLabel;
   final VoidCallback onAdd;
-  final _StoreManageApi api;
+  final VoidCallback onViewAll;
+  final Future<List<Map<String, dynamic>>> itemsFuture;
+  final VoidCallback onRetry;
 
   const _StoreAddManageSection({
+    super.key,
     required this.title,
     required this.icon,
     required this.addLabel,
     required this.onAdd,
-    required this.api,
+    required this.onViewAll,
+    required this.itemsFuture,
+    required this.onRetry,
   });
 
-  @override
-  State<_StoreAddManageSection> createState() => _StoreAddManageSectionState();
-}
+  static const _previewCount = 3;
 
-class _StoreAddManageSectionState extends State<_StoreAddManageSection> {
-  late Future<List<Map<String, dynamic>>> _itemsFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _itemsFuture = widget.api.load();
+  static double _priceOf(Map<String, dynamic> item) {
+    for (final key in const ['selling_price', 'price', 'amount', 'mrp']) {
+      final value = item[key];
+      if (value is num) return value.toDouble();
+      if (value is String) {
+        final parsed = double.tryParse(value);
+        if (parsed != null) return parsed;
+      }
+    }
+    return 0;
   }
 
   @override
@@ -243,138 +688,201 @@ class _StoreAddManageSectionState extends State<_StoreAddManageSection> {
           Row(
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE5F5F3),
-                  borderRadius: BorderRadius.circular(10),
+                  color: BStoreColors.primarySoft,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(widget.icon, color: BStoreColors.primary, size: 20),
+                child:
+                    Icon(icon, color: BStoreColors.primary, size: 20),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  widget.title,
-                  style: const TextStyle(
-                    color: BStoreColors.textPrimary,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: BStoreColors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    FutureBuilder<List<Map<String, dynamic>>>(
+                      future: itemsFuture,
+                      builder: (context, snapshot) {
+                        final count = snapshot.data?.length ?? 0;
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Text(
+                            'Loading…',
+                            style: TextStyle(
+                              color: BStoreColors.textMuted,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          );
+                        }
+                        return Text(
+                          count == 0
+                              ? 'Nothing here yet'
+                              : '$count ${count == 1 ? 'listing' : 'listings'}',
+                          style: const TextStyle(
+                            color: BStoreColors.textMuted,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
-              TextButton.icon(
-                onPressed: widget.onAdd,
-                icon: const Icon(LucideIcons.plus, size: 16),
-                label: Text(widget.addLabel),
+              TextButton(
+                onPressed: onViewAll,
                 style: TextButton.styleFrom(
                   foregroundColor: BStoreColors.primary,
-                  minimumSize: const Size(0, 32),
                   padding: const EdgeInsets.symmetric(horizontal: 8),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
                   textStyle: const TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('View all'),
+                    SizedBox(width: 2),
+                    Icon(LucideIcons.chevronRight, size: 16),
+                  ],
+                ),
               ),
             ],
           ),
+          const SizedBox(height: 12),
           FutureBuilder<List<Map<String, dynamic>>>(
-            future: _itemsFuture,
+            future: itemsFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const SizedBox(
-                  height: 100,
-                  child: Center(child: CircularProgressIndicator()),
+                return Container(
+                  height: 120,
+                  decoration: BStoreDecorations.card(radius: 16),
+                  child: const Center(
+                      child: CircularProgressIndicator(strokeWidth: 2)),
+                );
+              }
+              if (snapshot.hasError) {
+                return Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BStoreDecorations.card(radius: 16),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Could not load listings. Pull down to retry.',
+                          style: TextStyle(
+                            color: BStoreColors.textMuted,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: onRetry,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
                 );
               }
               final items = snapshot.data ?? const <Map<String, dynamic>>[];
               if (items.isEmpty) {
-                return Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: BStoreColors.borderSoft),
-                  ),
-                  child: Text(
-                    'No ${widget.title.toLowerCase()} yet. Tap ${widget.addLabel} to create your first.',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: BStoreColors.textMuted,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                );
-              }
-              return ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: items.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final item = items[index];
-                  final title =
-                      (item['name'] ?? item['title'] ?? 'Item').toString();
-                  final price = item['price'] ?? item['amount'] ?? 0;
-                  final imageUrl = StoreMockState.firstImageUrl(item);
-                  return Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: BStoreColors.borderSoft),
-                    ),
-                    child: Row(
+                return InkWell(
+                  onTap: onAdd,
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 20),
+                    decoration: BStoreDecorations.card(radius: 16),
+                    child: Column(
                       children: [
-                        if (imageUrl.isNotEmpty)
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: SafeNetworkImage(
-                              url: imageUrl,
-                              width: 48,
-                              height: 48,
-                              fit: BoxFit.cover,
-                              debugLabel: 'my-listing-thumbnail',
-                              placeholder: _placeholder(),
-                              errorWidget: _placeholder(),
-                            ),
-                          )
-                        else
-                          _placeholder(),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: BStoreColors.textPrimary,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '$price',
-                                style: const TextStyle(
-                                  color: BStoreColors.primary,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ],
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: BStoreColors.primarySoft,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(LucideIcons.plus,
+                              color: BStoreColors.primary, size: 24),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'No ${title.toLowerCase()} yet',
+                          style: const TextStyle(
+                            color: BStoreColors.textPrimary,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Tap here to ${addLabel.toLowerCase()}',
+                          style: const TextStyle(
+                            color: BStoreColors.primary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                       ],
                     ),
-                  );
-                },
+                  ),
+                );
+              }
+              final preview = items.take(_previewCount).toList();
+              final remaining = items.length - preview.length;
+              return Container(
+                decoration: BStoreDecorations.card(radius: 16),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    for (var i = 0; i < preview.length; i++) ...[
+                      _ManageRow(
+                        item: preview[i],
+                        priceLabel:
+                            formatCompactStoreMoney(_priceOf(preview[i])),
+                        onTap: onViewAll,
+                      ),
+                      if (i != preview.length - 1)
+                        const Divider(
+                          height: 1,
+                          indent: 72,
+                          color: BStoreColors.divider,
+                        ),
+                    ],
+                    if (remaining > 0)
+                      InkWell(
+                        onTap: onViewAll,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          child: Text(
+                            '+ $remaining more',
+                            style: const TextStyle(
+                              color: BStoreColors.primary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               );
             },
           ),
@@ -382,36 +890,101 @@ class _StoreAddManageSectionState extends State<_StoreAddManageSection> {
       ),
     );
   }
+}
 
-  Widget _placeholder() {
-    return Container(
-      width: 48,
-      height: 48,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF5F6F8),
-        borderRadius: BorderRadius.circular(8),
+class _ManageRow extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final String priceLabel;
+  final VoidCallback onTap;
+
+  const _ManageRow({
+    required this.item,
+    required this.priceLabel,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final title = (item['name'] ?? item['title'] ?? 'Item').toString();
+    final imageUrl = StoreMockState.firstImageUrl(item);
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            if (imageUrl.isNotEmpty)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SafeNetworkImage(
+                  url: imageUrl,
+                  width: 52,
+                  height: 52,
+                  fit: BoxFit.cover,
+                  debugLabel: 'my-listing-thumbnail',
+                  placeholder: Container(
+                    width: 52,
+                    height: 52,
+                    color: const Color(0xFFF5F6F8),
+                  ),
+                  errorWidget: Container(
+                    width: 52,
+                    height: 52,
+                    color: const Color(0xFFF5F6F8),
+                    child: Icon(LucideIcons.package,
+                        size: 22, color: Colors.grey.shade400),
+                  ),
+                ),
+              )
+            else
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F6F8),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(LucideIcons.package,
+                    size: 22, color: Colors.grey.shade400),
+              ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: BStoreColors.textPrimary,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    priceLabel,
+                    style: const TextStyle(
+                      color: BStoreColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              LucideIcons.chevronRight,
+              color: BStoreColors.textMuted,
+              size: 18,
+            ),
+          ],
+        ),
       ),
-      child: Icon(LucideIcons.package, size: 20, color: Colors.grey.shade400),
     );
   }
-}
-
-abstract class _StoreManageApi {
-  Future<List<Map<String, dynamic>>> load();
-}
-
-class _ProductApi implements _StoreManageApi {
-  const _ProductApi();
-
-  @override
-  Future<List<Map<String, dynamic>>> load() => Phase2StoreApi().myProducts();
-}
-
-class _ServiceApi implements _StoreManageApi {
-  const _ServiceApi();
-
-  @override
-  Future<List<Map<String, dynamic>>> load() => Phase2StoreApi().myServices();
 }
 
 class StoreScreenArgs {
@@ -565,8 +1138,11 @@ class _StoreScreenState extends State<StoreScreen> {
                         slivers: [
                           // Home tab is the Swiggy-style marketplace: its
                           // maroon header bleeds from the very top, so the
-                          // white title/profile bar is hidden here.
-                          if (!isHomeMarketplace)
+                          // white title/profile bar is hidden here. The
+                          // Create tab also skips it — the hero leads.
+                          if (!isHomeMarketplace &&
+                              selectedItem.section !=
+                                  _StoreNavSection.add)
                             _MarketplaceHeaderSliver(
                               title: selectedItem.label.isEmpty
                                   ? 'Create'

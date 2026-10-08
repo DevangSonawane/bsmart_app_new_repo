@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -17,6 +18,8 @@ import 'store_theme.dart';
 import 'shared/store_image_editor.dart';
 import 'shared/store_shared_widgets.dart';
 import 'shared/store_money.dart';
+
+const _productsCacheGroup = 'store_my_products';
 
 class SelfStoreProductsPage extends StatefulWidget {
   const SelfStoreProductsPage({super.key});
@@ -90,35 +93,89 @@ class _SelfStoreProductsPageState extends State<SelfStoreProductsPage> {
     }
   }
 
-  /// Loads my products from the personal endpoint. The `/influencer-products/my`
-  /// route already scopes to the current seller, so we do not second-guess it
-  /// with client-side ownership checks — a backend hiccup should surface as an
-  /// empty list, never as another seller's products.
+  /// Loads my products from the personal endpoint. Keep this cache separate
+  /// from services/marketplace caches so "My" screens cannot bleed into each
+  /// other if a previous tab has already filled the page cache.
   static Future<List<Map<String, dynamic>>> _loadMyProducts(
       {bool forceNetwork = false}) async {
     final myId = await CurrentUser.id;
     final pageCache = PageCacheService();
     final cacheParams = <String, dynamic>{};
-    final cached =
-        forceNetwork ? null : await pageCache.get('store', myId ?? '', cacheParams);
+    final cached = forceNetwork
+        ? null
+        : await pageCache.get(_productsCacheGroup, myId ?? '', cacheParams);
 
     if (cached != null) {
       try {
         final decoded = jsonDecode(cached) as List;
         return decoded.cast<Map<String, dynamic>>();
       } on Exception catch (_) {
-        await pageCache.invalidate('store', myId ?? '');
+        await pageCache.invalidate(_productsCacheGroup, myId ?? '');
       }
     }
 
-    final items = await Phase2StoreApi().myProducts();
+    final items = _onlyCurrentOwner(await Phase2StoreApi().myProducts(), myId);
     if (myId != null && myId.isNotEmpty) {
       try {
+        await pageCache.invalidate('store', myId);
         await pageCache.set(
-            'store', myId, cacheParams, jsonEncode(items));
+            _productsCacheGroup, myId, cacheParams, jsonEncode(items));
       } on Exception catch (_) {}
     }
     return items;
+  }
+
+  static List<Map<String, dynamic>> _onlyCurrentOwner(
+    List<Map<String, dynamic>> items,
+    String? myId,
+  ) {
+    final id = myId?.trim();
+    if (id == null || id.isEmpty) return items;
+    return items.where((item) {
+      final ownerIds = _ownerIdsFrom(item);
+      return ownerIds.isEmpty || ownerIds.contains(id);
+    }).toList();
+  }
+
+  static Set<String> _ownerIdsFrom(Map<String, dynamic> item) {
+    final ids = <String>{};
+    void add(dynamic value) {
+      final id = value?.toString().trim();
+      if (id != null && id.isNotEmpty) ids.add(id);
+    }
+
+    for (final key in const [
+      'user_id',
+      'userId',
+      'owner_id',
+      'ownerId',
+      'seller_id',
+      'sellerId',
+      'vendor_id',
+      'vendorId',
+      'influencer_id',
+      'influencerId',
+      'created_by',
+      'createdBy',
+    ]) {
+      add(item[key]);
+    }
+    for (final key in const [
+      'user',
+      'owner',
+      'seller',
+      'vendor',
+      'influencer'
+    ]) {
+      final nested = item[key];
+      if (nested is Map) {
+        add(nested['id'] ??
+            nested['_id'] ??
+            nested['user_id'] ??
+            nested['userId']);
+      }
+    }
+    return ids;
   }
 
   static String _productStatus(Map<String, dynamic> product) {
@@ -126,7 +183,8 @@ class _SelfStoreProductsPageState extends State<SelfStoreProductsPage> {
     if (raw.isEmpty) return 'Active';
     final value = raw.toLowerCase();
     if (value == 'active' || value == 'published') return 'Active';
-    if (value == 'out_of_stock' || value == 'out of stock') return 'Out of Stock';
+    if (value == 'out_of_stock' || value == 'out of stock')
+      return 'Out of Stock';
     return 'Draft';
   }
 
@@ -618,6 +676,7 @@ class _OwnerProductCard extends StatelessWidget {
         final currentUserId = await CurrentUser.id;
         final pageCache = PageCacheService();
         if (currentUserId != null && currentUserId.trim().isNotEmpty) {
+          await pageCache.invalidate(_productsCacheGroup, currentUserId);
           await pageCache.invalidate('store', currentUserId);
         }
       } on Exception catch (_) {}
@@ -845,30 +904,89 @@ class StoreAddProductFlowScreen extends StatefulWidget {
 }
 
 class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
+  // Mirrors React AddProduct.jsx: 3 steps, same option lists, same payload.
+  static const _categories = ['Fashion', 'Tech', 'Home', 'Beauty'];
+  static const _statusOptions = ['Draft', 'Active', 'Out of Stock'];
+  static const _returnPolicies = [
+    '7 Days Replacement',
+    '10 Days Return',
+    '15 Days Return',
+    'No Returns',
+  ];
+  static const _warranties = [
+    'None',
+    '3 Months Manufacturer Warranty',
+    '6 Months Manufacturer Warranty',
+    '1 Year Manufacturer Warranty',
+  ];
+  static const _countries = ['India', 'China', 'USA', 'Other'];
+  static const _weightUnits = ['kg', 'g', 'lb', 'oz'];
+  static const _swatches = [
+    '#8B5E3C',
+    '#111111',
+    '#C9A27E',
+    '#E8DCC8',
+    '#E24C4C',
+    '#3B6FE2',
+  ];
+  static const _maxImages = 10;
+  static const _maxHighlights = 5;
+
   int _step = 1;
-  bool _freeDelivery = false;
   bool _publishing = false;
+  int _mainImageIndex = 0;
   final _imagePicker = ImagePicker();
   final _productImages = <XFile>[];
-  final _productNameController = TextEditingController();
-  final _descriptionController = TextEditingController();
-  final _priceController = TextEditingController(text: '0.00');
-  final _stockController = TextEditingController(text: '0');
-  final _shippingFeeController = TextEditingController(text: '5.00');
-  final _lowStockController = TextEditingController(text: '5');
-  String? _category;
-  String _deliveryMethod = 'Standard shipping';
-  String _packageSize = 'Medium (30x20x15 cm)';
-  String _processingTime = '1-2 business days';
+  final _nameController = TextEditingController();
+  final _brandController = TextEditingController();
+  final _shortDescController = TextEditingController();
+  final _mrpController = TextEditingController();
+  final _sellingPriceController = TextEditingController();
+  final _stockController = TextEditingController();
+  final _skuController = TextEditingController();
+  final _packageWeightController = TextEditingController();
+  final _dimLController = TextEditingController();
+  final _dimWController = TextEditingController();
+  final _dimHController = TextEditingController();
+  final _dispatchTimeController = TextEditingController();
+  final _hsnController = TextEditingController();
+  final List<TextEditingController> _highlightControllers = [
+    TextEditingController(),
+    TextEditingController(),
+    TextEditingController(),
+  ];
+  final List<_ProductVariant> _variants = [_ProductVariant()];
+  String _category = 'Fashion';
+  String _status = 'Active';
+  String _weightUnit = 'kg';
+  String _country = 'India';
+  String _returnPolicy = '7 Days Replacement';
+  String _warranty = 'None';
+  bool _trackInventory = true;
+  bool _useStoreDelivery = true;
+  bool _useStoreReturnPolicy = true;
 
   @override
   void dispose() {
-    _productNameController.dispose();
-    _descriptionController.dispose();
-    _priceController.dispose();
+    _nameController.dispose();
+    _brandController.dispose();
+    _shortDescController.dispose();
+    _mrpController.dispose();
+    _sellingPriceController.dispose();
     _stockController.dispose();
-    _shippingFeeController.dispose();
-    _lowStockController.dispose();
+    _skuController.dispose();
+    _packageWeightController.dispose();
+    _dimLController.dispose();
+    _dimWController.dispose();
+    _dimHController.dispose();
+    _dispatchTimeController.dispose();
+    _hsnController.dispose();
+    for (final c in _highlightControllers) {
+      c.dispose();
+    }
+    for (final v in _variants) {
+      v.dispose();
+    }
     super.dispose();
   }
 
@@ -881,26 +999,51 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
         child: Column(
           children: [
             _FlowHeader(
-              title: _step == 1 ? 'Add Product' : 'Delivery & publish',
+              title: _step == 1
+                  ? 'Add Product'
+                  : _step == 2
+                      ? 'Price & Inventory'
+                      : 'Delivery & publish',
               onBack: () {
                 if (_step == 1) {
                   Navigator.of(context).pop();
                 } else {
-                  setState(() => _step = 1);
+                  setState(() => _step = _step - 1);
                 }
               },
+              onSaveDraft: _publishing ? null : () => _submitProduct('Draft'),
+              saving: _publishing,
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(26, 10, 26, 2),
+              child: _FlowSteps(
+                step: _step,
+                totalSteps: 3,
+                labels: const ['Details', 'Price', 'Delivery'],
+                onStepTap: (i) => setState(() => _step = i),
+              ),
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
-                children: _step == 1 ? _detailsStep() : _deliveryStep(),
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+                children: _step == 1
+                    ? _detailsStep()
+                    : _step == 2
+                        ? _priceStep()
+                        : _deliveryStep(),
               ),
             ),
             _FlowFooter(
               step: _step,
-              onContinue: () => setState(() => _step = 2),
+              totalSteps: 3,
+              onContinue: () => setState(() => _step = _step + 1),
+              onBack:
+                  _step == 1 ? null : () => setState(() => _step = _step - 1),
               publishing: _publishing,
-              onPublish: _publishProduct,
+              publishLabel: 'Publish Product',
+              onPublish: () => _submitProduct(
+                _status == 'Draft' ? 'Active' : _status,
+              ),
             ),
           ],
         ),
@@ -908,67 +1051,183 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
     );
   }
 
+  double get _discountPct {
+    final mrp = double.tryParse(_mrpController.text) ?? 0;
+    final sp = double.tryParse(_sellingPriceController.text) ?? 0;
+    if (mrp <= 0 || sp <= 0 || sp >= mrp) return 0;
+    return ((1 - sp / mrp) * 100).roundToDouble();
+  }
+
   List<Widget> _detailsStep() {
     return [
-      const _StepHeading(stepText: '1 of 2', title: 'Details'),
+      const _StepHeading(stepText: '1 of 3', title: 'Product Details'),
       const SizedBox(height: 14),
       _PhotoUploadCard(
         images: _productImages,
+        mainIndex: _mainImageIndex,
         onTap: _pickProductImage,
-        onRemove: (index) => setState(() => _productImages.removeAt(index)),
+        onSetMain: (index) => setState(() => _mainImageIndex = index),
+        onRemove: (index) => setState(() {
+          _productImages.removeAt(index);
+          if (_mainImageIndex >= _productImages.length) {
+            _mainImageIndex = 0;
+          } else if (index < _mainImageIndex) {
+            _mainImageIndex -= 1;
+          }
+        }),
       ),
+      if (_productImages.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Text(
+          '${_productImages.length}/$_maxImages photos · tap a photo to set it as main',
+          style: const TextStyle(
+            color: Color(0xFF8B90A2),
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
       const SizedBox(height: 12),
       _FormPanel(
         children: [
           _TextFieldShell(
-            label: 'Product name',
-            hint: 'Enter product name',
-            controller: _productNameController,
-          ),
-          const SizedBox(height: 14),
-          _DropdownShell<String>(
-            label: 'Category',
-            value: _category,
-            hint: 'Select category',
-            items: const [
-              'Home',
-              'Beauty',
-              'Wellness',
-              'Stationery',
-              'Electronics',
-            ],
-            onChanged: (value) => setState(() => _category = value),
+            label: 'Product Name * (${_nameController.text.length}/150)',
+            hint: 'Classic Brown Leather Tote',
+            controller: _nameController,
+            onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 14),
           _TextFieldShell(
-            label: 'Description',
-            hint: 'Describe your product',
-            controller: _descriptionController,
-            minHeight: 76,
-            maxLines: 3,
+            label: 'Brand (optional)',
+            hint: 'UrbanHide',
+            controller: _brandController,
           ),
           const SizedBox(height: 14),
+          _HighlightsEditor(
+            controllers: _highlightControllers,
+            max: _maxHighlights,
+            hint: 'e.g. Premium full-grain leather for durability',
+            onChanged: () => setState(() {}),
+          ),
+          const SizedBox(height: 14),
+          _DropdownShell<String>(
+            label: 'Category *',
+            value: _category,
+            items: _categories,
+            onChanged: (value) =>
+                setState(() => _category = value ?? _category),
+          ),
+          const SizedBox(height: 14),
+          _TextFieldShell(
+            label:
+                'Short Description * (${_shortDescController.text.length}/500)',
+            hint: 'Describe your product...',
+            controller: _shortDescController,
+            minHeight: 76,
+            maxLines: 4,
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
+      ),
+    ];
+  }
+
+  List<Widget> _priceStep() {
+    return [
+      const _StepHeading(stepText: '2 of 3', title: 'Price & Inventory'),
+      const SizedBox(height: 14),
+      _FormPanel(
+        children: [
           Row(
             children: [
               Expanded(
                 child: _TextFieldShell(
-                  label: 'Price',
-                  hint: '0.00',
-                  controller: _priceController,
-                  prefixText: '₹ ',
+                  label: 'MRP (₹) *',
+                  hint: '0',
+                  controller: _mrpController,
                   keyboardType: TextInputType.number,
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: _TextFieldShell(
-                  label: 'Stock quantity',
+                  label: 'Selling Price (₹) *',
+                  hint: '0',
+                  controller: _sellingPriceController,
+                  keyboardType: TextInputType.number,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _TextFieldShell(
+                  label: 'Stock Quantity *',
                   hint: '0',
                   controller: _stockController,
                   keyboardType: TextInputType.number,
                 ),
               ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _TextFieldShell(
+                  label: 'Seller SKU *',
+                  hint: 'SKU-001',
+                  controller: _skuController,
+                ),
+              ),
             ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF6F7F9),
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(color: const Color(0xFFD5DEE4)),
+            ),
+            child: Text(
+              _discountPct > 0 ? '${_discountPct.toInt()}% off' : 'Discount: —',
+              style: const TextStyle(
+                color: Color(0xFF060D35),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Text(
+                'Track Inventory',
+                style: TextStyle(
+                  color: Color(0xFF060D35),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const Spacer(),
+              Switch.adaptive(
+                value: _trackInventory,
+                onChanged: (v) => setState(() => _trackInventory = v),
+                activeThumbColor: const Color(0xFF078D92),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _DropdownShell<String>(
+            label: 'Product Status *',
+            value: _status,
+            items: _statusOptions,
+            onChanged: (value) => setState(() => _status = value ?? _status),
+          ),
+          const SizedBox(height: 12),
+          _VariantsEditor(
+            variants: _variants,
+            swatches: _swatches,
+            onChanged: () => setState(() {}),
           ),
         ],
       ),
@@ -977,111 +1236,123 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
 
   List<Widget> _deliveryStep() {
     return [
-      const _StepHeading(stepText: '2 of 2', title: 'Delivery & publish'),
-      const SizedBox(height: 16),
-      _FormPanel(
-        children: [
-          _DropdownShell<String>(
-            label: 'Delivery method',
-            value: _deliveryMethod,
-            items: const [
-              'Standard shipping',
-              'Express shipping',
-              'Local pickup',
-            ],
-            onChanged: (value) => setState(
-              () => _deliveryMethod = value ?? _deliveryMethod,
-            ),
-          ),
-          const SizedBox(height: 14),
-          _DropdownShell<String>(
-            label: 'Package size',
-            value: _packageSize,
-            items: const [
-              'Small (20x15x8 cm)',
-              'Medium (30x20x15 cm)',
-              'Large (45x35x25 cm)',
-            ],
-            onChanged: (value) => setState(
-              () => _packageSize = value ?? _packageSize,
-            ),
-          ),
-          const SizedBox(height: 14),
-          _DropdownShell<String>(
-            label: 'Processing time',
-            value: _processingTime,
-            items: const [
-              'Same day',
-              '1-2 business days',
-              '3-5 business days',
-            ],
-            onChanged: (value) => setState(
-              () => _processingTime = value ?? _processingTime,
-            ),
-          ),
-        ],
-      ),
-      const SizedBox(height: 12),
+      const _StepHeading(stepText: '3 of 3', title: 'Delivery & Publish'),
+      const SizedBox(height: 14),
       _FormPanel(
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(
+                flex: 2,
                 child: _TextFieldShell(
-                  label: 'Shipping fee',
-                  hint: '5.00',
-                  controller: _shippingFeeController,
-                  prefixText: '₹ ',
-                  keyboardType: TextInputType.number,
-                  enabled: !_freeDelivery,
+                  label: 'Package Weight *',
+                  hint: '0',
+                  controller: _packageWeightController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    const Flexible(
-                      child: Text(
-                        'Free delivery',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Color(0xFF29304D),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    Switch.adaptive(
-                      value: _freeDelivery,
-                      onChanged: (value) => setState(() {
-                        _freeDelivery = value;
-                        if (value) _shippingFeeController.text = '0.00';
-                      }),
-                      activeThumbColor: const Color(0xFF078D92),
-                      activeTrackColor:
-                          const Color(0xFF078D92).withValues(alpha: 0.35),
-                      inactiveThumbColor: Colors.white,
-                      inactiveTrackColor: const Color(0xFFD5DEE4),
-                    ),
-                  ],
+                child: _DropdownShell<String>(
+                  label: 'Unit',
+                  value: _weightUnit,
+                  items: _weightUnits,
+                  onChanged: (value) =>
+                      setState(() => _weightUnit = value ?? _weightUnit),
                 ),
               ),
             ],
           ),
-        ],
-      ),
-      const SizedBox(height: 12),
-      _FormPanel(
-        children: [
+          const SizedBox(height: 12),
+          const Text(
+            'Dimensions (L x W x H) * in cm',
+            style: TextStyle(
+              color: Color(0xFF060D35),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 7),
+          Row(
+            children: [
+              Expanded(
+                child: _TextFieldShell(
+                  label: 'L',
+                  hint: 'L',
+                  controller: _dimLController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _TextFieldShell(
+                  label: 'W',
+                  hint: 'W',
+                  controller: _dimWController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _TextFieldShell(
+                  label: 'H',
+                  hint: 'H',
+                  controller: _dimHController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           _TextFieldShell(
-            label: 'Low-stock alert',
-            subtitle: 'Get notified when stock reaches this level',
-            hint: '5',
-            controller: _lowStockController,
-            keyboardType: TextInputType.number,
+            label: 'Dispatch Time *',
+            hint: '1-2 Days',
+            controller: _dispatchTimeController,
+          ),
+          const SizedBox(height: 12),
+          _TextFieldShell(
+            label: 'HSN / GST (optional)',
+            hint: '4202',
+            controller: _hsnController,
+          ),
+          const SizedBox(height: 12),
+          _DropdownShell<String>(
+            label: 'Country of Origin *',
+            value: _country,
+            items: _countries,
+            onChanged: (value) => setState(() => _country = value ?? _country),
+          ),
+          const SizedBox(height: 12),
+          _CheckRow(
+            label: 'Use store delivery settings',
+            value: _useStoreDelivery,
+            onChanged: (v) => setState(() => _useStoreDelivery = v),
+          ),
+          const SizedBox(height: 12),
+          _DropdownShell<String>(
+            label: 'Return Policy *',
+            value: _returnPolicy,
+            items: _returnPolicies,
+            onChanged: (value) =>
+                setState(() => _returnPolicy = value ?? _returnPolicy),
+          ),
+          const SizedBox(height: 12),
+          _CheckRow(
+            label: 'Use store return policy',
+            value: _useStoreReturnPolicy,
+            onChanged: (v) => setState(() => _useStoreReturnPolicy = v),
+          ),
+          const SizedBox(height: 12),
+          _DropdownShell<String>(
+            label: 'Warranty (optional)',
+            value: _warranty,
+            items: _warranties,
+            onChanged: (value) =>
+                setState(() => _warranty = value ?? _warranty),
           ),
         ],
       ),
@@ -1092,7 +1363,11 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
     try {
       final images = await _imagePicker.pickMultiImage();
       if (images.isEmpty || !mounted) return;
-      setState(() => _productImages.addAll(images));
+      setState(() {
+        final room = _maxImages - _productImages.length;
+        if (room <= 0) return;
+        _productImages.addAll(images.take(room));
+      });
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1132,68 +1407,92 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
   static String _uploadNameFor(XFile image) =>
       influencerUploadFilename(image.name, image.path);
 
-  Future<void> _publishProduct() async {
-    final name = _productNameController.text.trim();
-    final description = _descriptionController.text.trim();
-    final category = _category?.trim();
-    final images = _productImages;
-    final price = _parseNumber(_priceController.text);
-    final stock = _parseNumber(_stockController.text).round();
-    if (name.isEmpty ||
-        description.isEmpty ||
-        category == null ||
-        category.isEmpty ||
-        images.isEmpty ||
-        price <= 0) {
+  String _apiStatus(String status) {
+    final v = status.toLowerCase();
+    if (v == 'active') return 'active';
+    if (v == 'out of stock' || v == 'out_of_stock') return 'out_of_stock';
+    return 'draft';
+  }
+
+  Future<void> _submitProduct(String status) async {
+    if (_productImages.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Add images, name, category, description and price.'),
+          content: Text('At least one product image is required.'),
         ),
       );
       return;
     }
+    if (_publishing) return;
     setState(() => _publishing = true);
     try {
-      // Upload from bytes, not from `XFile.path`. `pickMultiImage` can hand
-      // back a content:// URI or a provider cache path that
-      // `MultipartFile.fromPath` cannot open, which threw here and surfaced
-      // "Publish failed" even though nothing was wrong with the product.
+      final ordered = [
+        _productImages[_mainImageIndex.clamp(0, _productImages.length - 1)],
+        for (var i = 0; i < _productImages.length; i++)
+          if (i != _mainImageIndex.clamp(0, _productImages.length - 1))
+            _productImages[i],
+      ];
       final uploaded = await UploadApi().uploadInfluencerProductImages(
-        byteFiles: await _readImageBytes(images),
+        byteFiles: await _readImageBytes(ordered),
       );
+      final imagesPayload = ordered.asMap().entries.map((e) {
+        final up = uploaded[e.key];
+        return {'fileName': up.fileName};
+      }).toList();
+      final sellingPrice =
+          double.tryParse(_sellingPriceController.text.trim()) ?? 0;
       await Phase2StoreApi().createProduct({
-        'images': uploaded.map((img) => img.toJson()).toList(),
-        'name': name,
-        'category': category,
-        'brand': 'B-Smart',
-        'short_description': description,
-        'key_highlights': const ['Published from B-Smart Store'],
-        'mrp': price,
-        'selling_price': price,
-        'stock_quantity': stock,
-        'seller_sku': 'SKU-${DateTime.now().millisecondsSinceEpoch}',
-        'track_inventory': true,
-        'status': 'active',
-        'variants': const [],
-        'package_weight': 1,
-        'weight_unit': 'kg',
-        'dimensions': const {
-          'length': 30,
-          'width': 20,
-          'height': 10,
+        'images': imagesPayload,
+        'name': _nameController.text.trim(),
+        'category': _category,
+        'brand': _brandController.text.trim(),
+        'short_description': _shortDescController.text.trim(),
+        'key_highlights': _highlightControllers
+            .map((c) => c.text.trim())
+            .where((h) => h.isNotEmpty)
+            .toList(),
+        'mrp': double.tryParse(_mrpController.text.trim()) ?? 0,
+        'selling_price': sellingPrice,
+        'stock_quantity': int.tryParse(_stockController.text.trim()) ??
+            _parseNumber(_stockController.text).round(),
+        'seller_sku': _skuController.text.trim(),
+        'track_inventory': _trackInventory,
+        'status': _apiStatus(status),
+        'variants': _variants
+            .where((v) =>
+                v.color.trim().isNotEmpty ||
+                v.sizeController.text.trim().isNotEmpty ||
+                v.stockController.text.trim().isNotEmpty ||
+                v.priceController.text.trim().isNotEmpty)
+            .map((v) => {
+                  'color': v.color,
+                  'size': v.sizeController.text.trim().isEmpty
+                      ? 'One Size'
+                      : v.sizeController.text.trim(),
+                  'stock_quantity':
+                      int.tryParse(v.stockController.text.trim()) ?? 0,
+                  'price': double.tryParse(v.priceController.text.trim()) ??
+                      sellingPrice,
+                })
+            .toList(),
+        'package_weight':
+            double.tryParse(_packageWeightController.text.trim()) ?? 0,
+        'weight_unit': _weightUnit,
+        'dimensions': {
+          'length': double.tryParse(_dimLController.text.trim()) ?? 0,
+          'width': double.tryParse(_dimWController.text.trim()) ?? 0,
+          'height': double.tryParse(_dimHController.text.trim()) ?? 0,
           'unit': 'cm',
         },
-        'dispatch_time': _processingTime,
-        'country_of_origin': 'India',
-        'return_policy': '7 Days Replacement',
-        'use_store_delivery_settings': _freeDelivery,
-        'use_store_return_policy': true,
-        'warranty': 'None',
+        'dispatch_time': _dispatchTimeController.text.trim(),
+        'hsn_gst': _hsnController.text.trim(),
+        'country_of_origin': _country,
+        'return_policy': _returnPolicy,
+        'use_store_delivery_settings': _useStoreDelivery,
+        'use_store_return_policy': _useStoreReturnPolicy,
+        'warranty': _warranty,
       });
     } catch (e) {
-      // Only the upload + create call can fail the publish. Anything after
-      // this point (list refreshes, navigation) must never surface as
-      // "Publish failed" when the product is already live.
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Publish failed: $e')),
@@ -1202,14 +1501,19 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
     } finally {
       if (mounted) setState(() => _publishing = false);
     }
-    // Success path: refresh lists defensively, then confirm + close.
     try {
       widget.onPublished?.call();
     } catch (_) {}
     await StoreMockState.instance.refreshMarketplace();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Product published.')),
+      SnackBar(
+        content: Text(
+          status.toLowerCase() == 'draft'
+              ? 'Draft saved.'
+              : 'Product published.',
+        ),
+      ),
     );
     Navigator.of(context).pop();
   }
@@ -1218,42 +1522,173 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
 class _FlowHeader extends StatelessWidget {
   final String title;
   final VoidCallback onBack;
+  final VoidCallback? onSaveDraft;
+  final bool saving;
 
-  const _FlowHeader({required this.title, required this.onBack});
+  const _FlowHeader({
+    required this.title,
+    required this.onBack,
+    this.onSaveDraft,
+    this.saving = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        10,
-        MediaQuery.of(context).padding.top + 10,
-        18,
+        6,
+        MediaQuery.of(context).padding.top + 8,
+        12,
         0,
       ),
       child: SizedBox(
-        height: 38,
-        child: Stack(
-          alignment: Alignment.center,
+        height: 44,
+        child: Row(
           children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: IconButton(
-                onPressed: onBack,
-                icon: const Icon(LucideIcons.chevronLeft, size: 24),
-                color: const Color(0xFF060D35),
+            IconButton(
+              onPressed: onBack,
+              icon: const Icon(LucideIcons.chevronLeft, size: 24),
+              color: const Color(0xFF060D35),
+            ),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF060D35),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
-            Text(
-              title,
-              style: const TextStyle(
-                color: Color(0xFF060D35),
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
-              ),
+            SizedBox(
+              width: 92,
+              child: onSaveDraft == null
+                  ? const SizedBox.shrink()
+                  : TextButton(
+                      onPressed: saving ? null : onSaveDraft,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      child: Text(
+                        saving ? 'Saving...' : 'Save Draft',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF684AC8),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _FlowSteps extends StatelessWidget {
+  final int step;
+  final int totalSteps;
+  final List<String> labels;
+  final ValueChanged<int> onStepTap;
+
+  const _FlowSteps({
+    required this.step,
+    required this.totalSteps,
+    required this.labels,
+    required this.onStepTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (var i = 1; i <= totalSteps; i++) ...[
+          Expanded(
+            child: InkWell(
+              onTap: () => onStepTap(i),
+              borderRadius: BorderRadius.circular(8),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      if (i > 1)
+                        const Expanded(
+                          child: Divider(
+                            color: Color(0xFFD5DEE4),
+                            thickness: 2,
+                          ),
+                        )
+                      else
+                        const Spacer(),
+                      Container(
+                        width: 26,
+                        height: 26,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i < step
+                              ? const Color(0xFF078D92)
+                              : i == step
+                                  ? const Color(0xFF060D35)
+                                  : Colors.white,
+                          border: Border.all(
+                            color: i <= step
+                                ? Colors.transparent
+                                : const Color(0xFFD5DEE4),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: i < step
+                            ? const Icon(Icons.check_rounded,
+                                color: Colors.white, size: 15)
+                            : Text(
+                                '$i',
+                                style: TextStyle(
+                                  color: i == step
+                                      ? Colors.white
+                                      : const Color(0xFF8B90A2),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                      ),
+                      if (i < totalSteps)
+                        const Expanded(
+                          child: Divider(
+                            color: Color(0xFFD5DEE4),
+                            thickness: 2,
+                          ),
+                        )
+                      else
+                        const Spacer(),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    labels[i - 1],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: i == step
+                          ? const Color(0xFF060D35)
+                          : const Color(0xFF8B90A2),
+                      fontSize: 10.5,
+                      fontWeight: i == step ? FontWeight.w800 : FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -1296,13 +1731,17 @@ class _StepHeading extends StatelessWidget {
 
 class _PhotoUploadCard extends StatelessWidget {
   final List<XFile> images;
+  final int mainIndex;
   final VoidCallback onTap;
   final Function(int) onRemove;
+  final Function(int)? onSetMain;
 
   const _PhotoUploadCard({
     required this.images,
+    this.mainIndex = 0,
     required this.onTap,
     required this.onRemove,
+    this.onSetMain,
   });
 
   @override
@@ -1353,30 +1792,65 @@ class _PhotoUploadCard extends StatelessWidget {
                     itemCount: images.length,
                     separatorBuilder: (_, __) => const SizedBox(width: 8),
                     itemBuilder: (context, index) {
-                      return ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Stack(
-                          children: [
-                            Image.file(
-                              File(images[index].path),
-                              width: 110,
-                              height: 110,
-                              fit: BoxFit.cover,
+                      final isMain = index == mainIndex;
+                      return GestureDetector(
+                        onTap: () => onSetMain?.call(index),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isMain
+                                  ? const Color(0xFF078D92)
+                                  : Colors.transparent,
+                              width: 2,
                             ),
-                            Positioned(
-                              right: 4,
-                              top: 4,
-                              child: GestureDetector(
-                                onTap: () => onRemove(index),
-                                child: const CircleAvatar(
-                                  radius: 12,
-                                  backgroundColor: Colors.black87,
-                                  child: Icon(Icons.close_rounded,
-                                      color: Colors.white, size: 14),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Stack(
+                              children: [
+                                Image.file(
+                                  File(images[index].path),
+                                  width: 110,
+                                  height: 110,
+                                  fit: BoxFit.cover,
                                 ),
-                              ),
+                                if (isMain)
+                                  const Positioned(
+                                    left: 4,
+                                    bottom: 4,
+                                    child: ColoredBox(
+                                      color: Colors.black54,
+                                      child: Padding(
+                                        padding: EdgeInsets.symmetric(
+                                            horizontal: 6, vertical: 2),
+                                        child: Text(
+                                          'Main',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                Positioned(
+                                  right: 4,
+                                  top: 4,
+                                  child: GestureDetector(
+                                    onTap: () => onRemove(index),
+                                    child: const CircleAvatar(
+                                      radius: 12,
+                                      backgroundColor: Colors.black87,
+                                      child: Icon(Icons.close_rounded,
+                                          color: Colors.white, size: 14),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       );
                     },
@@ -1413,6 +1887,7 @@ class _TextFieldShell extends StatelessWidget {
   final double minHeight;
   final int maxLines;
   final bool enabled;
+  final ValueChanged<String>? onChanged;
 
   const _TextFieldShell({
     required this.label,
@@ -1424,6 +1899,7 @@ class _TextFieldShell extends StatelessWidget {
     this.minHeight = 42,
     this.maxLines = 1,
     this.enabled = true,
+    this.onChanged,
   });
 
   @override
@@ -1452,9 +1928,11 @@ class _TextFieldShell extends StatelessWidget {
         ],
         const SizedBox(height: 7),
         TextField(
+          key: ValueKey(controller),
           controller: controller,
           enabled: enabled,
           keyboardType: keyboardType,
+          onChanged: onChanged,
           minLines: maxLines > 1 ? maxLines : 1,
           maxLines: maxLines,
           style: const TextStyle(
@@ -1586,98 +2064,570 @@ class _DropdownShell<T> extends StatelessWidget {
 
 class _FlowFooter extends StatelessWidget {
   final int step;
+  final int totalSteps;
   final VoidCallback onContinue;
+  final VoidCallback? onBack;
   final VoidCallback onPublish;
+  final String publishLabel;
   final bool publishing;
 
   const _FlowFooter({
     required this.step,
+    this.totalSteps = 2,
     required this.onContinue,
+    this.onBack,
     required this.onPublish,
+    this.publishLabel = 'Publish',
     this.publishing = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (step == 1) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
-        child: SizedBox(
-          height: 50,
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: onContinue,
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF078D92),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+    final primary = SizedBox(
+      height: 50,
+      child: FilledButton(
+        onPressed:
+            publishing ? null : (step < totalSteps ? onContinue : onPublish),
+        style: FilledButton.styleFrom(
+          backgroundColor: const Color(0xFF078D92),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: publishing
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation(Colors.white),
+                ),
+              )
+            : FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  step < totalSteps ? 'Continue' : publishLabel,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w900),
+                ),
+              ),
+      ),
+    );
+    return Padding(
+      padding: EdgeInsets.fromLTRB(18, 10, 18, 12 + bottomPad),
+      child: onBack == null
+          ? SizedBox(width: double.infinity, child: primary)
+          : Row(
+              children: [
+                SizedBox(
+                  height: 50,
+                  child: OutlinedButton(
+                    onPressed: publishing ? null : onBack,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF060D35),
+                      side: const BorderSide(color: Color(0xFFD5DEE4)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                    ),
+                    child: const Text(
+                      'Back',
+                      style:
+                          TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: primary),
+              ],
+            ),
+    );
+  }
+}
+
+class _ProductVariant {
+  String color;
+  final TextEditingController sizeController = TextEditingController();
+  final TextEditingController stockController = TextEditingController();
+  final TextEditingController priceController = TextEditingController();
+
+  _ProductVariant({this.color = '#8B5E3C'});
+
+  void dispose() {
+    sizeController.dispose();
+    stockController.dispose();
+    priceController.dispose();
+  }
+}
+
+class _HighlightsEditor extends StatelessWidget {
+  final List<TextEditingController> controllers;
+  final int max;
+  final String hint;
+  final VoidCallback onChanged;
+
+  const _HighlightsEditor({
+    required this.controllers,
+    required this.max,
+    required this.hint,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Key Highlights *',
+          style: TextStyle(
+            color: Color(0xFF060D35),
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 7),
+        for (var i = 0; i < controllers.length; i++) ...[
+          Row(
+            key: ValueKey(controllers[i]),
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: _TextFieldShell(
+                  label: 'Highlight ${i + 1}',
+                  hint: hint,
+                  controller: controllers[i],
+                ),
+              ),
+              IconButton(
+                onPressed: () {
+                  controllers.removeAt(i);
+                  onChanged();
+                },
+                icon: const Icon(Icons.close_rounded, size: 18),
+                color: const Color(0xFF8B90A2),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
+        if (controllers.length < max)
+          TextButton(
+            onPressed: () {
+              controllers.add(TextEditingController());
+              onChanged();
+            },
+            child: const Text(
+              '+ Add Highlight (Max 5)',
+              style: TextStyle(
+                color: Color(0xFF078D92),
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
               ),
             ),
-            child: const Text(
-              'Continue',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+          ),
+      ],
+    );
+  }
+}
+
+class _VariantsEditor extends StatefulWidget {
+  final List<_ProductVariant> variants;
+  final List<String> swatches;
+  final VoidCallback onChanged;
+
+  const _VariantsEditor({
+    required this.variants,
+    required this.swatches,
+    required this.onChanged,
+  });
+
+  @override
+  State<_VariantsEditor> createState() => _VariantsEditorState();
+}
+
+String _normalizeHex(String raw) {
+  var hex = raw.trim();
+  if (!hex.startsWith('#')) hex = '#$hex';
+  if (RegExp(r'^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$').hasMatch(hex)) {
+    if (hex.length == 4) {
+      hex = '#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}'
+          .toUpperCase();
+    }
+    return hex.toUpperCase();
+  }
+  return '';
+}
+
+Color _parseHex(String hex) {
+  final normalized = _normalizeHex(hex);
+  if (normalized.isEmpty) return const Color(0xFF8B5E3C);
+  return Color(int.parse(normalized.substring(1), radix: 16) + 0xFF000000);
+}
+
+String _colorToHex(Color color) {
+  final r = ((color.r * 255).round()).clamp(0, 255);
+  final g = ((color.g * 255).round()).clamp(0, 255);
+  final b = ((color.b * 255).round()).clamp(0, 255);
+  return '#${r.toRadixString(16).padLeft(2, '0')}'
+          '${g.toRadixString(16).padLeft(2, '0')}'
+          '${b.toRadixString(16).padLeft(2, '0')}'
+      .toUpperCase();
+}
+
+/// Mirrors web `ColorPicker`: the value is any hex string (not a preset),
+/// swatch button opens a picker popover with a full color picker + hex input
+/// + preset swatches.
+class _VariantColorPicker extends StatefulWidget {
+  final String value;
+  final ValueChanged<String> onChange;
+  final List<String> swatches;
+
+  const _VariantColorPicker({
+    required this.value,
+    required this.onChange,
+    required this.swatches,
+  });
+
+  @override
+  State<_VariantColorPicker> createState() => _VariantColorPickerState();
+}
+
+class _VariantColorPickerState extends State<_VariantColorPicker> {
+  Future<void> _openPicker() async {
+    var picked = _parseHex(widget.value);
+    final hexController =
+        TextEditingController(text: _normalizeHex(widget.value));
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialog) {
+            final maxContentHeight =
+                (MediaQuery.sizeOf(context).height * 0.68).clamp(300.0, 420.0);
+            final pickerHeight = (maxContentHeight - 112).clamp(210.0, 300.0);
+
+            void commitHex(String raw) {
+              final normalized = _normalizeHex(raw);
+              if (normalized.isEmpty) return;
+              setDialog(() {
+                picked = _parseHex(normalized);
+                hexController.text = normalized;
+              });
+            }
+
+            // Force light styling: the app can run in system dark mode, which
+            // turns the picker's slider/label boxes and the hex field black.
+            // Web shows palette + hex input + swatches only, so the RGB/HSV
+            // label boxes are hidden too.
+            return Theme(
+              data: ThemeData.light(useMaterial3: true),
+              child: AlertDialog(
+                backgroundColor: Colors.white,
+                surfaceTintColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                content: SizedBox(
+                  width: 280,
+                  height: maxContentHeight,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        height: pickerHeight,
+                        child: ColorPicker(
+                          pickerColor: picked,
+                          onColorChanged: (c) {
+                            setDialog(() {
+                              picked = c;
+                              hexController.text = _colorToHex(c);
+                            });
+                          },
+                          enableAlpha: false,
+                          displayThumbColor: true,
+                          pickerAreaHeightPercent: 0.7,
+                          labelTypes: const [],
+                          pickerAreaBorderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 44,
+                        child: TextField(
+                          controller: hexController,
+                          decoration: InputDecoration(
+                            hintText: '#8B5E3C',
+                            hintStyle: const TextStyle(
+                              color: Color(0xFF8B90A2),
+                              fontFamily: 'monospace',
+                              fontSize: 12,
+                            ),
+                            filled: true,
+                            fillColor: Colors.white,
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 10),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(7),
+                              borderSide:
+                                  const BorderSide(color: Color(0xFFD5DEE4)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(7),
+                              borderSide:
+                                  const BorderSide(color: Color(0xFF078D92)),
+                            ),
+                          ),
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF060D35),
+                          ),
+                          onSubmitted: commitHex,
+                          onChanged: (v) {
+                            if (_normalizeHex(v).isNotEmpty) {
+                              setDialog(
+                                  () => picked = _parseHex(_normalizeHex(v)));
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final s in widget.swatches)
+                            GestureDetector(
+                              onTap: () {
+                                setDialog(() {
+                                  picked = _parseHex(s);
+                                  hexController.text = _normalizeHex(s);
+                                });
+                              },
+                              child: Container(
+                                width: 24,
+                                height: 24,
+                                decoration: BoxDecoration(
+                                  color: _parseHex(s),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color:
+                                        _colorToHex(picked) == _normalizeHex(s)
+                                            ? const Color(0xFF078D92)
+                                            : Colors.black12,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(
+                        color: Color(0xFF29304D),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF078D92),
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () {
+                      widget.onChange(_colorToHex(picked));
+                      Navigator.of(context).pop();
+                    },
+                    child: const Text('Done'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        GestureDetector(
+          onTap: _openPicker,
+          child: Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: _parseHex(widget.value),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFD5DEE4)),
             ),
           ),
         ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
-      child: Row(
-        children: [
-          Expanded(
-            child: SizedBox(
-              height: 50,
-              child: OutlinedButton(
-                onPressed: () {},
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF078D92),
-                  side: const BorderSide(color: Color(0xFF078D92)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: const Text(
-                  'Preview',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
-                ),
-              ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            widget.value.toUpperCase(),
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF060D35),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: SizedBox(
-              height: 50,
-              child: FilledButton(
-                onPressed: publishing ? null : onPublish,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF078D92),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: publishing
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          'Publish Product',
-                          style: TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.w900),
+        ),
+      ],
+    );
+  }
+}
+
+class _VariantsEditorState extends State<_VariantsEditor> {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Variants (optional)',
+          style: TextStyle(
+            color: Color(0xFF060D35),
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 7),
+        for (var i = 0; i < widget.variants.length; i++) ...[
+          Container(
+            key: ValueKey(widget.variants[i]),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              border: Border.all(color: const Color(0xFFD5DEE4)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _VariantColorPicker(
+                        value: widget.variants[i].color,
+                        swatches: widget.swatches,
+                        onChange: (hex) => setState(
+                          () => widget.variants[i].color = hex,
                         ),
                       ),
-              ),
+                    ),
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          if (widget.variants.length <= 1) {
+                            widget.variants[i].sizeController.clear();
+                            widget.variants[i].stockController.clear();
+                            widget.variants[i].priceController.clear();
+                          } else {
+                            widget.variants.removeAt(i);
+                          }
+                        });
+                        widget.onChanged();
+                      },
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      color: const Color(0xFF8B90A2),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _TextFieldShell(
+                  label: 'Size (e.g. One Size)',
+                  hint: 'One Size',
+                  controller: widget.variants[i].sizeController,
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _TextFieldShell(
+                        label: 'Stock',
+                        hint: '0',
+                        controller: widget.variants[i].stockController,
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _TextFieldShell(
+                        label: 'Price (₹)',
+                        hint: '0',
+                        controller: widget.variants[i].priceController,
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
+          const SizedBox(height: 8),
         ],
-      ),
+        TextButton(
+          onPressed: () {
+            setState(() => widget.variants.add(_ProductVariant()));
+            widget.onChanged();
+          },
+          child: const Text(
+            '+ Add Variant',
+            style: TextStyle(
+              color: Color(0xFF078D92),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CheckRow extends StatelessWidget {
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _CheckRow({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF060D35),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        Switch.adaptive(value: value, onChanged: onChanged),
+      ],
     );
   }
 }

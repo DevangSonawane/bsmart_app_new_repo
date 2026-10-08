@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'dart:ui';
+import 'dart:ui' as ui;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -95,66 +95,82 @@ void main() async {
       );
     };
     // Catch asynchronous engine/platform errors that don't go through FlutterError
-    PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    ui.PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
       debugPrint('PlatformDispatcher.onError: $error');
       debugPrint(stack.toString());
       return true; // handled
     };
     // Render a friendly error widget instead of a hard crash
     ErrorWidget.builder = (FlutterErrorDetails details) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        scrollBehavior: const _NoGlowScrollBehavior(),
-        home: Scaffold(
-          backgroundColor: Colors.white,
-          body: SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final maxPanelWidth = constraints.hasBoundedWidth
+              ? constraints.maxWidth.clamp(120.0, 420.0)
+              : 420.0;
+          final maxPanelHeight = constraints.hasBoundedHeight
+              ? (constraints.maxHeight - 24).clamp(120.0, 420.0)
+              : 420.0;
+
+          return Directionality(
+            textDirection: ui.TextDirection.ltr,
+            child: DefaultTextStyle(
+              style: const TextStyle(color: Colors.black87),
+              child: SafeArea(
+                minimum: const EdgeInsets.all(12),
+                child: Align(
+                  alignment: Alignment.center,
                   child: ConstrainedBox(
-                    constraints:
-                        BoxConstraints(minHeight: constraints.maxHeight),
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.error_outline,
-                            color: DesignTokens.instaPink,
-                            size: 48,
-                          ),
-                          const SizedBox(height: 12),
-                          const Text(
-                            'Something went wrong',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
+                    constraints: BoxConstraints(
+                      maxWidth: maxPanelWidth,
+                      maxHeight: maxPanelHeight,
+                    ),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.error_outline,
+                              color: DesignTokens.instaPink,
+                              size: 48,
                             ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            details.exceptionAsString(),
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.black54,
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Something went wrong',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              textAlign: TextAlign.center,
                             ),
-                            maxLines: 12,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
+                            const SizedBox(height: 8),
+                            Text(
+                              details.exceptionAsString(),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.black54,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 12,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                );
-              },
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+        },
       );
     };
 
