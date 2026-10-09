@@ -1142,63 +1142,54 @@ class _StoreScreenState extends State<StoreScreen> {
     return Theme(
       data: BStoreTheme.data(context),
       child: Scaffold(
+        extendBody: true,
         backgroundColor: BStoreColors.backgroundAlt,
         body: SafeArea(
           top: false,
+          bottom: false,
           child: Stack(
             children: [
-              Column(
-                children: [
-                  Expanded(
-                    child: RefreshIndicator.adaptive(
-                      color: BStoreColors.primary,
-                      onRefresh: _refreshStorePage,
-                      child: CustomScrollView(
-                        key: ValueKey('${selectedItem.section}-$_refreshTick'),
-                        physics: const AlwaysScrollableScrollPhysics(
-                          parent: BouncingScrollPhysics(),
-                        ),
-                        slivers: [
-                          // Home tab is the Swiggy-style marketplace: its
-                          // maroon header bleeds from the very top, so the
-                          // white title/profile bar is hidden here. Create,
-                          // My Store, Orders and Cart also skip it — their
-                          // content leads.
-                          if (!isHomeMarketplace &&
-                              selectedItem.section != _StoreNavSection.add &&
-                              selectedItem.section !=
-                                  _StoreNavSection.myStore &&
-                              selectedItem.section != _StoreNavSection.orders &&
-                              selectedItem.section != _StoreNavSection.cart)
-                            _MarketplaceHeaderSliver(
-                              title: selectedItem.label.isEmpty
-                                  ? 'Create'
-                                  : selectedItem.label,
-                              onProfileTap: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute<void>(
-                                    builder: (_) => StoreProfilePage(
-                                      ownerUserId: widget.ownerUserId,
-                                    ),
-                                  ),
-                                );
-                              },
+              RefreshIndicator.adaptive(
+                color: BStoreColors.primary,
+                onRefresh: _refreshStorePage,
+                child: CustomScrollView(
+                  key: ValueKey('${selectedItem.section}-$_refreshTick'),
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
+                  ),
+                  slivers: [
+                    // Home tab is the Swiggy-style marketplace: its
+                    // maroon header bleeds from the very top, so the
+                    // white title/profile bar is hidden here. Create,
+                    // My Store, Orders and Cart also skip it - their
+                    // content leads.
+                    if (!isHomeMarketplace &&
+                        selectedItem.section != _StoreNavSection.add &&
+                        selectedItem.section != _StoreNavSection.myStore &&
+                        selectedItem.section != _StoreNavSection.orders &&
+                        selectedItem.section != _StoreNavSection.cart)
+                      _MarketplaceHeaderSliver(
+                        title: selectedItem.label.isEmpty
+                            ? 'Create'
+                            : selectedItem.label,
+                        onProfileTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => StoreProfilePage(
+                                ownerUserId: widget.ownerUserId,
+                              ),
                             ),
-                          _buildSection(selectedItem.section),
-                          const SliverToBoxAdapter(child: SizedBox(height: 22)),
-                        ],
+                          );
+                        },
+                      ),
+                    _buildSection(selectedItem.section),
+                    SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: MediaQuery.paddingOf(context).bottom + 78,
                       ),
                     ),
-                  ),
-                  _StoreFooterNav(
-                    items: navItems,
-                    selectedIndex: selectedIndex,
-                    onSelected: (index) {
-                      if (index == _selectedNav) return;
-                      setState(() => _selectedNav = index);
-                    },
-                  ),
-                ],
+                  ],
+                ),
               ),
               // Draggable cart bubble floating above every store tab. Buyers
               // only: a self store has nothing to buy, so the bubble is hidden
@@ -1217,6 +1208,14 @@ class _StoreScreenState extends State<StoreScreen> {
                 ),
             ],
           ),
+        ),
+        bottomNavigationBar: _StoreFooterNav(
+          items: navItems,
+          selectedIndex: selectedIndex,
+          onSelected: (index) {
+            if (index == _selectedNav) return;
+            setState(() => _selectedNav = index);
+          },
         ),
       ),
     );
@@ -2211,10 +2210,10 @@ class _StoreFooterNav extends StatelessWidget {
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              const Positioned.fill(
+              Positioned.fill(
                 child: CustomPaint(
                   painter: _StoreFooterShapePainter(
-                    backgroundColor: BStoreColors.surface,
+                    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
                     borderColor: BStoreColors.borderSoft,
                   ),
                 ),
