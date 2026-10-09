@@ -64,6 +64,10 @@ class SwiggyMarketplaceHeader extends StatelessWidget {
   static const _fallbackText = Color(0xFFD8F2F1);
   static const _allCollageAsset =
       'assets/bSmart_Store/Shopping and Home Services Marketplace.png';
+  static const _productsCollageAsset =
+      'assets/bSmart_Store/Marketplace Essentials Collage.png';
+  static const _servicesCollageAsset =
+      'assets/bSmart_Store/ChatGPT Image Oct 9, 2026 at 12_51_45 PM.png';
 
   static const _anim = Duration(milliseconds: 320);
   static const _curve = Curves.easeOutCubic;
@@ -264,18 +268,7 @@ class SwiggyMarketplaceHeader extends StatelessWidget {
                                 size: 18, color: Color(0xFF6B7280)),
                             tooltip: 'Clear search',
                           ),
-                        Container(
-                            width: 1,
-                            height: 24,
-                            color: const Color(0xFFE5E7EB)),
-                        IconButton(
-                          onPressed: null,
-                          icon: Icon(
-                            LucideIcons.mic,
-                            size: 21,
-                            color: theme.active,
-                          ),
-                        ),
+                        const SizedBox(width: 12),
                       ],
                     ),
                   ),
@@ -292,9 +285,13 @@ class SwiggyMarketplaceHeader extends StatelessWidget {
                     duration: _anim,
                     switchInCurve: _curve,
                     switchOutCurve: Curves.easeInCubic,
-                    child: selectedTab == MarketplaceTab.all
-                        ? const MarketplaceAllCollage()
-                        : const SizedBox.shrink(),
+                    child: switch (selectedTab) {
+                      MarketplaceTab.all => const MarketplaceAllCollage(),
+                      MarketplaceTab.products =>
+                        const MarketplaceProductsCollage(),
+                      MarketplaceTab.services =>
+                        const MarketplaceServicesCollage(),
+                    },
                   ),
               ],
             ),
@@ -320,15 +317,55 @@ class MarketplaceAllCollage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return const _MarketplaceCollageImage(
+      key: ValueKey('all-marketplace-collage'),
+      asset: SwiggyMarketplaceHeader._allCollageAsset,
+    );
+  }
+}
+
+class MarketplaceProductsCollage extends StatelessWidget {
+  const MarketplaceProductsCollage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const _MarketplaceCollageImage(
+      key: ValueKey('products-marketplace-collage'),
+      asset: SwiggyMarketplaceHeader._productsCollageAsset,
+    );
+  }
+}
+
+class MarketplaceServicesCollage extends StatelessWidget {
+  const MarketplaceServicesCollage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const _MarketplaceCollageImage(
+      key: ValueKey('services-marketplace-collage'),
+      asset: SwiggyMarketplaceHeader._servicesCollageAsset,
+    );
+  }
+}
+
+class _MarketplaceCollageImage extends StatelessWidget {
+  final String asset;
+
+  const _MarketplaceCollageImage({
+    super.key,
+    required this.asset,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
-      key: const ValueKey('all-marketplace-collage'),
       padding: const EdgeInsets.fromLTRB(0, 4, 0, 4),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
         child: AspectRatio(
           aspectRatio: 1.62,
           child: Image.asset(
-            SwiggyMarketplaceHeader._allCollageAsset,
+            asset,
             fit: BoxFit.cover,
             filterQuality: FilterQuality.medium,
           ),
