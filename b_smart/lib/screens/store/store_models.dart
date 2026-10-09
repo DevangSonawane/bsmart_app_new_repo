@@ -676,6 +676,7 @@ class StoreMockState extends ChangeNotifier {
     _lastError = null;
     notifyListeners();
     try {
+      await ensureCartSynced();
       final data = await _api.getCart();
       final items = cartLinesFromApi(data);
       if (items != null) {

@@ -190,7 +190,8 @@ class ApiClient {
           )
           .timeout(ApiConfig.timeout);
       if (path.contains('/auth/apple/token')) {
-        debugPrint('[apple-sign-in] backend status code: ${response.statusCode}');
+        debugPrint(
+            '[apple-sign-in] backend status code: ${response.statusCode}');
         debugPrint(
           '[apple-sign-in] backend response: ${_sanitizeAppleDebugBody(response.body)}',
         );
@@ -453,7 +454,8 @@ class ApiClient {
             ? title
             : (response.reasonPhrase ?? 'HTTP ${response.statusCode}');
       } else {
-        message = raw.isNotEmpty
+        final hasEmptyJsonBody = body != null && body.isEmpty;
+        message = raw.isNotEmpty && !hasEmptyJsonBody
             ? raw
             : (error ?? response.reasonPhrase ?? 'Unknown error');
       }

@@ -6,6 +6,7 @@ import '../../api/phase2_store_api.dart';
 import '../../services/supabase_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
+import 'shared/store_money.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_models.dart';
 import 'store_profile_page.dart';
@@ -55,8 +56,7 @@ class _VisitorServiceDetailPageState extends State<VisitorServiceDetailPage> {
     try {
       final data = await Phase2StoreApi().getService(id);
       if (!mounted || data.isEmpty) return;
-      setState(
-          () => _freshItem = StoreMockState.serviceFromApi(data));
+      setState(() => _freshItem = StoreMockState.serviceFromApi(data));
     } catch (_) {
       // Keep the listed data; browse/search already show server content.
     }
@@ -145,6 +145,8 @@ class _VisitorServiceDetailPageState extends State<VisitorServiceDetailPage> {
 
   List<String> _highlights(StoreMockCatalogItem item) =>
       _rawStringList(item.raw, const [
+        'key_highlights',
+        'keyHighlights',
         'highlights',
         'key_features',
         'features',
@@ -153,6 +155,76 @@ class _VisitorServiceDetailPageState extends State<VisitorServiceDetailPage> {
         'included',
         'whats_included',
       ]);
+
+  List<String> _galleryImages(StoreMockCatalogItem item) {
+    final out = <String>[];
+    void add(String? url) {
+      final trimmed = (url ?? '').trim();
+      if (trimmed.isEmpty || trimmed == 'null') return;
+      final resolved = UrlHelper.absoluteUrl(trimmed);
+      if (resolved.isNotEmpty && !out.contains(resolved)) out.add(resolved);
+    }
+
+    for (final key in const [
+      'images',
+      'image_urls',
+      'imageUrls',
+      'media',
+      'photos',
+      'gallery',
+      'attachments',
+      'files',
+    ]) {
+      final value = item.raw[key];
+      if (value is! List) continue;
+      for (final entry in value) {
+        if (entry is String) {
+          add(entry);
+        } else if (entry is Map) {
+          final map = entry.map((k, v) => MapEntry(k.toString(), v));
+          for (final rk in const [
+            'fileUrl',
+            'file_url',
+            'secure_url',
+            'downloadUrl',
+            'download_url',
+            'url',
+            'src',
+            'image_url',
+            'imageUrl',
+            'image',
+            'path',
+          ]) {
+            final candidate = map[rk]?.toString() ?? '';
+            if (candidate.trim().isNotEmpty) {
+              add(candidate);
+              break;
+            }
+          }
+        }
+      }
+    }
+    add(item.imageUrl);
+    return out;
+  }
+
+  List<_SubserviceInfo> _subservices(StoreMockCatalogItem item) {
+    final raw = item.raw['subservices'];
+    if (raw is! List) return const [];
+    final out = <_SubserviceInfo>[];
+    for (final entry in raw) {
+      if (entry is! Map) continue;
+      final map = entry.map((k, v) => MapEntry(k.toString(), v));
+      final name = map['name']?.toString().trim() ?? '';
+      if (name.isEmpty) continue;
+      out.add(_SubserviceInfo(
+        name: name,
+        price: map['price']?.toString().trim() ?? '',
+        hours: (map['hours'] ?? map['duration'])?.toString().trim() ?? '',
+      ));
+    }
+    return out;
+  }
 
   String _cancellationPolicy(StoreMockCatalogItem item) =>
       _rawText(item.raw, const [
@@ -208,6 +280,8 @@ class _VisitorServiceDetailPageState extends State<VisitorServiceDetailPage> {
           );
     final item = view.item;
     final highlights = _highlights(item);
+    final galleryImages = _galleryImages(item);
+    final subservices = _subservices(item);
     final similar = _similarServices(item);
     final hasOwner = (widget.ownerUserId?.trim().isNotEmpty == true);
     return Scaffold(
@@ -222,10 +296,10 @@ class _VisitorServiceDetailPageState extends State<VisitorServiceDetailPage> {
                 physics: const BouncingScrollPhysics(),
                 children: [
                   _ServiceGallery(
-                    imageUrl: view.imageUrl,
+                    images: galleryImages,
                     duration: view.duration,
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 14),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: _ServiceTitleCard(
@@ -239,13 +313,18 @@ class _VisitorServiceDetailPageState extends State<VisitorServiceDetailPage> {
                       description: view.description,
                     ),
                   ),
+                  if (subservices.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: _SubservicesCard(subservices: subservices),
+                    ),
+                  ],
                   if (highlights.isNotEmpty) ...[
                     const SizedBox(height: 10),
                     Padding(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 16),
-                      child: _ServiceHighlightsCard(
-                          highlights: highlights),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: _ServiceHighlightsCard(highlights: highlights),
                     ),
                   ],
                   const SizedBox(height: 10),
@@ -255,15 +334,13 @@ class _VisitorServiceDetailPageState extends State<VisitorServiceDetailPage> {
                       duration: view.duration,
                       category: view.category,
                       serviceId: item.id,
-                      cancellationPolicy:
-                          _cancellationPolicy(item),
+                      cancellationPolicy: _cancellationPolicy(item),
                     ),
                   ),
                   if (hasOwner) ...[
                     const SizedBox(height: 10),
                     Padding(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: FutureBuilder<_ProviderInfo?>(
                         future: _providerFuture,
                         builder: (context, snapshot) {
@@ -324,28 +401,60 @@ class _ProviderInfo {
   });
 }
 
-class _ServiceGallery extends StatelessWidget {
-  final String imageUrl;
+class _SubserviceInfo {
+  final String name;
+  final String price;
+  final String hours;
+
+  const _SubserviceInfo({
+    required this.name,
+    required this.price,
+    required this.hours,
+  });
+}
+
+class _ServiceGallery extends StatefulWidget {
+  final List<String> images;
   final String duration;
 
   const _ServiceGallery({
-    required this.imageUrl,
+    required this.images,
     required this.duration,
   });
 
   @override
+  State<_ServiceGallery> createState() => _ServiceGalleryState();
+}
+
+class _ServiceGalleryState extends State<_ServiceGallery> {
+  final _controller = PageController();
+  int _index = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final images = widget.images.isEmpty ? const [''] : widget.images;
     return SizedBox(
-      height: 280,
+      height: 304,
       width: double.infinity,
       child: Stack(
         children: [
-          StoreItemImage(
-            imageUrl: imageUrl,
-            icon: LucideIcons.briefcaseBusiness,
-            width: double.infinity,
-            height: 280,
-            debugLabel: 'store-service-detail',
+          PageView.builder(
+            controller: _controller,
+            itemCount: images.length,
+            onPageChanged: (i) => setState(() => _index = i),
+            itemBuilder: (_, i) => StoreItemImage(
+              imageUrl: images[i],
+              icon: LucideIcons.briefcaseBusiness,
+              width: double.infinity,
+              height: 304,
+              debugLabel: 'store-service-detail',
+            ),
           ),
           Positioned(
             top: 0,
@@ -383,9 +492,57 @@ class _ServiceGallery extends StatelessWidget {
               ),
             ),
           ),
-          if (duration.trim().isNotEmpty)
+          if (images.length > 1)
             Positioned(
-              bottom: 12,
+              bottom: 14,
+              right: 16,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.44),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '${_index + 1}/${images.length}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+          if (images.length > 1)
+            Positioned(
+              bottom: 18,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < images.length; i++) ...[
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: _index == i ? 20 : 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: _index == i
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.58),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                      if (i != images.length - 1) const SizedBox(width: 5),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          if (widget.duration.trim().isNotEmpty)
+            Positioned(
+              bottom: 14,
               left: 16,
               child: Container(
                 padding:
@@ -401,7 +558,7 @@ class _ServiceGallery extends StatelessWidget {
                         color: Color(0xFF078D92), size: 14),
                     const SizedBox(width: 6),
                     Text(
-                      duration.trim(),
+                      widget.duration.trim(),
                       style: const TextStyle(
                         color: Color(0xFF060D35),
                         fontSize: 12.5,
@@ -442,31 +599,78 @@ class _ServiceTitleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
       decoration: storeSoftCardDecoration(radius: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            category.toUpperCase(),
-            style: const TextStyle(
-              color: Color(0xFF684AC8),
-              fontSize: 11.5,
-              letterSpacing: 0.6,
-              fontWeight: FontWeight.w800,
-            ),
+          Row(
+            children: [
+              Flexible(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1ECFA),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    category.toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF684AC8),
+                      fontSize: 11,
+                      letterSpacing: 0.4,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 9),
           Text(
             title,
             style: const TextStyle(
               color: Color(0xFF060D35),
-              fontSize: 20,
-              height: 1.2,
-              fontWeight: FontWeight.w800,
+              fontSize: 22,
+              height: 1.16,
+              fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(height: 10),
+          if (description.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              description.trim(),
+              style: const TextStyle(
+                color: Color(0xFF29304D),
+                fontSize: 14,
+                height: 1.45,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Text(
+            priceLabel,
+            style: const TextStyle(
+              color: Color(0xFF060D35),
+              fontSize: 25,
+              height: 1,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            duration.trim().isEmpty ? 'Service booking' : duration,
+            style: const TextStyle(
+              color: Color(0xFF55607A),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 14),
           Row(
             children: [
               if (ratingValue != null)
@@ -528,37 +732,127 @@ class _ServiceTitleCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _SubservicesCard extends StatelessWidget {
+  final List<_SubserviceInfo> subservices;
+
+  const _SubservicesCard({required this.subservices});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: storeSoftCardDecoration(radius: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Text(
-                'Starts at ',
-                style: TextStyle(
-                  color: Color(0xFF55607A),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+              Container(
+                width: 38,
+                height: 38,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF1ECFA),
+                  shape: BoxShape.circle,
                 ),
+                child: const Icon(LucideIcons.listChecks,
+                    color: Color(0xFF684AC8), size: 19),
               ),
-              Text(
-                priceLabel,
-                style: const TextStyle(
-                  color: Color(0xFF060D35),
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Subservices',
+                      style: TextStyle(
+                        color: Color(0xFF060D35),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Text(
+                      '${subservices.length} option${subservices.length == 1 ? '' : 's'} available',
+                      style: const TextStyle(
+                        color: Color(0xFF55607A),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-          if (description.trim().isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(
-              description.trim(),
+          const SizedBox(height: 13),
+          for (var i = 0; i < subservices.length; i++) ...[
+            _SubserviceRow(info: subservices[i]),
+            if (i != subservices.length - 1) const SizedBox(height: 9),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SubserviceRow extends StatelessWidget {
+  final _SubserviceInfo info;
+
+  const _SubserviceRow({required this.info});
+
+  @override
+  Widget build(BuildContext context) {
+    final meta = [
+      if (info.hours.isNotEmpty) '${info.hours}h',
+      if (info.price.isNotEmpty) _formatSubPrice(info.price),
+    ];
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE3E7EA)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: const BoxDecoration(
+              color: Color(0xFFEAF7F6),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(LucideIcons.check,
+                color: Color(0xFF078D92), size: 16),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              info.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Color(0xFF29304D),
-                fontSize: 13.5,
-                height: 1.45,
-                fontWeight: FontWeight.w500,
+                color: Color(0xFF060D35),
+                fontSize: 14,
+                height: 1.25,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          if (meta.isNotEmpty) ...[
+            const SizedBox(width: 10),
+            Text(
+              meta.join(' · '),
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: Color(0xFF078D92),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w900,
               ),
             ),
           ],
@@ -613,8 +907,8 @@ class _ServiceHighlightsCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 5),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: const Color(0xFF078D92),
                   borderRadius: BorderRadius.circular(999),
@@ -633,8 +927,7 @@ class _ServiceHighlightsCard extends StatelessWidget {
           const SizedBox(height: 12),
           for (var i = 0; i < highlights.length; i++) ...[
             Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
@@ -1085,8 +1378,7 @@ class _ServiceReviewsSummary extends StatelessWidget {
                     children: [
                       for (var i = 0; i < 5; i++)
                         Padding(
-                          padding:
-                              EdgeInsets.only(left: i == 0 ? 0 : 2),
+                          padding: EdgeInsets.only(left: i == 0 ? 0 : 2),
                           child: Icon(
                             LucideIcons.star,
                             size: 15,
@@ -1169,8 +1461,7 @@ class _SimilarServicesCarousel extends StatelessWidget {
                         debugLabel: 'store-service-similar',
                       ),
                       Padding(
-                        padding:
-                            const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -1227,8 +1518,7 @@ class _BookingBottomBar extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius:
-            const BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.08),
@@ -1282,8 +1572,7 @@ class _BookingBottomBar extends StatelessWidget {
               style: FilledButton.styleFrom(
                 backgroundColor: const Color(0xFF078D92),
                 foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 26),
+                padding: const EdgeInsets.symmetric(horizontal: 26),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -1298,4 +1587,12 @@ class _BookingBottomBar extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatSubPrice(dynamic raw) {
+  final text = raw?.toString().trim() ?? '';
+  if (text.isEmpty) return '';
+  final parsed = num.tryParse(text);
+  if (parsed == null) return '₹$text';
+  return formatStoreMoney(parsed.toDouble());
 }

@@ -28,11 +28,13 @@ import 'visitor_store_cart_page.dart';
 class StoreScreen extends StatefulWidget {
   final bool isSelfStore;
   final String? ownerUserId;
+  final bool openCart;
 
   const StoreScreen({
     super.key,
     this.isSelfStore = true,
     this.ownerUserId,
+    this.openCart = false,
   });
 
   static StoreScreen fromRouteArgs(Object? args) {
@@ -40,13 +42,16 @@ class StoreScreen extends StatefulWidget {
       return StoreScreen(
         isSelfStore: args.isSelfStore,
         ownerUserId: args.ownerUserId,
+        openCart: args.openCart,
       );
     }
     if (args is Map) {
       final rawIsSelf = args['isSelfStore'];
+      final rawOpenCart = args['openCart'];
       return StoreScreen(
         isSelfStore: rawIsSelf is bool ? rawIsSelf : true,
         ownerUserId: args['ownerUserId']?.toString(),
+        openCart: rawOpenCart is bool ? rawOpenCart : false,
       );
     }
     return const StoreScreen();
@@ -429,18 +434,22 @@ class _StoreAddHero extends StatelessWidget {
                       const SizedBox(height: 14),
                       Row(
                         children: [
-                          _HeroStat(
-                            icon: LucideIcons.package,
-                            future: productsFuture,
-                            singular: 'Product',
-                            plural: 'Products',
+                          Expanded(
+                            child: _HeroStat(
+                              icon: LucideIcons.package,
+                              future: productsFuture,
+                              singular: 'Product',
+                              plural: 'Products',
+                            ),
                           ),
-                          const SizedBox(width: 8),
-                          _HeroStat(
-                            icon: LucideIcons.briefcaseBusiness,
-                            future: servicesFuture,
-                            singular: 'Service',
-                            plural: 'Services',
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: _HeroStat(
+                              icon: LucideIcons.briefcaseBusiness,
+                              future: servicesFuture,
+                              singular: 'Service',
+                              plural: 'Services',
+                            ),
                           ),
                         ],
                       ),
@@ -515,7 +524,7 @@ class _HeroStat extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(999),
@@ -525,7 +534,7 @@ class _HeroStat extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, color: Colors.white, size: 13),
-          const SizedBox(width: 6),
+          const SizedBox(width: 5),
           FutureBuilder<List<Map<String, dynamic>>>(
             future: future,
             builder: (context, snapshot) {
@@ -540,17 +549,21 @@ class _HeroStat extends StatelessWidget {
               );
             },
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 3),
           FutureBuilder<List<Map<String, dynamic>>>(
             future: future,
             builder: (context, snapshot) {
               final count = snapshot.data?.length ?? 0;
-              return Text(
-                count == 1 ? singular : plural,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.85),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
+              return Flexible(
+                child: Text(
+                  count == 1 ? singular : plural,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               );
             },
@@ -694,8 +707,7 @@ class _StoreAddManageSection extends StatelessWidget {
                   color: BStoreColors.primarySoft,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child:
-                    Icon(icon, color: BStoreColors.primary, size: 20),
+                child: Icon(icon, color: BStoreColors.primary, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -990,10 +1002,12 @@ class _ManageRow extends StatelessWidget {
 class StoreScreenArgs {
   final bool isSelfStore;
   final String? ownerUserId;
+  final bool openCart;
 
   const StoreScreenArgs({
     this.isSelfStore = true,
     this.ownerUserId,
+    this.openCart = false,
   });
 }
 
@@ -1025,6 +1039,9 @@ class _StoreScreenState extends State<StoreScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.openCart) {
+      _selectedNav = _indexOfSection(_StoreNavSection.cart);
+    }
     // The embedded wishlist section cannot host its own ListenableBuilder
     // (a box widget is not a sliver), so the shell rebuilds on change.
     WishlistState.instance.addListener(_onWishlistChanged);
@@ -1090,6 +1107,12 @@ class _StoreScreenState extends State<StoreScreen> {
     ];
   }
 
+  int _indexOfSection(_StoreNavSection section) {
+    final items = _navItems;
+    final index = items.indexWhere((item) => item.section == section);
+    return index < 0 ? 0 : index;
+  }
+
   Future<void> _refreshStorePage() async {
     setState(() => _refreshTick++);
     final navItems = _navItems;
@@ -1142,14 +1165,11 @@ class _StoreScreenState extends State<StoreScreen> {
                           // My Store, Orders and Cart also skip it — their
                           // content leads.
                           if (!isHomeMarketplace &&
-                              selectedItem.section !=
-                                  _StoreNavSection.add &&
+                              selectedItem.section != _StoreNavSection.add &&
                               selectedItem.section !=
                                   _StoreNavSection.myStore &&
-                              selectedItem.section !=
-                                  _StoreNavSection.orders &&
-                              selectedItem.section !=
-                                  _StoreNavSection.cart)
+                              selectedItem.section != _StoreNavSection.orders &&
+                              selectedItem.section != _StoreNavSection.cart)
                             _MarketplaceHeaderSliver(
                               title: selectedItem.label.isEmpty
                                   ? 'Create'

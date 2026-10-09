@@ -13,7 +13,6 @@ import 'store_profile_page.dart';
 import 'store_theme.dart';
 import 'store_wishlist.dart';
 import 'visitor_product_reviews_page.dart';
-import 'visitor_store_cart_page.dart';
 
 class VisitorProductDetailData {
   final StoreMockCatalogItem item;
@@ -262,8 +261,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
 
   /// Same-category items first, then the rest — never the item itself.
   List<StoreMockCatalogItem> get _similarItems {
-    final pool =
-        StoreMockState.catalog.where((e) => e.id != _item.id).toList();
+    final pool = StoreMockState.catalog.where((e) => e.id != _item.id).toList();
     int score(StoreMockCatalogItem e) {
       var s = 0;
       if (e.category.trim().toLowerCase() ==
@@ -412,21 +410,48 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
   }
 
   void _openCart() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => VisitorStoreCartScreen(ownerUserId: widget.ownerUserId),
-      ),
+    final ownerId = widget.ownerUserId?.trim();
+    Navigator.of(context).pushNamed(
+      '/store',
+      arguments: {
+        'openCart': true,
+        'isSelfStore': ownerId == null || ownerId.isEmpty,
+        if (ownerId != null && ownerId.isNotEmpty) 'ownerUserId': ownerId,
+      },
     );
   }
 
-  void _addToCart({required bool openCart}) {
+  Future<void> _addToCart({required bool openCart}) async {
     if (_isOutOfStock) return;
-    StoreMockState.instance.setCartQuantity(
-      _item,
-      _quantity.clamp(1, _maxQuantity),
-      variant: _selectedVariant,
-    );
+    final store = StoreMockState.instance;
+    final quantity = _quantity.clamp(1, _maxQuantity);
+    final currentQuantity = store.quantityForVariant(_item, _selectedVariant);
+    if (currentQuantity > 0) {
+      store.setCartQuantity(
+        _item,
+        quantity,
+        variant: _selectedVariant,
+      );
+    } else {
+      store.addToCart(
+        _item,
+        quantity: quantity,
+        variant: _selectedVariant,
+      );
+    }
     if (openCart) {
+      try {
+        await store.ensureCartSynced();
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not sync cart. Please try again.'),
+          ),
+        );
+        return;
+      }
+      if (!mounted) return;
       _openCart();
       return;
     }
@@ -456,8 +481,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
   void _openStore() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            StoreProfilePage(ownerUserId: widget.ownerUserId),
+        builder: (_) => StoreProfilePage(ownerUserId: widget.ownerUserId),
       ),
     );
   }
@@ -520,8 +544,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                       ratingLabel: product.rating,
                       reviewsCount: _reviewsCount,
                       priceLabel: _displayPrice,
-                      mrpLabel:
-                          _mrp == null ? null : formatStoreMoney(_mrp!),
+                      mrpLabel: _mrp == null ? null : formatStoreMoney(_mrp!),
                       discountPct: _discountPct,
                       stockLabel: stockLabel,
                       isOutOfStock: isOutOfStock,
@@ -594,8 +617,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                   if (hasOwner) ...[
                     const SizedBox(height: 10),
                     Padding(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: FutureBuilder<_ProductOwner?>(
                         future: _ownerFuture,
                         builder: (context, snapshot) {
@@ -626,8 +648,7 @@ class _VisitorProductDetailPageState extends State<VisitorProductDetailPage> {
                       onTap: (item) => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => VisitorProductDetailPage(
-                            product:
-                                VisitorProductDetailData(item: item),
+                            product: VisitorProductDetailData(item: item),
                           ),
                         ),
                       ),
@@ -995,8 +1016,7 @@ class _ProductGalleryState extends State<_ProductGallery> {
                             borderRadius: BorderRadius.circular(999),
                           ),
                         ),
-                        if (i != images.length - 1)
-                          const SizedBox(width: 5),
+                        if (i != images.length - 1) const SizedBox(width: 5),
                       ],
                     ],
                   ),
@@ -1522,7 +1542,8 @@ class _DetailsAccordion extends StatelessWidget {
           _SpecTile(
             title: 'Delivery & returns',
             children: [
-              _SpecRow(label: 'Dispatch', subtitle: 'Arrives in $dispatchLabel'),
+              _SpecRow(
+                  label: 'Dispatch', subtitle: 'Arrives in $dispatchLabel'),
               _SpecRow(label: 'Returns', subtitle: returnPolicy),
             ],
           ),
@@ -1597,8 +1618,7 @@ class _SpecRow extends StatelessWidget {
                     ? BStoreColors.textPrimary
                     : BStoreColors.textSecondary,
                 fontSize: 13,
-                fontWeight:
-                    value != null ? FontWeight.w700 : FontWeight.w500,
+                fontWeight: value != null ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
           ),
@@ -1822,9 +1842,8 @@ class _StarsRow extends StatelessWidget {
             child: Icon(
               LucideIcons.star,
               size: size,
-              color: i < full
-                  ? const Color(0xFFF59E0B)
-                  : const Color(0xFFDADDE3),
+              color:
+                  i < full ? const Color(0xFFF59E0B) : const Color(0xFFDADDE3),
             ),
           ),
       ],

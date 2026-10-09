@@ -1259,6 +1259,9 @@ class _StoreAddServiceFlowScreenState extends State<StoreAddServiceFlowScreen> {
           _descriptionController.text.trim().isEmpty) {
         return 'Enter a service name and description.';
       }
+      if (!_highlightControllers.any((c) => c.text.trim().isNotEmpty)) {
+        return 'Add at least one key highlight.';
+      }
       final price = double.tryParse(_priceController.text.trim());
       if (_priceController.text.trim().isEmpty || price == null || price < 0) {
         return 'Enter a valid price of zero or more.';
@@ -2353,7 +2356,7 @@ class _ServiceHighlightsEditor extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Key Highlights',
+          'Key Highlights *',
           style: TextStyle(
             color: Color(0xFF29304D),
             fontSize: 12,

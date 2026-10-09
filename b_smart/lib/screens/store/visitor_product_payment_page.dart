@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../api/api_exceptions.dart';
 import '../../services/razorpay_checkout_service.dart';
+import '../../services/wallet_service.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_address_book.dart';
 import 'store_models.dart';
@@ -93,12 +95,11 @@ class _VisitorProductPaymentPageState extends State<VisitorProductPaymentPage> {
                           const SizedBox(height: 10),
                           _PaymentMethodCard(
                             selected: _selectedMethod == 'razorpay',
-                            brandAsset:
-                                'assets/store/payment/razorpay.svg',
+                            brandAsset: 'assets/store/payment/razorpay.svg',
                             title: 'Razorpay',
                             subtitle: 'UPI · cards · netbanking',
-                            onTap: () => setState(
-                                () => _selectedMethod = 'razorpay'),
+                            onTap: () =>
+                                setState(() => _selectedMethod = 'razorpay'),
                           ),
                           const SizedBox(height: 18),
                           const _SectionLabel('Deliver to'),
@@ -288,15 +289,13 @@ class _AmountDueCard extends StatelessWidget {
                 if (bCoinsSavings > 0) ...[
                   const SizedBox(height: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 9, vertical: 5),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF139B54)
-                          .withValues(alpha: 0.18),
+                      color: const Color(0xFF139B54).withValues(alpha: 0.18),
                       borderRadius: BorderRadius.circular(999),
                       border: Border.all(
-                        color: const Color(0xFF139B54)
-                            .withValues(alpha: 0.45),
+                        color: const Color(0xFF139B54).withValues(alpha: 0.45),
                       ),
                     ),
                     child: const Text(
@@ -339,15 +338,12 @@ class _PaymentMethodCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: selected
-                ? BStoreColors.primary
-                : BStoreColors.borderSoft,
+            color: selected ? BStoreColors.primary : BStoreColors.borderSoft,
             width: selected ? 1.8 : 1,
           ),
           boxShadow: selected
@@ -535,14 +531,11 @@ class _DeliveryAddressCard extends StatelessWidget {
             child: FilledButton(
               onPressed: onChange,
               style: FilledButton.styleFrom(
-                backgroundColor: hasAddress
-                    ? const Color(0xFFF1F4F8)
-                    : BStoreColors.primary,
-                foregroundColor: hasAddress
-                    ? BStoreColors.textPrimary
-                    : Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14),
+                backgroundColor:
+                    hasAddress ? const Color(0xFFF1F4F8) : BStoreColors.primary,
+                foregroundColor:
+                    hasAddress ? BStoreColors.textPrimary : Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(11),
                 ),
@@ -655,8 +648,7 @@ class _SecurePaymentNote extends StatelessWidget {
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF0B1030)
-                        .withValues(alpha: 0.3),
+                    color: const Color(0xFF0B1030).withValues(alpha: 0.3),
                     blurRadius: 16,
                     offset: const Offset(0, 6),
                   ),
@@ -761,6 +753,51 @@ class _PayButtonState extends State<_PayButton> {
         ),
       ),
     );
+  }
+
+  String? _validateShippingAddress(Map<String, String> address) {
+    const labels = {
+      'name': 'name',
+      'phone': 'phone number',
+      'address_line1': 'address',
+      'city': 'city',
+      'state': 'state',
+      'pincode': 'pincode',
+    };
+    for (final entry in labels.entries) {
+      if ((address[entry.key] ?? '').trim().isEmpty) {
+        return 'Please add your ${entry.value} before checkout.';
+      }
+    }
+    return null;
+  }
+
+  Future<String?> _validateWalletBalance() async {
+    if (widget.paymentMethod != 'wallet') return null;
+    final balance = await WalletService().getCoinBalance();
+    final payable = _amountValue(widget.amount).ceil();
+    if (balance >= payable) return null;
+    return 'Insufficient bCoins. You have $balance bCoins, but this order needs $payable. Please choose Razorpay or add bCoins.';
+  }
+
+  String _checkoutErrorMessage(Object error) {
+    if (error is StoreCheckoutException) return error.message;
+    if (error is ApiException) {
+      final message = error.message.trim();
+      if (error.statusCode == 400 &&
+          widget.paymentMethod == 'razorpay' &&
+          _amountValue(widget.amount) > 1000000) {
+        return 'This order total is very high (${widget.amount}) and the payment gateway rejected it. Please reduce quantity or split the order.';
+      }
+      if (message.isNotEmpty && message.toLowerCase() != 'bad request') {
+        return message;
+      }
+      if (error.statusCode == 400) {
+        return 'Checkout was rejected. Please check cart items, delivery address, and payment method.';
+      }
+      return message.isEmpty ? 'Checkout failed.' : message;
+    }
+    return error.toString();
   }
 
   Future<void> _payWithRazorpay(
@@ -895,21 +932,36 @@ class _PayButtonState extends State<_PayButton> {
                         Navigator.of(context).maybePop();
                         return;
                       }
+                      final address = widget.shippingAddress;
+                      final addressError = _validateShippingAddress(address);
+                      if (addressError != null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(addressError)),
+                        );
+                        return;
+                      }
                       setState(() => _submitting = true);
                       try {
+                        final walletError = await _validateWalletBalance();
+                        if (walletError != null) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(walletError)),
+                          );
+                          return;
+                        }
                         // Services have no cart per spec: only products go through
                         // POST /api/orders/checkout. This also refreshes the
                         // server cart so optimistic local items cannot drift into
                         // a backend "cart is empty" checkout error.
                         final productLines = await StoreMockState.instance
                             .prepareProductCheckout();
-                        final address = widget.shippingAddress;
                         if (widget.paymentMethod == 'razorpay') {
                           await _payWithRazorpay(productLines, address);
                           return;
                         }
-                        final response = await StoreMockState.instance
-                            .checkoutWithWallet(
+                        final response =
+                            await StoreMockState.instance.checkoutWithWallet(
                           shippingAddress: address,
                           cartPrepared: true,
                         );
@@ -921,7 +973,7 @@ class _PayButtonState extends State<_PayButton> {
                       } catch (e) {
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Checkout failed: $e')),
+                          SnackBar(content: Text(_checkoutErrorMessage(e))),
                         );
                       } finally {
                         if (mounted) setState(() => _submitting = false);
@@ -943,15 +995,14 @@ class _PayButtonState extends State<_PayButton> {
                     : widget.enabled
                         ? 'Pay Now'
                         : 'Add Address',
-                style: const TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w900),
+                style:
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
               ),
               style: FilledButton.styleFrom(
                 backgroundColor: BStoreColors.primary,
                 foregroundColor: Colors.white,
                 disabledBackgroundColor: const Color(0xFFD5DEE4),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 26),
+                padding: const EdgeInsets.symmetric(horizontal: 26),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),
@@ -1212,8 +1263,8 @@ class _SuccessHero extends StatelessWidget {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: const Color(0xFF34D399)
-                                .withValues(alpha: 0.3),
+                            color:
+                                const Color(0xFF34D399).withValues(alpha: 0.3),
                             width: 1.5,
                           ),
                         ),
@@ -1226,10 +1277,7 @@ class _SuccessHero extends StatelessWidget {
                           gradient: const LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
-                            colors: [
-                              Color(0xFF34D399),
-                              Color(0xFF078D92)
-                            ],
+                            colors: [Color(0xFF34D399), Color(0xFF078D92)],
                           ),
                           boxShadow: [
                             BoxShadow(
@@ -1276,8 +1324,7 @@ class _SuccessHero extends StatelessWidget {
                 const SizedBox(height: 12),
                 GestureDetector(
                   onTap: () {
-                    Clipboard.setData(
-                        ClipboardData(text: order.id));
+                    Clipboard.setData(ClipboardData(text: order.id));
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Order ID copied to clipboard'),
@@ -1287,14 +1334,13 @@ class _SuccessHero extends StatelessWidget {
                     );
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 7),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(999),
                       border: Border.all(
-                        color:
-                            Colors.white.withValues(alpha: 0.2),
+                        color: Colors.white.withValues(alpha: 0.2),
                       ),
                     ),
                     child: Row(

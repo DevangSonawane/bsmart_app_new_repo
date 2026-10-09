@@ -1052,8 +1052,8 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
   }
 
   double get _discountPct {
-    final mrp = double.tryParse(_mrpController.text) ?? 0;
-    final sp = double.tryParse(_sellingPriceController.text) ?? 0;
+    final mrp = _parseNumber(_mrpController.text);
+    final sp = _parseNumber(_sellingPriceController.text);
     if (mrp <= 0 || sp <= 0 || sp >= mrp) return 0;
     return ((1 - sp / mrp) * 100).roundToDouble();
   }
@@ -1146,6 +1146,7 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
                   hint: '0',
                   controller: _mrpController,
                   keyboardType: TextInputType.number,
+                  onChanged: (_) => setState(() {}),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1155,6 +1156,7 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
                   hint: '0',
                   controller: _sellingPriceController,
                   keyboardType: TextInputType.number,
+                  onChanged: (_) => setState(() {}),
                 ),
               ),
             ],

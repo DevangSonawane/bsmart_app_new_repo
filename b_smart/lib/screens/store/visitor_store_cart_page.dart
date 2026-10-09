@@ -119,10 +119,10 @@ class _VisitorStoreCartPageState extends State<VisitorStoreCartPage> {
     return null;
   }
 
-  List<StoreMockCartLine> get _selectedLines => StoreMockState.instance
-      .cartLines
-      .where((line) => _selectedKeys.contains(_lineKey(line)))
-      .toList();
+  List<StoreMockCartLine> get _selectedLines =>
+      StoreMockState.instance.cartLines
+          .where((line) => _selectedKeys.contains(_lineKey(line)))
+          .toList();
 
   double get _selectedSubtotal =>
       _selectedLines.fold(0.0, (sum, line) => sum + line.total);
@@ -230,14 +230,11 @@ class _VisitorStoreCartPageState extends State<VisitorStoreCartPage> {
           final hasServices = cartLines.any(
             (line) => line.item.type == StoreMockItemType.service,
           );
-          final allKeys = {
-            for (final line in cartLines) _lineKey(line)
-          };
+          final allKeys = {for (final line in cartLines) _lineKey(line)};
           final allSelected =
               allKeys.isNotEmpty && _selectedKeys.containsAll(allKeys);
-          final topInset = widget.showHeader
-              ? 0.0
-              : MediaQuery.of(context).padding.top + 12;
+          final topInset =
+              widget.showHeader ? 0.0 : MediaQuery.of(context).padding.top + 12;
           return Column(
             children: [
               if (!widget.showHeader) SizedBox(height: topInset),
@@ -271,8 +268,7 @@ class _VisitorStoreCartPageState extends State<VisitorStoreCartPage> {
                   padding: const EdgeInsets.fromLTRB(24, 48, 24, 0),
                   child: _EmptyCart(
                     onShopNow: () {
-                      final onContinueShopping =
-                          widget.onContinueShopping;
+                      final onContinueShopping = widget.onContinueShopping;
                       if (widget.showContinueShopping) {
                         if (onContinueShopping != null) {
                           onContinueShopping(context);
@@ -427,8 +423,7 @@ class _EmptyCart extends StatelessWidget {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: BStoreColors.primary
-                        .withValues(alpha: 0.35),
+                    color: BStoreColors.primary.withValues(alpha: 0.35),
                     blurRadius: 28,
                     offset: const Offset(0, 12),
                   ),
@@ -510,8 +505,7 @@ class _EmptyCart extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
           decoration: BoxDecoration(
             color: const Color(0xFFFFF8E7),
             borderRadius: BorderRadius.circular(12),
@@ -650,8 +644,7 @@ class _SelectionCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 14, 12, 0),
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: storeSoftCardDecoration(radius: 14),
         child: Row(
           children: [
@@ -678,8 +671,7 @@ class _SelectionCard extends StatelessWidget {
                 onPressed: onRemoveSelected,
                 style: TextButton.styleFrom(
                   foregroundColor: const Color(0xFFE5484D),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                   minimumSize: const Size(0, 32),
                   textStyle: const TextStyle(
                     fontSize: 12.5,
@@ -692,8 +684,7 @@ class _SelectionCard extends StatelessWidget {
               onPressed: onToggleAll,
               style: TextButton.styleFrom(
                 foregroundColor: BStoreColors.primary,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 minimumSize: const Size(0, 32),
                 textStyle: const TextStyle(
                   fontSize: 12.5,
@@ -907,72 +898,56 @@ class _CartItemCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: StoreMockState.instance.stockLabelFor(
-                              line.item,
-                              variant: line.variant,
-                            ),
-                            style: const TextStyle(
-                              color: BStoreColors.textSoft,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const TextSpan(
-                            text: '  •  Free delivery',
-                            style: TextStyle(
-                              color: Color(0xFF139B54),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
+                    const Text(
+                      'Free delivery',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Color(0xFF139B54),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Row(
                       children: [
                         _QuantityStepper(
                           quantity: line.quantity,
-                          maxQuantity:
-                              StoreMockState.instance.maxQuantityFor(
+                          maxQuantity: StoreMockState.instance.maxQuantityFor(
                             line.item,
                             variant: line.variant,
                           ),
-                          onMinus: () =>
-                              StoreMockState.instance.updateQuantity(
+                          onMinus: () => StoreMockState.instance.updateQuantity(
                             line.item.id,
                             line.quantity - 1,
                             variant: line.variant,
                           ),
-                          onPlus: () =>
-                              StoreMockState.instance.updateQuantity(
+                          onPlus: () => StoreMockState.instance.updateQuantity(
                             line.item.id,
                             line.quantity + 1,
                             variant: line.variant,
                           ),
                         ),
-                        const Spacer(),
-                        Text(
-                          StoreMockState.instance.money(line.total),
-                          style: const TextStyle(
-                            color: BStoreColors.primary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w900,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            StoreMockState.instance.money(line.total),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              color: BStoreColors.primary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         SizedBox.square(
                           dimension: 30,
                           child: InkWell(
                             borderRadius: BorderRadius.circular(8),
-                            onTap: () =>
-                                StoreMockState.instance.removeFromCart(
+                            onTap: () => StoreMockState.instance.removeFromCart(
                               line.item.id,
                               variant: line.variant,
                             ),
@@ -1007,20 +982,16 @@ class _WishlistHeart extends StatelessWidget {
       animation: WishlistState.instance,
       builder: (context, _) {
         final saved = WishlistState.instance.isSaved(productId);
-        final mutating =
-            WishlistState.instance.isMutating(productId);
+        final mutating = WishlistState.instance.isMutating(productId);
         return InkWell(
-          onTap: mutating
-              ? null
-              : () => WishlistState.instance.toggle(productId),
+          onTap:
+              mutating ? null : () => WishlistState.instance.toggle(productId),
           borderRadius: BorderRadius.circular(8),
           child: Padding(
             padding: const EdgeInsets.all(2),
             child: Icon(
               LucideIcons.heart,
-              color: saved
-                  ? const Color(0xFFE5484D)
-                  : BStoreColors.textSoft,
+              color: saved ? const Color(0xFFE5484D) : BStoreColors.textSoft,
               size: 19,
             ),
           ),
@@ -1101,8 +1072,7 @@ class _DeliveryCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: storeSoftCardDecoration(radius: 14),
         child: Row(
           children: [
@@ -1200,8 +1170,7 @@ class _BCoinsCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
             color: const Color(0xFFFFF8E7),
             borderRadius: BorderRadius.circular(14),
@@ -1465,8 +1434,7 @@ class _CheckoutButton extends StatelessWidget {
             fit: BoxFit.scaleDown,
             child: Text(
               enabled ? 'Place Order • $amount' : 'Select items to continue',
-              style:
-                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
             ),
           ),
         ),
@@ -1539,8 +1507,7 @@ class _CheckedBox extends StatelessWidget {
           ],
         ),
         child: checked
-            ? Icon(LucideIcons.check,
-                color: Colors.white, size: size * 0.6)
+            ? Icon(LucideIcons.check, color: Colors.white, size: size * 0.6)
             : null,
       ),
     );
