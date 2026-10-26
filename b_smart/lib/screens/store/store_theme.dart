@@ -76,14 +76,14 @@ class BStoreTypography {
 
   static const wordmark = TextStyle(
     fontSize: 25,
-    fontWeight: FontWeight.w900,
+    fontWeight: FontWeight.w700,
     letterSpacing: 1.2,
   );
 
   static const screenTitle = TextStyle(
     color: BStoreColors.textPrimary,
     fontSize: 19,
-    fontWeight: FontWeight.w900,
+    fontWeight: FontWeight.w700,
   );
 
   static const sectionTitle = TextStyle(
@@ -96,18 +96,18 @@ class BStoreTypography {
     color: BStoreColors.textSecondary,
     fontSize: 13,
     height: 1.35,
-    fontWeight: FontWeight.w600,
+    fontWeight: FontWeight.w500,
   );
 
   static const label = TextStyle(
     color: BStoreColors.textMuted,
     fontSize: 12.5,
-    fontWeight: FontWeight.w700,
+    fontWeight: FontWeight.w600,
   );
 
   static const button = TextStyle(
     fontSize: 14.5,
-    fontWeight: FontWeight.w900,
+    fontWeight: FontWeight.w700,
   );
 }
 

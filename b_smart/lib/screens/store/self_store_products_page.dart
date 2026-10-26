@@ -428,8 +428,7 @@ class _OwnerProductCard extends StatelessWidget {
                               style: const TextStyle(
                                 color: Color(0xFF060D35),
                                 fontSize: 15,
-                                fontWeight: FontWeight.w900,
-                                fontFamily: 'Georgia',
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                             const SizedBox(height: 6),
@@ -438,7 +437,7 @@ class _OwnerProductCard extends StatelessWidget {
                               style: const TextStyle(
                                 color: Color(0xFF078D92),
                                 fontSize: 13,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -1713,7 +1712,7 @@ class _StepHeading extends StatelessWidget {
           style: const TextStyle(
             color: Color(0xFF684AC8),
             fontSize: 13,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w600,
           ),
         ),
         const SizedBox(height: 5),
@@ -1722,8 +1721,7 @@ class _StepHeading extends StatelessWidget {
           style: const TextStyle(
             color: Color(0xFF060D35),
             fontSize: 18,
-            fontWeight: FontWeight.w900,
-            fontFamily: 'Georgia',
+            fontWeight: FontWeight.w700,
           ),
         ),
       ],

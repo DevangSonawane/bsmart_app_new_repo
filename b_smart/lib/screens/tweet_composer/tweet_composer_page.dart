@@ -1,12 +1,9 @@
-import 'dart:async';
-
 import 'package:b_smart/api/api.dart';
 import 'package:b_smart/utils/url_helper.dart';
 import 'package:b_smart/utils/app_error_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
-import 'package:b_smart/services/admob_service.dart';
 
 class TweetComposerPage extends StatefulWidget {
   final String? username;
@@ -170,9 +167,6 @@ class _TweetComposerPageState extends State<TweetComposerPage> {
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
-      unawaited(
-        AdMobService.instance.showInterstitialAfterSuccessfulPublish(),
-      );
     } catch (e, st) {
       AppErrorHandler.logError('tweet-composer-post', e, st);
       if (!mounted) return;

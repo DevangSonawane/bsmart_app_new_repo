@@ -27,7 +27,6 @@ import '../state/app_state.dart';
 import '../state/profile_actions.dart';
 import '../state/feed_actions.dart';
 import '../widgets/post_card.dart';
-import '../widgets/admob_banner.dart';
 import '../widgets/admob_native_ad.dart';
 import '../widgets/stories_row.dart';
 import '../widgets/bottom_nav.dart';
@@ -396,7 +395,6 @@ class _HomeDashboardState extends State<HomeDashboard>
   bool _onboardingStartQueued = false;
   bool _onboardingHasStarted = false;
   bool _onboardingDialogVisible = false;
-  bool _onboardingPageScrollLocked = false;
 
   bool? _parseBoolLike(dynamic value) {
     if (value is bool) return value;
@@ -598,7 +596,6 @@ class _HomeDashboardState extends State<HomeDashboard>
       if (keys.isEmpty) return;
 
       _onboardingHasStarted = true;
-      _onboardingPageScrollLocked = true;
       showcase.startShowCase(keys);
     } catch (e) {
       debugPrint('Home onboarding launch skipped: $e');
@@ -628,7 +625,6 @@ class _HomeDashboardState extends State<HomeDashboard>
     if (mounted) {
       _onboardingHasStarted = false;
       _onboardingDialogVisible = false;
-      _onboardingPageScrollLocked = false;
     }
   }
 
@@ -638,7 +634,6 @@ class _HomeDashboardState extends State<HomeDashboard>
     }
     _onboardingHasStarted = false;
     _onboardingDialogVisible = false;
-    _onboardingPageScrollLocked = false;
   }
 
   Future<void> _showWelcomeDialog() async {
@@ -1835,7 +1830,8 @@ class _HomeDashboardState extends State<HomeDashboard>
     } finally {}
   }
 
-  Future<void> _loadInitialFeed({bool forceNetwork = false, bool isRefresh = false}) async {
+  Future<void> _loadInitialFeed(
+      {bool forceNetwork = false, bool isRefresh = false}) async {
     try {
       await primeMediaAuthHeaders(); // ensure auth headers ready before any image loads
       unawaited(_loadReelSuggestions(force: forceNetwork));
@@ -3014,7 +3010,10 @@ class _HomeDashboardState extends State<HomeDashboard>
       _feedScrollController.jumpTo(0);
     }
     // Keep showing existing cached posts while refreshing in background
-    await Future.wait([_loadData(store), _loadInitialFeed(forceNetwork: true, isRefresh: true)]);
+    await Future.wait([
+      _loadData(store),
+      _loadInitialFeed(forceNetwork: true, isRefresh: true)
+    ]);
   }
 
   // Silent background refresh after story/route pop — preserve scroll
@@ -3120,14 +3119,6 @@ class _HomeDashboardState extends State<HomeDashboard>
   void _onNavTap(int idx) {
     if (idx == 1) {
       Navigator.of(context).pushNamed('/store');
-      return;
-    }
-    if (idx == 3) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => const PromoteScreen(),
-        ),
-      );
       return;
     }
     if (_swipeTabs.contains(idx)) {
@@ -3941,7 +3932,6 @@ class _HomeDashboardState extends State<HomeDashboard>
 
     Widget buildTabScaffold(int idx) {
       final isFullScreen = idx == 1 || idx == 3 || idx == 4;
-      final bottomBannerOffset = MediaQuery.of(context).padding.bottom + 60.0;
       final body = idx == 0
           ? Stack(
               children: [
@@ -3952,12 +3942,6 @@ class _HomeDashboardState extends State<HomeDashboard>
                         : theme.scaffoldBackgroundColor,
                     child: buildTabBody(idx),
                   ),
-                ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: bottomBannerOffset,
-                  child: const AdMobBanner(),
                 ),
               ],
             )
@@ -3996,9 +3980,11 @@ class _HomeDashboardState extends State<HomeDashboard>
         ScrollConfiguration(
           behavior: const _NoGlowScrollBehavior(),
           child: PageView.builder(
-            physics: _onboardingPageScrollLocked
-                ? const NeverScrollableScrollPhysics()
-                : const PageScrollPhysics(),
+            // Keep the feed from opening the Ads tab on a horizontal swipe.
+            // The full-screen Ads, Promote, and Reels tabs retain navigation.
+            physics: _currentIndex != 0
+                ? const PageScrollPhysics()
+                : const NeverScrollableScrollPhysics(),
             controller: _tabPageController,
             itemCount: _swipeTabs.length,
             onPageChanged: (page) {

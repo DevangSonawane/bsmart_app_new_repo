@@ -246,7 +246,7 @@ class _CommandDeck extends StatelessWidget {
                                   color: Colors.white,
                                   fontSize: 10,
                                   letterSpacing: 1.1,
-                                  fontWeight: FontWeight.w900,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ],
@@ -270,8 +270,7 @@ class _CommandDeck extends StatelessWidget {
                             width: 40,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              valueColor:
-                                  AlwaysStoppedAnimation(_neon),
+                              valueColor: AlwaysStoppedAnimation(_neon),
                             ),
                           )
                         : FittedBox(
@@ -283,7 +282,7 @@ class _CommandDeck extends StatelessWidget {
                                 color: _neon,
                                 fontSize: 38,
                                 height: 1.0,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
@@ -422,7 +421,7 @@ class _GlassStat extends StatelessWidget {
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 16,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 2),
@@ -572,7 +571,7 @@ class _ManageNavCard extends StatelessWidget {
                       style: const TextStyle(
                         color: Color(0xFF060D35),
                         fontSize: 15,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                     const SizedBox(height: 3),
@@ -585,7 +584,7 @@ class _ManageNavCard extends StatelessWidget {
                             ? const Color(0xFFE87822)
                             : const Color(0xFF8B90A2),
                         fontSize: 12,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
@@ -786,8 +785,7 @@ class _SelfDashboardHeader extends StatelessWidget {
             style: TextStyle(
               color: Color(0xFF060D35),
               fontSize: 34,
-              fontWeight: FontWeight.w800,
-              fontFamily: 'serif',
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -810,7 +808,7 @@ class _DashboardSectionHeading extends StatelessWidget {
         style: const TextStyle(
           color: Color(0xFF060D35),
           fontSize: 17,
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );
@@ -865,7 +863,7 @@ class _RecentActivityRow extends StatelessWidget {
                   style: const TextStyle(
                     color: Color(0xFF060D35),
                     fontSize: 13,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -890,4 +888,3 @@ class _RecentActivityRow extends StatelessWidget {
     );
   }
 }
-
