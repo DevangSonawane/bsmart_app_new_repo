@@ -73,8 +73,16 @@ class WalletService {
       throw Exception('Could not resolve current user id');
     }
 
-    final data =
-        await _walletApi.memberHistory(userId: userId);
+    Map<String, dynamic> data;
+    try {
+      data = await _walletApi.memberHistory(userId: userId);
+    } on ApiException catch (error) {
+      // Some valid account types do not have a Member record. Their Vault is
+      // still available through the authenticated, role-neutral endpoint.
+      // Do not surface the member-only endpoint's 400 in the Vault UI.
+      if (error.statusCode != 400) rethrow;
+      data = await fetchWalletMe();
+    }
     final success = data['success'];
     if (success is bool && !success) {
       final message = data['message']?.toString() ?? 'Failed to load wallet data';
@@ -140,7 +148,9 @@ class WalletService {
   Future<List<LedgerTransaction>> getTransactions() async {
     try {
       final data = await fetchMemberWalletHistoryForCurrentUser();
-      final txRaw = data['transactions'];
+      final nested = data['data'];
+      final txRaw = data['transactions'] ??
+          (nested is Map ? nested['transactions'] : null);
       if (txRaw is! List) return <LedgerTransaction>[];
 
       final meRaw = await _authApi.me();
@@ -293,7 +303,7 @@ class WalletService {
   Future<bool> _saveLedgerEntries(List<Map<String, dynamic>> entries) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.setString(_localLedgerKey, jsonEncode(entries));
+      return await prefs.setString(_localLedgerKey, jsonEncode(entries));
     } catch (_) {
       return false;
     }

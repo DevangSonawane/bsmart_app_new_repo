@@ -192,14 +192,14 @@ class Phase2StoreApi {
   }
 
   Future<Map<String, dynamic>> checkoutOrder({
-    required String paymentMethod,
+    required int coinsToUse,
     required Map<String, String> shippingAddress,
   }) async {
     // Returned raw, not through _asMap: the Razorpay branch returns
     // `{order: {...}, razorpay: {order_id, amount, key_id}}` and _asMap
     // would unwrap `order`, discarding the sibling `razorpay` payload.
     final data = await _post('/orders/checkout', body: {
-      'payment_method': paymentMethod,
+      'coins_to_use': coinsToUse,
       'shipping_address': shippingAddress,
     });
     return _rawMap(data);

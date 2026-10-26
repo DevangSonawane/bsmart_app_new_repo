@@ -728,35 +728,27 @@ class StoreMockState extends ChangeNotifier {
     return productLines;
   }
 
-  Future<Map<String, dynamic>> checkoutWithWallet({
+  /// Creates a product order using bCoins first. A remaining balance returns
+  /// a Razorpay order; selected coins are only debited after verification.
+  Future<Map<String, dynamic>> checkoutWithCoins({
     required Map<String, String> shippingAddress,
+    required int coinsToUse,
     bool cartPrepared = false,
   }) async {
     if (!cartPrepared) await prepareProductCheckout();
     final response = await _api.checkoutOrder(
-      paymentMethod: 'wallet',
+      coinsToUse: coinsToUse,
       shippingAddress: shippingAddress,
     );
-    _cartLines.clear();
-    notifyListeners();
-    unawaited(refreshBuyerOrders());
     return response;
   }
 
-  /// Razorpay branch: creates a backend Razorpay order (order stays pending).
-  /// Caller must open Razorpay Checkout with `response['razorpay']`
-  /// then call [verifyOrderPayment].
-  Future<Map<String, dynamic>> checkoutWithRazorpay({
-    required Map<String, String> shippingAddress,
-    bool cartPrepared = false,
-  }) async {
-    if (!cartPrepared) await prepareProductCheckout();
-    final response = await _api.checkoutOrder(
-      paymentMethod: 'razorpay',
-      shippingAddress: shippingAddress,
-    );
+  /// Finalizes local cart state after a coins-only checkout. Hybrid and
+  /// Razorpay-only orders are finalized by [verifyOrderPayment].
+  void completeCoinsOnlyCheckout() {
+    _cartLines.clear();
     notifyListeners();
-    return response;
+    unawaited(refreshBuyerOrders());
   }
 
   Future<Map<String, dynamic>> verifyOrderPayment({

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api/api_exceptions.dart';
@@ -29,14 +28,28 @@ class VisitorProductPaymentPage extends StatefulWidget {
 }
 
 class _VisitorProductPaymentPageState extends State<VisitorProductPaymentPage> {
-  String _selectedMethod = 'wallet';
   bool _useDeliveryAddress = true;
+  int _coinBalance = 0;
+  int _coinsToUse = 0;
+  bool _loadingBalance = true;
 
   @override
   void initState() {
     super.initState();
     StoreAddressBook.instance.ensureLoaded();
+    _loadCoinBalance();
   }
+
+  Future<void> _loadCoinBalance() async {
+    try {
+      final balance = await WalletService().getCoinBalance();
+      if (mounted) setState(() => _coinBalance = balance);
+    } finally {
+      if (mounted) setState(() => _loadingBalance = false);
+    }
+  }
+
+  int get _orderTotal => _amountValue(widget.amount);
 
   ShipAddress? get _address => StoreAddressBook.instance.selected;
 
@@ -82,24 +95,15 @@ class _VisitorProductPaymentPageState extends State<VisitorProductPaymentPage> {
                             bCoinsSavings: widget.bCoinsSavings,
                           ),
                           const SizedBox(height: 18),
-                          const _SectionLabel('Pay with'),
+                          const _SectionLabel('Split payment'),
                           const SizedBox(height: 9),
-                          _PaymentMethodCard(
-                            selected: _selectedMethod == 'wallet',
-                            brandAsset: 'assets/store/payment/wallet.svg',
-                            title: 'Wallet / bCoins',
-                            subtitle: '1 coin = ₹1 · deducted instantly',
-                            onTap: () =>
-                                setState(() => _selectedMethod = 'wallet'),
-                          ),
-                          const SizedBox(height: 10),
-                          _PaymentMethodCard(
-                            selected: _selectedMethod == 'razorpay',
-                            brandAsset: 'assets/store/payment/razorpay.svg',
-                            title: 'Razorpay',
-                            subtitle: 'UPI · cards · netbanking',
-                            onTap: () =>
-                                setState(() => _selectedMethod = 'razorpay'),
+                          _PaymentSplitSlider(
+                            total: _orderTotal,
+                            availableCoins: _coinBalance,
+                            coinsToUse: _coinsToUse,
+                            loading: _loadingBalance,
+                            onChanged: (value) =>
+                                setState(() => _coinsToUse = value),
                           ),
                           const SizedBox(height: 18),
                           const _SectionLabel('Deliver to'),
@@ -130,7 +134,7 @@ class _VisitorProductPaymentPageState extends State<VisitorProductPaymentPage> {
                   return _PayButton(
                     amount: widget.amount,
                     bCoinsSavings: widget.bCoinsSavings,
-                    paymentMethod: _selectedMethod,
+                    coinsToUse: _coinsToUse,
                     shippingAddress: address?.toShippingJson() ?? const {},
                     addressLabel: address == null
                         ? 'Add a delivery address'
@@ -146,6 +150,9 @@ class _VisitorProductPaymentPageState extends State<VisitorProductPaymentPage> {
     );
   }
 }
+
+int _amountValue(String amount) =>
+    double.tryParse(amount.replaceAll(RegExp(r'[^0-9.]'), ''))?.ceil() ?? 0;
 
 class _PaymentHeader extends StatelessWidget {
   const _PaymentHeader();
@@ -317,133 +324,184 @@ class _AmountDueCard extends StatelessWidget {
   }
 }
 
-class _PaymentMethodCard extends StatelessWidget {
-  final bool selected;
-  final String brandAsset;
-  final String title;
-  final String? subtitle;
-  final VoidCallback onTap;
+class _PaymentSplitSlider extends StatelessWidget {
+  final int total;
+  final int availableCoins;
+  final int coinsToUse;
+  final bool loading;
+  final ValueChanged<int> onChanged;
 
-  const _PaymentMethodCard({
-    required this.selected,
-    required this.brandAsset,
-    required this.title,
-    this.subtitle,
-    required this.onTap,
+  const _PaymentSplitSlider({
+    required this.total,
+    required this.availableCoins,
+    required this.coinsToUse,
+    required this.loading,
+    required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected ? BStoreColors.primary : BStoreColors.borderSoft,
-            width: selected ? 1.8 : 1,
-          ),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: BStoreColors.primary.withValues(alpha: 0.14),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ]
-              : null,
+    final maximum = availableCoins.clamp(0, total);
+    final applied = coinsToUse.clamp(0, maximum);
+    final razorpay = total - applied;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Colors.white, Color(0xFFF4FAF9)],
         ),
-        child: Row(
-          children: [
-            _RadioDot(selected: selected),
-            const SizedBox(width: 11),
-            Container(
-              width: 58,
-              height: 38,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF6F7F9),
-                borderRadius: BorderRadius.circular(9),
-                border: Border.all(color: BStoreColors.borderSoft),
-              ),
-              child: SvgPicture.asset(
-                brandAsset,
-                width: 48,
-                height: 30,
-                fit: BoxFit.contain,
-              ),
-            ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: BStoreColors.textPrimary,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF566079),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFD8EBE8)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Split your payment',
+                        style: TextStyle(
+                          color: BStoreColors.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        )),
+                    SizedBox(height: 2),
+                    Text('Use bCoins first, then pay the rest online',
+                        style: TextStyle(
+                          color: BStoreColors.textSecondary,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        )),
                   ],
-                ],
+                ),
               ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE3F4F1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(LucideIcons.coins,
+                      size: 14, color: BStoreColors.primary),
+                  const SizedBox(width: 5),
+                  Text(loading ? '…' : '$availableCoins',
+                      style: const TextStyle(
+                          color: BStoreColors.primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900)),
+                ]),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(children: [
+            const Text('bCoins to use',
+                style: TextStyle(
+                    color: BStoreColors.textPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800)),
+            const Spacer(),
+            Text('$applied / $maximum',
+                style: const TextStyle(
+                    color: BStoreColors.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900)),
+          ]),
+          const SizedBox(height: 2),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 7,
+              activeTrackColor: BStoreColors.primary,
+              inactiveTrackColor: const Color(0xFFDCE9E7),
+              thumbColor: BStoreColors.primary,
+              overlayColor: BStoreColors.primary.withValues(alpha: 0.12),
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
             ),
-          ],
-        ),
+            child: Slider(
+              value: applied.toDouble(),
+              min: 0,
+              max: maximum == 0 ? 1 : maximum.toDouble(),
+              divisions: maximum == 0 ? null : maximum,
+              onChanged: loading || maximum == 0
+                  ? null
+                  : (value) => onChanged(value.round()),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(children: [
+            _SplitAmount(
+                label: 'bCoins',
+                value: '₹$applied',
+                color: const Color(0xFFE1F5F1),
+                valueColor: BStoreColors.primary),
+            const SizedBox(width: 10),
+            _SplitAmount(
+                label: 'Pay via Razorpay',
+                value: '₹$razorpay',
+                color: const Color(0xFFF0F2F6),
+                valueColor: BStoreColors.textPrimary),
+          ]),
+          const SizedBox(height: 12),
+          const Text(
+            'bCoins are applied first and are charged only after payment is confirmed.',
+            style: TextStyle(
+              color: BStoreColors.textSecondary,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _RadioDot extends StatelessWidget {
-  final bool selected;
+class _SplitAmount extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  final Color valueColor;
 
-  const _RadioDot({required this.selected});
+  const _SplitAmount({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.valueColor,
+  });
 
   @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 160),
-      width: 18,
-      height: 18,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: selected ? BStoreColors.primary : const Color(0xFF4B546D),
-          width: selected ? 2.2 : 1.5,
+  Widget build(BuildContext context) => Expanded(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          decoration: BoxDecoration(
+              color: color, borderRadius: BorderRadius.circular(13)),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: BStoreColors.textSecondary,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700)),
+            const SizedBox(height: 3),
+            Text(value,
+                style: TextStyle(
+                    color: valueColor,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900)),
+          ]),
         ),
-      ),
-      child: selected
-          ? const DecoratedBox(
-              decoration: BoxDecoration(
-                color: BStoreColors.primary,
-                shape: BoxShape.circle,
-              ),
-            )
-          : null,
-    );
-  }
+      );
 }
 
 class _DeliveryAddressCard extends StatelessWidget {
@@ -691,7 +749,7 @@ class _SecurePaymentNote extends StatelessWidget {
 class _PayButton extends StatefulWidget {
   final String amount;
   final double bCoinsSavings;
-  final String paymentMethod;
+  final int coinsToUse;
   final Map<String, String> shippingAddress;
   final String addressLabel;
   final bool enabled;
@@ -699,7 +757,7 @@ class _PayButton extends StatefulWidget {
   const _PayButton({
     required this.amount,
     required this.bCoinsSavings,
-    this.paymentMethod = 'wallet',
+    required this.coinsToUse,
     required this.shippingAddress,
     required this.addressLabel,
     this.enabled = true,
@@ -737,7 +795,7 @@ class _PayButtonState extends State<_PayButton> {
       avatarColor: const Color(0xFFE5F5F3),
       status: StoreMockOrderStatus.newOrder,
       lines: productLines,
-      paidAmount: _amountValue(widget.amount),
+      paidAmount: _amountValue(widget.amount).toDouble(),
       bCoinsSavings: widget.bCoinsSavings,
       address: widget.addressLabel,
     );
@@ -772,12 +830,10 @@ class _PayButtonState extends State<_PayButton> {
     return null;
   }
 
-  Future<String?> _validateWalletBalance() async {
-    if (widget.paymentMethod != 'wallet') return null;
+  Future<String?> _validateCoinBalance() async {
     final balance = await WalletService().getCoinBalance();
-    final payable = _amountValue(widget.amount).ceil();
-    if (balance >= payable) return null;
-    return 'Insufficient bCoins. You have $balance bCoins, but this order needs $payable. Please choose Razorpay or add bCoins.';
+    if (balance >= widget.coinsToUse) return null;
+    return 'Your bCoin balance changed. You have $balance bCoins but selected ${widget.coinsToUse}. Adjust the slider and try again.';
   }
 
   String _checkoutErrorMessage(Object error) {
@@ -785,7 +841,7 @@ class _PayButtonState extends State<_PayButton> {
     if (error is ApiException) {
       final message = error.message.trim();
       if (error.statusCode == 400 &&
-          widget.paymentMethod == 'razorpay' &&
+          widget.coinsToUse < _amountValue(widget.amount) &&
           _amountValue(widget.amount) > 1000000) {
         return 'This order total is very high (${widget.amount}) and the payment gateway rejected it. Please reduce quantity or split the order.';
       }
@@ -803,17 +859,19 @@ class _PayButtonState extends State<_PayButton> {
   Future<void> _payWithRazorpay(
     List<StoreMockCartLine> productLines,
     Map<String, String> address,
+    int coinsToUse,
   ) async {
     // Creates the backend order first (stays pending until verified).
-    final response = await StoreMockState.instance.checkoutWithRazorpay(
+    final response = await StoreMockState.instance.checkoutWithCoins(
       shippingAddress: address,
+      coinsToUse: coinsToUse,
       cartPrepared: true,
     );
     if (!mounted) return;
     final order = _orderFrom(response, productLines);
     final razorpay = RazorpayCheckoutService.razorpayOf(
       response,
-      fallbackTotal: _amountValue(widget.amount),
+      fallbackTotal: _amountValue(widget.amount).toDouble(),
     );
     if (razorpay == null) {
       if (!mounted) return;
@@ -843,7 +901,7 @@ class _PayButtonState extends State<_PayButton> {
             razorpaySignature: success.signature,
           );
           if (!mounted) return;
-          _goSuccess(order, 'Razorpay');
+          _goSuccess(order, coinsToUse == 0 ? 'Razorpay' : 'bCoins + Razorpay');
         } catch (e) {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
@@ -942,7 +1000,7 @@ class _PayButtonState extends State<_PayButton> {
                       }
                       setState(() => _submitting = true);
                       try {
-                        final walletError = await _validateWalletBalance();
+                        final walletError = await _validateCoinBalance();
                         if (walletError != null) {
                           if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -956,19 +1014,27 @@ class _PayButtonState extends State<_PayButton> {
                         // a backend "cart is empty" checkout error.
                         final productLines = await StoreMockState.instance
                             .prepareProductCheckout();
-                        if (widget.paymentMethod == 'razorpay') {
-                          await _payWithRazorpay(productLines, address);
+                        final total = _amountValue(widget.amount);
+                        final coinsToUse = widget.coinsToUse.clamp(0, total);
+                        if (coinsToUse < total) {
+                          await _payWithRazorpay(
+                            productLines,
+                            address,
+                            coinsToUse,
+                          );
                           return;
                         }
                         final response =
-                            await StoreMockState.instance.checkoutWithWallet(
+                            await StoreMockState.instance.checkoutWithCoins(
                           shippingAddress: address,
+                          coinsToUse: coinsToUse,
                           cartPrepared: true,
                         );
                         if (!context.mounted) return;
+                        StoreMockState.instance.completeCoinsOnlyCheckout();
                         _goSuccess(
                           _orderFrom(response, productLines),
-                          'Wallet',
+                          'bCoins',
                         );
                       } catch (e) {
                         if (!context.mounted) return;
@@ -1012,10 +1078,6 @@ class _PayButtonState extends State<_PayButton> {
         ],
       ),
     );
-  }
-
-  static double _amountValue(String amount) {
-    return double.tryParse(amount.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
   }
 }
 

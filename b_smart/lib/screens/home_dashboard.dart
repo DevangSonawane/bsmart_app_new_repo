@@ -3462,7 +3462,7 @@ class _HomeDashboardState extends State<HomeDashboard>
                                   size: 12, color: Colors.white),
                             ),
                             const SizedBox(width: 6),
-                            Text('$_balance',
+                            Text(_compactCoinBalance(_balance),
                                 style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 12,
@@ -4579,7 +4579,7 @@ class _FloatingWallet extends StatelessWidget {
                           fontWeight: FontWeight.w500,
                           color: theme.textTheme.bodyMedium?.color ??
                               Colors.grey.shade600)),
-                  Text('$balance',
+                  Text(_compactCoinBalance(balance),
                       style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
@@ -4592,6 +4592,28 @@ class _FloatingWallet extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Compact balance labels keep the home-header wallet chip readable.
+/// Examples: 999, 1K, 12.5K, 1M, 2.3B.
+String _compactCoinBalance(int value) {
+  final absolute = value.abs();
+  if (absolute < 1000) return '$value';
+
+  const units = <(int, String)>[
+    (1000000000, 'B'),
+    (1000000, 'M'),
+    (1000, 'K'),
+  ];
+  for (final (divisor, suffix) in units) {
+    if (absolute < divisor) continue;
+    final compact = absolute / divisor;
+    final digits = compact >= 100 ? 0 : 1;
+    final raw = compact.toStringAsFixed(digits);
+    final number = raw.endsWith('.0') ? raw.substring(0, raw.length - 2) : raw;
+    return '${value.isNegative ? '-' : ''}$number$suffix';
+  }
+  return '$value';
 }
 
 class _SuggestedAdsPlaceholder extends StatelessWidget {
