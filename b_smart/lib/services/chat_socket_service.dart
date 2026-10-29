@@ -12,7 +12,7 @@ class ChatSocketService {
   ChatSocketService._internal();
 
   io.Socket? _socket;
-  String? _userId;
+  String? _token;
 
   final Map<String, Set<SocketHandler>> _subscribers =
       <String, Set<SocketHandler>>{
@@ -64,13 +64,14 @@ class ChatSocketService {
   void connect({required String token, String? userId}) {
     final t = token.trim();
     if (t.isEmpty) return;
-    _userId = userId?.trim().isEmpty == true ? null : userId?.trim();
+    _token = t;
 
     // If already connected, just register (if needed).
     final existing = _socket;
     if (existing != null) {
-      if (existing.connected && _userId != null) {
-        existing.emit('register', _userId);
+      if (existing.connected) {
+        // The call server authenticates registration from the JWT, not a user id.
+        existing.emit('register', _token);
       }
       return;
     }
@@ -94,8 +95,9 @@ class ChatSocketService {
     _attachListeners(socket);
 
     socket.on('connect', (_) {
-      developer.log('[ChatSocket] connected id=${socket.id}', name: 'ChatSocket');
-      if (_userId != null) socket.emit('register', _userId);
+      developer.log('[ChatSocket] connected id=${socket.id}',
+          name: 'ChatSocket');
+      socket.emit('register', _token);
     });
 
     socket.on('connect_error', (err) {
@@ -103,7 +105,8 @@ class ChatSocketService {
     });
 
     socket.on('disconnect', (reason) {
-      developer.log('[ChatSocket] disconnected reason=$reason', name: 'ChatSocket');
+      developer.log('[ChatSocket] disconnected reason=$reason',
+          name: 'ChatSocket');
     });
   }
 
@@ -116,12 +119,11 @@ class ChatSocketService {
     }
     socket.disconnect();
     _socket = null;
-    _userId = null;
+    _token = null;
   }
 
   void on(String event, SocketHandler handler) {
-    final set = _subscribers[event];
-    if (set == null) return;
+    final set = _subscribers.putIfAbsent(event, () => <SocketHandler>{});
     set.add(handler);
     final socket = _socket;
     if (socket != null) {
@@ -158,7 +160,8 @@ class ChatSocketService {
     _socket?.emit('typing', {'conversationId': cid, 'userId': uid});
   }
 
-  void emitStopTyping({required String conversationId, required String userId}) {
+  void emitStopTyping(
+      {required String conversationId, required String userId}) {
     final cid = conversationId.trim();
     final uid = userId.trim();
     if (cid.isEmpty || uid.isEmpty) return;
@@ -192,5 +195,20 @@ class ChatSocketService {
     final mid = messageId.trim();
     if (cid.isEmpty || mid.isEmpty) return;
     _socket?.emit('message-deleted', {'conversationId': cid, 'messageId': mid});
+  }
+
+  /// Call signalling shares the chat socket. The server requires the JWT
+  /// registration performed in [connect] before any of these events work.
+  void emitCall(String event, Map<String, dynamic> payload,
+      {void Function(dynamic response)? ack}) {
+    if (_socket?.connected != true) {
+      ack?.call(<String, dynamic>{'error': 'Socket is not connected'});
+      return;
+    }
+    if (ack == null) {
+      _socket!.emit(event, payload);
+    } else {
+      _socket!.emitWithAck(event, payload, ack: ack);
+    }
   }
 }

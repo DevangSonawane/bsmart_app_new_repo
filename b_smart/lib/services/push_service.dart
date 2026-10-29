@@ -10,6 +10,7 @@ import '../utils/app_navigator.dart';
 import '../models/notification_model.dart';
 import '../utils/current_user.dart';
 import 'notification_service.dart';
+import 'call_controller.dart';
 
 class PushService {
   static final PushService _instance = PushService._internal();
@@ -240,6 +241,12 @@ class PushService {
   }
 
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
+    if (message.data['type']?.toString() == 'incoming_call') {
+      await CallController.instance.receiveIncomingPush(
+        Map<String, dynamic>.from(message.data),
+      );
+      return;
+    }
     if (!_localNotifsReady) return;
     _log(
       'onMessage (foreground) dataKeys=${message.data.keys.toList()} title=${message.notification?.title ?? message.data['title']}',

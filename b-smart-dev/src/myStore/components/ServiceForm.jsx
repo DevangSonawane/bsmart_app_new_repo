@@ -7,7 +7,7 @@ import {
   Stepper, SectionCard, ImageGallery, Dropdown, HighlightsList, CompletenessCard, Checkbox,
   inputCls, labelCls, MAX_IMAGES, MAX_HIGHLIGHTS,
 } from '../../components/productForm/ProductFormFields';
-import { SERVICE_CATEGORIES, RATE_TYPES, DURATIONS, METHODS, defaultAvailability, defaultServiceTime, servicePrice, isBlankSubservice, validateService, validateServiceTime, validateSubservices } from '../data/serviceFields';
+import { SERVICE_CATEGORIES, RATE_TYPES, DURATIONS, METHODS, defaultAvailability, servicePrice, isBlankSubservice, validateService, validateSubservices, validateServiceTimeArea, textToList, listToText } from '../data/serviceFields';
 
 const STEPS = [
   { label: 'Service Details', subtitle: 'Add basic information' },
@@ -15,7 +15,7 @@ const STEPS = [
   { label: 'Availability & Publish', subtitle: 'Location, schedule & publish' },
 ];
 
-const emptySubservice = () => ({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, name: '', hours: '', price: '' });
+const emptySubservice = () => ({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, name: '', hours: '', price: '', sqft: '' });
 
 function SubservicesTable({ subservices, onChange, onRemove, onAdd }) {
   return (
@@ -23,11 +23,12 @@ function SubservicesTable({ subservices, onChange, onRemove, onAdd }) {
       <label className={labelCls}>Subservices</label>
       <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
         <table className="w-full text-sm">
-          <thead><tr className="bg-gray-50 dark:bg-gray-900 text-left text-xs font-semibold text-gray-500 dark:text-gray-400"><th className="p-2.5">Service Name</th><th className="p-2.5">Hr</th><th className="p-2.5">Price (₹)</th><th className="p-2.5" /></tr></thead>
+          <thead><tr className="bg-gray-50 dark:bg-gray-900 text-left text-xs font-semibold text-gray-500 dark:text-gray-400"><th className="p-2.5">Service Name</th><th className="p-2.5">Sqft</th><th className="p-2.5">Hr</th><th className="p-2.5">Price (₹)</th><th className="p-2.5" /></tr></thead>
           <tbody>
             {subservices.map((subservice, index) => (
               <tr key={subservice.id} className="border-t border-gray-100 dark:border-gray-800">
                 <td className="p-2.5 min-w-[180px]"><input aria-label={`Subservice ${index + 1} name`} value={subservice.name} onChange={(event) => onChange(subservice.id, { name: event.target.value })} maxLength={150} placeholder="Service name" className={inputCls} /></td>
+                <td className="p-2.5 min-w-[100px]"><input aria-label={`Subservice ${index + 1} sqft`} type="number" min="0" step="1" value={subservice.sqft} onChange={(event) => onChange(subservice.id, { sqft: event.target.value })} placeholder="Sqft" className={inputCls} /></td>
                 <td className="p-2.5 min-w-[100px]"><input aria-label={`Subservice ${index + 1} hours`} type="number" min="0.01" step="any" value={subservice.hours} onChange={(event) => onChange(subservice.id, { hours: event.target.value })} placeholder="Hr" className={inputCls} /></td>
                 <td className="p-2.5 min-w-[120px]"><input aria-label={`Subservice ${index + 1} price`} type="number" min="0" step="0.01" value={subservice.price} onChange={(event) => onChange(subservice.id, { price: event.target.value })} placeholder="0" className={inputCls} /></td>
                 <td className="p-2.5"><button type="button" aria-label={`Remove subservice ${index + 1}`} onClick={() => onRemove(subservice.id)} className="text-gray-400 hover:text-red-500"><X size={16} /></button></td>
@@ -59,10 +60,12 @@ export default function ServiceForm({ service }) {
   const [subservices, setSubservices] = useState(() => service?.subservices?.length ? service.subservices.map((item) => ({
     id: item.id || emptySubservice().id,
     name: item.name || '', hours: item.hours == null ? '' : String(item.hours), price: item.price == null ? '' : String(item.price),
+    sqft: item.sqft == null || item.sqft === 0 ? '' : String(item.sqft),
   })) : [emptySubservice()]);
   const [availability, setAvailability] = useState(() => service?.availability ? structuredClone(service.availability) : defaultAvailability());
-  const [serviceTime, setServiceTime] = useState(() => service?.serviceTime ? { ...service.serviceTime } : defaultServiceTime());
-  const [serviceAreas, setServiceAreas] = useState(service?.serviceAreas?.length ? [...service.serviceAreas] : ['']);
+  const isCreate = !service?.id;
+  const [serviceTime, setServiceTime] = useState(() => (service?.serviceTime?.start && service?.serviceTime?.end ? { ...service.serviceTime } : { start: '', end: '' }));
+  const [serviceArea, setServiceArea] = useState(() => listToText(service?.serviceArea));
   const uploader = useMediaUploader(service?.images || [], MAX_IMAGES);
   const { images } = uploader;
   const mainIndex = Math.min(mainImageIndex, Math.max(0, images.length - 1));
@@ -81,12 +84,11 @@ export default function ServiceForm({ service }) {
     setActiveStep(step);
     [step1Ref, step2Ref, step3Ref][step - 1].current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
-  const areaCount = serviceAreas.map((area) => area.trim()).filter(Boolean).length;
   const completeness = useMemo(() => [
     { label: 'Service Details', done: !!(form.name.trim() && form.category && form.description.trim()) },
     { label: 'Pricing', done: form.price !== '' && Number.isFinite(Number(form.price)) && Number(form.price) >= 0 && !!form.duration && !validateSubservices(subservices) },
-    { label: 'Availability & Publish', done: availability.some((day) => day.slots.length) && !validateService(form, availability, true) && !validateServiceTime(serviceTime) && areaCount > 0 && (form.method !== 'At my location' || !!form.address.trim()) },
-  ], [form, availability, serviceTime, areaCount, subservices]);
+    { label: 'Availability & Publish', done: availability.some((day) => day.slots.length) && !validateService(form, availability, true) && (form.method !== 'At my location' || !!form.address.trim()) && !validateServiceTimeArea({ serviceTime, serviceAreaText: serviceArea, isCreate }) },
+  ], [form, availability, subservices, serviceTime, serviceArea, isCreate]);
   const firstIncomplete = completeness.findIndex((section) => !section.done);
   const autoTarget = firstIncomplete === -1 ? 3 : firstIncomplete + 1;
   const [lastAutoTarget, setLastAutoTarget] = useState(autoTarget);
@@ -97,7 +99,8 @@ export default function ServiceForm({ service }) {
   const changeSlots = (day, update) => setAvailability((current) => current.map((entry) => entry.day === day ? { ...entry, slots: update(entry.slots) } : entry));
   const save = async (draft) => {
     if (saving) return;
-    const message = validateService(form, availability, draft, subservices, serviceTime, serviceAreas);
+    const message = validateService(form, availability, draft, subservices)
+      || validateServiceTimeArea({ serviceTime, serviceAreaText: serviceArea, isCreate });
     setError(message);
     if (message) {
       requestAnimationFrame(() => errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
@@ -115,7 +118,7 @@ export default function ServiceForm({ service }) {
         images: uploadedImages,
         draft,
         serviceTime,
-        serviceAreas,
+        serviceArea: textToList(serviceArea),
       });
       if (service?.id) {
         await influencerServiceService.update(service.id, payload);
@@ -181,25 +184,21 @@ export default function ServiceForm({ service }) {
               </div>
             </div>
             {form.method === 'At my location' && <div><label htmlFor="service-address" className={labelCls}>Service Address *</label><input id="service-address" value={form.address} onChange={set('address')} required placeholder="Where customers should visit" className={inputCls} /></div>}
-            <div>
-              <label className={labelCls}>Service hours *</label>
-              <div className="flex items-center gap-2">
-                <input type="time" aria-label="Service start time" value={serviceTime.start} onChange={(event) => setServiceTime((current) => ({ ...current, start: event.target.value }))} className={`${inputCls} min-w-0 px-2`} />
-                <span className="text-gray-400">–</span>
-                <input type="time" aria-label="Service end time" value={serviceTime.end} onChange={(event) => setServiceTime((current) => ({ ...current, end: event.target.value }))} className={`${inputCls} min-w-0 px-2`} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className={labelCls}>Service Hours {isCreate ? '*' : ''}</label>
+                <div className="flex items-center gap-2">
+                  <input type="time" aria-label="Service hours start" value={serviceTime.start} onChange={(event) => setServiceTime((current) => ({ ...current, start: event.target.value }))} className={inputCls} />
+                  <span className="text-gray-400">–</span>
+                  <input type="time" aria-label="Service hours end" value={serviceTime.end} onChange={(event) => setServiceTime((current) => ({ ...current, end: event.target.value }))} className={inputCls} />
+                </div>
+                <p className="text-xs text-gray-400 mt-1">General hours this service is offered within — separate from weekly availability below.</p>
               </div>
-            </div>
-            <div>
-              <label className={labelCls}>Service areas *</label>
-              <div className="space-y-2">
-                {serviceAreas.map((area, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <input value={area} onChange={(event) => setServiceAreas((current) => current.map((item, i) => i === index ? event.target.value : item))} placeholder="e.g. Malad" className={inputCls} />
-                    <button type="button" aria-label={`Remove service area ${index + 1}`} onClick={() => setServiceAreas((current) => { const next = current.filter((_, i) => i !== index); return next.length ? next : ['']; })} className="text-gray-400 hover:text-red-500 flex-shrink-0"><X size={16} /></button>
-                  </div>
-                ))}
+              <div>
+                <label htmlFor="service-area" className={labelCls}>Coverage Areas {isCreate ? '*' : ''}</label>
+                <input id="service-area" value={serviceArea} onChange={(event) => setServiceArea(event.target.value)} placeholder="Malad, Andheri, Bandra" className={inputCls} />
+                <p className="text-xs text-gray-400 mt-1">Separate multiple areas with commas.</p>
               </div>
-              <button type="button" onClick={() => setServiceAreas((current) => [...current, ''])} className="flex items-center gap-1 text-xs font-semibold text-[#fa3f5e] hover:text-insta-purple mt-2"><Plus size={13} /> Add Area</button>
             </div>
             <div>
               <label className={labelCls}>Weekly availability</label>

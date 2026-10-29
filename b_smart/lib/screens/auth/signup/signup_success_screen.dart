@@ -11,10 +11,12 @@ import '../../home_dashboard.dart';
 
 class SignupSuccessScreen extends StatelessWidget {
   final AuthUser user;
+  final int registrationBonusAmount;
 
   const SignupSuccessScreen({
     super.key,
     required this.user,
+    this.registrationBonusAmount = 0,
   });
 
   @override
@@ -51,6 +53,17 @@ class SignupSuccessScreen extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
+                if (registrationBonusAmount > 0) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Welcome bonus: +$registrationBonusAmount bCoins',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: InstagramTheme.primaryPink,
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 if (user.username.isNotEmpty)
                   Text(

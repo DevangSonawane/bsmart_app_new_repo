@@ -1,13 +1,21 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/app_theme.dart';
+
 class BStoreTheme {
   BStoreTheme._();
 
   static ThemeData data(BuildContext context) {
-    final base = Theme.of(context);
+    final inherited = Theme.of(context);
     // The store design system is light-only (navy text on white/cream).
-    // Force a light scheme so bottom sheets, dialogs, menus and inputs stay
-    // readable even when the app runs in system dark mode.
+    // When the app runs in dark mode, inheriting the dark theme drags dark
+    // component defaults (switch tracks/thumbs, input fills, menus, dialogs)
+    // onto the store's light surfaces - that is what made some store toggles
+    // render black. Rebuild from the app's light theme so every Material
+    // default is light, then apply the store palette on top.
+    final base = inherited.brightness == Brightness.light
+        ? inherited
+        : AppTheme.lightTheme();
     return base.copyWith(
       brightness: Brightness.light,
       scaffoldBackgroundColor: BStoreColors.background,
@@ -30,17 +38,46 @@ class BStoreTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: BStoreButtons.outlined(),
       ),
+      // One canonical toggle look for the whole store: white thumb on a
+      // teal track when on, light grey track when off. Resolving every state
+      // (and removing the M3 outline) keeps switches identical on screens
+      // that inherit the app theme and on sheets that use BStoreTheme.
       switchTheme: SwitchThemeData(
-        thumbColor: WidgetStateProperty.resolveWith(
-          (_) => Colors.white,
-        ),
-        trackColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.selected)
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return Colors.white.withValues(alpha: 0.7);
+          }
+          return Colors.white;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return BStoreColors.borderSoft;
+          }
+          return states.contains(WidgetState.selected)
               ? BStoreColors.primary
-              : BStoreColors.border,
-        ),
+              : BStoreColors.border;
+        }),
+        trackOutlineColor:
+            const WidgetStatePropertyAll<Color>(Colors.transparent),
       ),
     );
+  }
+}
+
+/// Forces the store's light-only design system on a screen subtree.
+///
+/// Store screens are pushed as normal routes, so they do not inherit the
+/// theme applied by `StoreScreen`. Wrapping their Scaffold in this widget
+/// keeps toggles, inputs, menus and dialogs light even when the app is in
+/// dark mode.
+class BStoreThemeScope extends StatelessWidget {
+  final Widget child;
+
+  const BStoreThemeScope({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Theme(data: BStoreTheme.data(context), child: child);
   }
 }
 
@@ -169,12 +206,13 @@ class BStoreButtons {
 
   static ButtonStyle filled({
     Color background = BStoreColors.primary,
+    Color foreground = Colors.white,
     double radius = BStoreRadii.button,
     EdgeInsetsGeometry? padding,
   }) {
     return FilledButton.styleFrom(
       backgroundColor: background,
-      foregroundColor: Colors.white,
+      foregroundColor: foreground,
       padding: padding,
       textStyle: BStoreTypography.button,
       shape: RoundedRectangleBorder(

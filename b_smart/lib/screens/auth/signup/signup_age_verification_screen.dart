@@ -95,7 +95,11 @@ class _SignupAgeVerificationScreenState
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (context) => SignupSuccessScreen(user: user),
+            builder: (context) => SignupSuccessScreen(
+              user: user,
+              registrationBonusAmount:
+                  _authService.lastRegistrationBonusAmount,
+            ),
           ),
         );
       }

@@ -15,6 +15,7 @@ import '../../utils/current_user.dart';
 import 'store_models.dart';
 import 'store_role_setup_screen.dart';
 import 'store_theme.dart';
+import 'publish/store_publish_ui.dart';
 import 'shared/store_image_editor.dart';
 import 'shared/store_shared_widgets.dart';
 import 'shared/store_money.dart';
@@ -41,24 +42,27 @@ class _SelfStoreProductsScreenState extends State<SelfStoreProductsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFFFFEFC),
-      body: SafeArea(
-        top: false,
-        child: RefreshIndicator(
-          color: const Color(0xFF078D92),
-          onRefresh: () => _pageKey.currentState?.refresh() ?? Future.value(),
-          child: CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(
-              parent: BouncingScrollPhysics(),
-            ),
-            slivers: [
-              StoreRoleGateSliver(child: SelfStoreProductsPage(key: _pageKey)),
-              SliverToBoxAdapter(
-                child: SizedBox(
-                    height: MediaQuery.of(context).padding.bottom + 18),
+    return BStoreThemeScope(
+      child: Scaffold(
+        backgroundColor: const Color(0xFFFFFEFC),
+        body: SafeArea(
+          top: false,
+          child: RefreshIndicator(
+            color: const Color(0xFF078D92),
+            onRefresh: () => _pageKey.currentState?.refresh() ?? Future.value(),
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
               ),
-            ],
+              slivers: [
+                StoreRoleGateSliver(
+                    child: SelfStoreProductsPage(key: _pageKey)),
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                      height: MediaQuery.of(context).padding.bottom + 18),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -374,8 +378,9 @@ class _OwnerProductCard extends StatelessWidget {
       imageUrl: _imageUrl(product),
       title: _text(product, const ['name', 'title'], fallback: 'Product'),
       price: formatCompactStoreMoney(price),
-      stockLabel:
-          stock <= 5 && stock > 0 ? 'Low stock' : '${stock.round()} in stock',
+      stockLabel: stock <= 5 && stock > 0
+          ? 'Low stock'
+          : '${groupThousands('${stock.round()}')} in stock',
       stockState: stock <= 5 ? _StockState.low : _StockState.ok,
       // The API has returned the id under several keys across
       // deployments; missing it disables Edit/Delete, so check them all.
@@ -989,66 +994,148 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
     super.dispose();
   }
 
+  static const _flowSteps = [
+    PublishStep(
+      label: 'Details',
+      subtitle: 'Photos, name & description',
+      icon: LucideIcons.image,
+    ),
+    PublishStep(
+      label: 'Price',
+      subtitle: 'Pricing, stock & variants',
+      icon: LucideIcons.tag,
+    ),
+    PublishStep(
+      label: 'Delivery',
+      subtitle: 'Shipping, policies & publish',
+      icon: LucideIcons.truck,
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFFFFEFC),
-      body: SafeArea(
-        top: false,
-        child: Column(
-          children: [
-            _FlowHeader(
-              title: _step == 1
-                  ? 'Add Product'
-                  : _step == 2
-                      ? 'Price & Inventory'
-                      : 'Delivery & publish',
-              onBack: () {
-                if (_step == 1) {
-                  Navigator.of(context).pop();
-                } else {
-                  setState(() => _step = _step - 1);
-                }
-              },
-              onSaveDraft: _publishing ? null : () => _submitProduct('Draft'),
-              saving: _publishing,
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(26, 10, 26, 2),
-              child: _FlowSteps(
+    return BStoreThemeScope(
+      child: Scaffold(
+        backgroundColor: PublishStyle.canvas,
+        body: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              PublishFlowHeader(
+                eyebrow: 'Seller studio · products',
+                title: 'Add Product',
+                step: _step,
+                steps: _flowSteps,
+                completion: _completion,
+                onStepTap: (i) => setState(() => _step = i),
+                onBack: () {
+                  if (_step == 1) {
+                    Navigator.of(context).pop();
+                  } else {
+                    setState(() => _step = _step - 1);
+                  }
+                },
+                draftLabel: 'Save draft',
+                onSaveDraft: _publishing ? null : () => _submitProduct('Draft'),
+                saving: _publishing,
+              ),
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 260),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) {
+                    return FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0.035, 0),
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: ListView(
+                    key: ValueKey(_step),
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 26),
+                    children: _step == 1
+                        ? _detailsStep()
+                        : _step == 2
+                            ? _priceStep()
+                            : _deliveryStep(),
+                  ),
+                ),
+              ),
+              PublishFooter(
                 step: _step,
                 totalSteps: 3,
-                labels: const ['Details', 'Price', 'Delivery'],
-                onStepTap: (i) => setState(() => _step = i),
+                onPrimary: () {
+                  if (_step < 3) {
+                    setState(() => _step = _step + 1);
+                  } else {
+                    _submitProduct(_status == 'Draft' ? 'Active' : _status);
+                  }
+                },
+                primaryLabel: _step < 3 ? 'Continue' : 'Publish product',
+                onBack:
+                    _step == 1 ? null : () => setState(() => _step = _step - 1),
+                busy: _publishing,
               ),
-            ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
-                children: _step == 1
-                    ? _detailsStep()
-                    : _step == 2
-                        ? _priceStep()
-                        : _deliveryStep(),
-              ),
-            ),
-            _FlowFooter(
-              step: _step,
-              totalSteps: 3,
-              onContinue: () => setState(() => _step = _step + 1),
-              onBack:
-                  _step == 1 ? null : () => setState(() => _step = _step - 1),
-              publishing: _publishing,
-              publishLabel: 'Publish Product',
-              onPublish: () => _submitProduct(
-                _status == 'Draft' ? 'Active' : _status,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
+
+  double get _completion {
+    var done = 0;
+    if (_nameController.text.trim().isNotEmpty &&
+        _shortDescController.text.trim().isNotEmpty &&
+        _productImages.isNotEmpty) {
+      done++;
+    }
+    if (_mrpController.text.trim().isNotEmpty &&
+        _sellingPriceController.text.trim().isNotEmpty &&
+        _stockController.text.trim().isNotEmpty &&
+        _skuController.text.trim().isNotEmpty) {
+      done++;
+    }
+    if (_packageWeightController.text.trim().isNotEmpty &&
+        _dimLController.text.trim().isNotEmpty &&
+        _dimWController.text.trim().isNotEmpty &&
+        _dimHController.text.trim().isNotEmpty &&
+        _dispatchTimeController.text.trim().isNotEmpty) {
+      done++;
+    }
+    return done / 3;
+  }
+
+  List<PublishChecklistItem> get _checklist => [
+        PublishChecklistItem(
+          'Product details & photos',
+          _nameController.text.trim().isNotEmpty &&
+              _shortDescController.text.trim().isNotEmpty &&
+              _productImages.isNotEmpty,
+        ),
+        PublishChecklistItem(
+          'Price, stock & SKU',
+          _mrpController.text.trim().isNotEmpty &&
+              _sellingPriceController.text.trim().isNotEmpty &&
+              _stockController.text.trim().isNotEmpty &&
+              _skuController.text.trim().isNotEmpty,
+        ),
+        PublishChecklistItem(
+          'Shipping & delivery details',
+          _packageWeightController.text.trim().isNotEmpty &&
+              _dimLController.text.trim().isNotEmpty &&
+              _dimWController.text.trim().isNotEmpty &&
+              _dimHController.text.trim().isNotEmpty &&
+              _dispatchTimeController.text.trim().isNotEmpty,
+        ),
+      ];
 
   double get _discountPct {
     final mrp = _parseNumber(_mrpController.text);
@@ -1059,10 +1146,14 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
 
   List<Widget> _detailsStep() {
     return [
-      const _StepHeading(stepText: '1 of 3', title: 'Product Details'),
-      const SizedBox(height: 14),
+      const PublishStepIntro(
+        title: 'Product details',
+        subtitle: 'Add clear photos and the basics customers need to say yes.',
+      ),
+      const SizedBox(height: 16),
       _PhotoUploadCard(
         images: _productImages,
+        maxImages: _maxImages,
         mainIndex: _mainImageIndex,
         onTap: _pickProductImage,
         onSetMain: (index) => setState(() => _mainImageIndex = index),
@@ -1078,153 +1169,186 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
       if (_productImages.isNotEmpty) ...[
         const SizedBox(height: 8),
         Text(
-          '${_productImages.length}/$_maxImages photos · tap a photo to set it as main',
+          '${_productImages.length}/$_maxImages photos · tap a photo to make it the main one',
           style: const TextStyle(
-            color: Color(0xFF8B90A2),
-            fontSize: 11,
+            color: PublishStyle.soft,
+            fontSize: 10.5,
             fontWeight: FontWeight.w600,
           ),
         ),
       ],
-      const SizedBox(height: 12),
-      _FormPanel(
+      const SizedBox(height: 16),
+      PublishSectionCard(
+        title: 'Basics',
+        subtitle: 'This is what customers see first',
+        icon: LucideIcons.package,
         children: [
-          _TextFieldShell(
-            label: 'Product Name * (${_nameController.text.length}/150)',
+          PublishField(
+            label: 'Product Name',
+            required: true,
             hint: 'Classic Brown Leather Tote',
             controller: _nameController,
+            maxLength: 150,
             onChanged: (_) => setState(() {}),
           ),
-          const SizedBox(height: 14),
-          _TextFieldShell(
-            label: 'Brand (optional)',
+          PublishField(
+            label: 'Brand',
             hint: 'UrbanHide',
             controller: _brandController,
+            onChanged: (_) => setState(() {}),
           ),
-          const SizedBox(height: 14),
+          PublishSelectField<String>(
+            label: 'Category',
+            required: true,
+            value: _category,
+            items: _categories,
+            onChanged: (value) =>
+                setState(() => _category = value ?? _category),
+          ),
+          PublishField(
+            label: 'Short Description',
+            required: true,
+            hint: 'Describe what makes your product special…',
+            controller: _shortDescController,
+            maxLength: 500,
+            minLines: 4,
+            maxLines: 4,
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
+      ),
+      const SizedBox(height: 14),
+      PublishSectionCard(
+        title: 'Key highlights',
+        subtitle: 'A few quick selling points · up to $_maxHighlights',
+        icon: LucideIcons.sparkles,
+        accent: PublishStyle.purple,
+        children: [
           _HighlightsEditor(
             controllers: _highlightControllers,
             max: _maxHighlights,
             hint: 'e.g. Premium full-grain leather for durability',
             onChanged: () => setState(() {}),
           ),
-          const SizedBox(height: 14),
-          _DropdownShell<String>(
-            label: 'Category *',
-            value: _category,
-            items: _categories,
-            onChanged: (value) =>
-                setState(() => _category = value ?? _category),
-          ),
-          const SizedBox(height: 14),
-          _TextFieldShell(
-            label:
-                'Short Description * (${_shortDescController.text.length}/500)',
-            hint: 'Describe your product...',
-            controller: _shortDescController,
-            minHeight: 76,
-            maxLines: 4,
-            onChanged: (_) => setState(() {}),
-          ),
         ],
+      ),
+      const SizedBox(height: 14),
+      const PublishHint(
+        text:
+            'Tip: listings with 3+ bright photos and a specific name get noticed more often.',
+        icon: LucideIcons.wandSparkles,
       ),
     ];
   }
 
   List<Widget> _priceStep() {
+    final mrp = _parseNumber(_mrpController.text);
+    final selling = _parseNumber(_sellingPriceController.text);
+    final savings = (mrp - selling).clamp(0, double.infinity);
     return [
-      const _StepHeading(stepText: '2 of 3', title: 'Price & Inventory'),
-      const SizedBox(height: 14),
-      _FormPanel(
+      const PublishStepIntro(
+        title: 'Pricing & inventory',
+        subtitle: 'Set a fair price and keep your stock count accurate.',
+      ),
+      const SizedBox(height: 16),
+      PublishSectionCard(
+        title: 'Pricing',
+        subtitle: 'Selling price and original MRP',
+        icon: LucideIcons.tag,
+        trailing: _discountPct > 0
+            ? PublishPill(
+                label: '${_discountPct.toInt()}% OFF',
+                color: PublishStyle.success,
+              )
+            : null,
         children: [
           Row(
             children: [
               Expanded(
-                child: _TextFieldShell(
-                  label: 'MRP (₹) *',
+                child: PublishField(
+                  label: 'MRP',
+                  required: true,
                   hint: '0',
                   controller: _mrpController,
                   keyboardType: TextInputType.number,
+                  prefixText: '₹ ',
                   onChanged: (_) => setState(() {}),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _TextFieldShell(
-                  label: 'Selling Price (₹) *',
+                child: PublishField(
+                  label: 'Selling Price',
+                  required: true,
                   hint: '0',
                   controller: _sellingPriceController,
                   keyboardType: TextInputType.number,
+                  prefixText: '₹ ',
                   onChanged: (_) => setState(() {}),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          if (_discountPct > 0)
+            PublishHint(
+              text:
+                  'Customers save ₹${savings.toStringAsFixed(0)} on every order.',
+              icon: LucideIcons.percent,
+            ),
+        ],
+      ),
+      const SizedBox(height: 14),
+      PublishSectionCard(
+        title: 'Inventory',
+        subtitle: 'How many units are ready to ship',
+        icon: LucideIcons.layers,
+        children: [
           Row(
             children: [
               Expanded(
-                child: _TextFieldShell(
-                  label: 'Stock Quantity *',
+                child: PublishField(
+                  label: 'Stock Quantity',
+                  required: true,
                   hint: '0',
                   controller: _stockController,
                   keyboardType: TextInputType.number,
+                  onChanged: (_) => setState(() {}),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _TextFieldShell(
-                  label: 'Seller SKU *',
+                child: PublishField(
+                  label: 'Seller SKU',
+                  required: true,
                   hint: 'SKU-001',
                   controller: _skuController,
+                  onChanged: (_) => setState(() {}),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF6F7F9),
-              borderRadius: BorderRadius.circular(7),
-              border: Border.all(color: const Color(0xFFD5DEE4)),
-            ),
-            child: Text(
-              _discountPct > 0 ? '${_discountPct.toInt()}% off' : 'Discount: —',
-              style: const TextStyle(
-                color: Color(0xFF060D35),
-                fontSize: 12.5,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const Text(
-                'Track Inventory',
-                style: TextStyle(
-                  color: Color(0xFF060D35),
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const Spacer(),
-              Switch.adaptive(
-                value: _trackInventory,
-                onChanged: (v) => setState(() => _trackInventory = v),
-                activeThumbColor: const Color(0xFF078D92),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _DropdownShell<String>(
-            label: 'Product Status *',
+          PublishSelectField<String>(
+            label: 'Product Status',
+            required: true,
             value: _status,
             items: _statusOptions,
             onChanged: (value) => setState(() => _status = value ?? _status),
           ),
-          const SizedBox(height: 12),
+          PublishSwitchRow(
+            title: 'Track inventory',
+            subtitle: 'Automatically reduce stock when an order is placed',
+            value: _trackInventory,
+            onChanged: (value) => setState(() => _trackInventory = value),
+          ),
+        ],
+      ),
+      const SizedBox(height: 14),
+      PublishSectionCard(
+        title: 'Variants',
+        subtitle: 'Optional · colour, size and price combinations',
+        icon: LucideIcons.palette,
+        accent: PublishStyle.purple,
+        children: [
           _VariantsEditor(
             variants: _variants,
             swatches: _swatches,
@@ -1237,25 +1361,36 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
 
   List<Widget> _deliveryStep() {
     return [
-      const _StepHeading(stepText: '3 of 3', title: 'Delivery & Publish'),
-      const SizedBox(height: 14),
-      _FormPanel(
+      const PublishStepIntro(
+        title: 'Delivery & publish',
+        subtitle:
+            'Add shipping details so orders reach customers without surprises.',
+      ),
+      const SizedBox(height: 16),
+      PublishSectionCard(
+        title: 'Shipping',
+        subtitle: 'Package weight, size and dispatch time',
+        icon: LucideIcons.truck,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(
-                flex: 2,
-                child: _TextFieldShell(
-                  label: 'Package Weight *',
-                  hint: '0',
+                flex: 3,
+                child: PublishField(
+                  label: 'Package Weight',
+                  required: true,
+                  hint: '0.00',
                   controller: _packageWeightController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (_) => setState(() {}),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
-                child: _DropdownShell<String>(
+                flex: 2,
+                child: PublishSelectField<String>(
                   label: 'Unit',
                   value: _weightUnit,
                   items: _weightUnits,
@@ -1265,99 +1400,206 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          const Text(
-            'Dimensions (L x W x H) * in cm',
-            style: TextStyle(
-              color: Color(0xFF060D35),
-              fontSize: 12.5,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 2),
+          PublishFieldLabel('Dimensions (cm)', required: true),
           Row(
             children: [
               Expanded(
-                child: _TextFieldShell(
-                  label: 'L',
+                child: PublishField(
+                  label: 'Length',
                   hint: 'L',
                   controller: _dimLController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (_) => setState(() {}),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: _TextFieldShell(
-                  label: 'W',
+                child: PublishField(
+                  label: 'Width',
                   hint: 'W',
                   controller: _dimWController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (_) => setState(() {}),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: _TextFieldShell(
-                  label: 'H',
+                child: PublishField(
+                  label: 'Height',
                   hint: 'H',
                   controller: _dimHController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (_) => setState(() {}),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          _TextFieldShell(
-            label: 'Dispatch Time *',
+          PublishField(
+            label: 'Dispatch Time',
+            required: true,
             hint: '1-2 Days',
             controller: _dispatchTimeController,
+            onChanged: (_) => setState(() {}),
           ),
-          const SizedBox(height: 12),
-          _TextFieldShell(
-            label: 'HSN / GST (optional)',
-            hint: '4202',
-            controller: _hsnController,
+        ],
+      ),
+      const SizedBox(height: 14),
+      PublishSectionCard(
+        title: 'Compliance & policies',
+        subtitle: 'Tax, origin, returns and warranty',
+        icon: LucideIcons.shieldCheck,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: PublishField(
+                  label: 'HSN / GST',
+                  hint: '4202',
+                  controller: _hsnController,
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: PublishSelectField<String>(
+                  label: 'Country of Origin',
+                  required: true,
+                  value: _country,
+                  items: _countries,
+                  onChanged: (value) =>
+                      setState(() => _country = value ?? _country),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          _DropdownShell<String>(
-            label: 'Country of Origin *',
-            value: _country,
-            items: _countries,
-            onChanged: (value) => setState(() => _country = value ?? _country),
-          ),
-          const SizedBox(height: 12),
-          _CheckRow(
-            label: 'Use store delivery settings',
-            value: _useStoreDelivery,
-            onChanged: (v) => setState(() => _useStoreDelivery = v),
-          ),
-          const SizedBox(height: 12),
-          _DropdownShell<String>(
-            label: 'Return Policy *',
+          PublishSelectField<String>(
+            label: 'Return Policy',
+            required: true,
             value: _returnPolicy,
             items: _returnPolicies,
             onChanged: (value) =>
                 setState(() => _returnPolicy = value ?? _returnPolicy),
           ),
-          const SizedBox(height: 12),
-          _CheckRow(
-            label: 'Use store return policy',
-            value: _useStoreReturnPolicy,
-            onChanged: (v) => setState(() => _useStoreReturnPolicy = v),
-          ),
-          const SizedBox(height: 12),
-          _DropdownShell<String>(
-            label: 'Warranty (optional)',
+          PublishSelectField<String>(
+            label: 'Warranty',
             value: _warranty,
             items: _warranties,
             onChanged: (value) =>
                 setState(() => _warranty = value ?? _warranty),
           ),
+          const SizedBox(height: 2),
+          PublishSwitchRow(
+            title: 'Use store delivery settings',
+            subtitle: 'Reuse the delivery defaults from your store',
+            value: _useStoreDelivery,
+            onChanged: (value) => setState(() => _useStoreDelivery = value),
+          ),
+          PublishSwitchRow(
+            title: 'Use store return policy',
+            subtitle: 'Reuse the return policy from your store',
+            value: _useStoreReturnPolicy,
+            onChanged: (value) => setState(() => _useStoreReturnPolicy = value),
+          ),
         ],
       ),
+      const SizedBox(height: 14),
+      PublishPreviewCard(
+        image: _previewImage(),
+        children: [
+          if (_brandController.text.trim().isNotEmpty)
+            Text(
+              _brandController.text.trim().toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: PublishStyle.teal,
+                fontSize: 9.5,
+                letterSpacing: 0.6,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          Text(
+            _nameController.text.trim().isEmpty
+                ? 'Product name'
+                : _nameController.text.trim(),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: PublishStyle.ink,
+              fontSize: 13,
+              height: 1.25,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          Row(
+            children: [
+              Text(
+                '₹${_sellingPriceController.text.trim().isEmpty ? '0' : _sellingPriceController.text.trim()}',
+                style: const TextStyle(
+                  color: PublishStyle.ink,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              if (_discountPct > 0) ...[
+                const SizedBox(width: 7),
+                Text(
+                  '₹${_mrpController.text.trim()}',
+                  style: const TextStyle(
+                    color: PublishStyle.soft,
+                    fontSize: 10.5,
+                    decoration: TextDecoration.lineThrough,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          Row(
+            children: [
+              const Icon(LucideIcons.truck,
+                  size: 12, color: PublishStyle.success),
+              const SizedBox(width: 4),
+              Text(
+                _dispatchTimeController.text.trim().isEmpty
+                    ? 'Delivery details pending'
+                    : 'Dispatches in ${_dispatchTimeController.text.trim()}',
+                style: const TextStyle(
+                  color: PublishStyle.success,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      const SizedBox(height: 14),
+      PublishChecklistCard(items: _checklist),
     ];
+  }
+
+  Widget _previewImage() {
+    if (_productImages.isEmpty) {
+      return Container(
+        color: PublishStyle.fieldFill,
+        child: const Icon(
+          LucideIcons.image,
+          size: 26,
+          color: PublishStyle.soft,
+        ),
+      );
+    }
+    final index = _mainImageIndex.clamp(0, _productImages.length - 1);
+    return Image.file(
+      File(_productImages[index].path),
+      fit: BoxFit.cover,
+      cacheWidth: 400,
+    );
   }
 
   Future<void> _pickProductImage() async {
@@ -1520,221 +1762,13 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
   }
 }
 
-class _FlowHeader extends StatelessWidget {
-  final String title;
-  final VoidCallback onBack;
-  final VoidCallback? onSaveDraft;
-  final bool saving;
-
-  const _FlowHeader({
-    required this.title,
-    required this.onBack,
-    this.onSaveDraft,
-    this.saving = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        6,
-        MediaQuery.of(context).padding.top + 8,
-        12,
-        0,
-      ),
-      child: SizedBox(
-        height: 44,
-        child: Row(
-          children: [
-            IconButton(
-              onPressed: onBack,
-              icon: const Icon(LucideIcons.chevronLeft, size: 24),
-              color: const Color(0xFF060D35),
-            ),
-            Expanded(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF060D35),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-            SizedBox(
-              width: 92,
-              child: onSaveDraft == null
-                  ? const SizedBox.shrink()
-                  : TextButton(
-                      onPressed: saving ? null : onSaveDraft,
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                      ),
-                      child: Text(
-                        saving ? 'Saving...' : 'Save Draft',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF684AC8),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FlowSteps extends StatelessWidget {
-  final int step;
-  final int totalSteps;
-  final List<String> labels;
-  final ValueChanged<int> onStepTap;
-
-  const _FlowSteps({
-    required this.step,
-    required this.totalSteps,
-    required this.labels,
-    required this.onStepTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        for (var i = 1; i <= totalSteps; i++) ...[
-          Expanded(
-            child: InkWell(
-              onTap: () => onStepTap(i),
-              borderRadius: BorderRadius.circular(8),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      if (i > 1)
-                        const Expanded(
-                          child: Divider(
-                            color: Color(0xFFD5DEE4),
-                            thickness: 2,
-                          ),
-                        )
-                      else
-                        const Spacer(),
-                      Container(
-                        width: 26,
-                        height: 26,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: i < step
-                              ? const Color(0xFF078D92)
-                              : i == step
-                                  ? const Color(0xFF060D35)
-                                  : Colors.white,
-                          border: Border.all(
-                            color: i <= step
-                                ? Colors.transparent
-                                : const Color(0xFFD5DEE4),
-                            width: 1.5,
-                          ),
-                        ),
-                        child: i < step
-                            ? const Icon(Icons.check_rounded,
-                                color: Colors.white, size: 15)
-                            : Text(
-                                '$i',
-                                style: TextStyle(
-                                  color: i == step
-                                      ? Colors.white
-                                      : const Color(0xFF8B90A2),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                      ),
-                      if (i < totalSteps)
-                        const Expanded(
-                          child: Divider(
-                            color: Color(0xFFD5DEE4),
-                            thickness: 2,
-                          ),
-                        )
-                      else
-                        const Spacer(),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    labels[i - 1],
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: i == step
-                          ? const Color(0xFF060D35)
-                          : const Color(0xFF8B90A2),
-                      fontSize: 10.5,
-                      fontWeight: i == step ? FontWeight.w800 : FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _StepHeading extends StatelessWidget {
-  final String stepText;
-  final String title;
-
-  const _StepHeading({
-    required this.stepText,
-    required this.title,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          stepText,
-          style: const TextStyle(
-            color: Color(0xFF684AC8),
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 5),
-        Text(
-          title,
-          style: const TextStyle(
-            color: Color(0xFF060D35),
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _PhotoUploadCard extends StatelessWidget {
   final List<XFile> images;
   final int mainIndex;
   final VoidCallback onTap;
-  final Function(int) onRemove;
-  final Function(int)? onSetMain;
+  final ValueChanged<int> onRemove;
+  final ValueChanged<int>? onSetMain;
+  final int maxImages;
 
   const _PhotoUploadCard({
     required this.images,
@@ -1742,419 +1776,280 @@ class _PhotoUploadCard extends StatelessWidget {
     required this.onTap,
     required this.onRemove,
     this.onSetMain,
+    this.maxImages = 10,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        height: 126,
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFD5DEE4), width: 1.2),
+    if (images.isEmpty) {
+      return PublishDashedBox(
+        onTap: onTap,
+        radius: 22,
+        child: SizedBox(
+          height: 190,
+          width: double.infinity,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  LucideIcons.cloudUpload,
+                  size: 25,
+                  color: PublishStyle.teal,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Add product photos',
+                style: TextStyle(
+                  color: PublishStyle.ink,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Up to $maxImages · the first photo becomes your cover',
+                style: TextStyle(
+                  color: PublishStyle.soft,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
-        child: images.isEmpty
-            ? const Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(LucideIcons.cloudUpload,
-                      color: Color(0xFF684AC8), size: 36),
-                  SizedBox(height: 9),
-                  Text(
-                    'Add product photos',
-                    style: TextStyle(
-                      color: Color(0xFF060D35),
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w900,
+      );
+    }
+
+    final index = mainIndex.clamp(0, images.length - 1);
+    return Column(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(22),
+          child: SizedBox(
+            height: 214,
+            width: double.infinity,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.file(
+                  File(images[index].path),
+                  fit: BoxFit.cover,
+                  cacheWidth: 900,
+                ),
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, Color(0x99000000)],
+                      stops: [0.45, 1.0],
                     ),
                   ),
-                  SizedBox(height: 5),
-                  Text(
-                    'Required for publishing',
-                    style: TextStyle(
-                      color: Color(0xFF29304D),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
+                ),
+                Positioned(
+                  left: 12,
+                  top: 12,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.22),
+                      ),
+                    ),
+                    child: const Text(
+                      'COVER PHOTO',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        letterSpacing: 0.7,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                ],
-              )
-            : Stack(
-                fit: StackFit.expand,
-                children: [
-                  ListView.separated(
-                    padding: const EdgeInsets.all(8),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: images.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (context, index) {
-                      final isMain = index == mainIndex;
-                      return GestureDetector(
-                        onTap: () => onSetMain?.call(index),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: isMain
-                                  ? const Color(0xFF078D92)
-                                  : Colors.transparent,
-                              width: 2,
-                            ),
+                ),
+                Positioned(
+                  right: 10,
+                  top: 10,
+                  child: _RoundOverlayButton(
+                    icon: LucideIcons.x,
+                    onTap: () => onRemove(index),
+                    tooltip: 'Remove cover photo',
+                  ),
+                ),
+                Positioned(
+                  left: 14,
+                  right: 14,
+                  bottom: 13,
+                  child: Row(
+                    children: [
+                      const Icon(LucideIcons.image,
+                          size: 13, color: Colors.white),
+                      const SizedBox(width: 5),
+                      const Expanded(
+                        child: Text(
+                          'Main photo · tap a thumbnail to switch',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
                           ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Stack(
-                              children: [
-                                Image.file(
-                                  File(images[index].path),
-                                  width: 110,
-                                  height: 110,
-                                  fit: BoxFit.cover,
-                                ),
-                                if (isMain)
-                                  const Positioned(
-                                    left: 4,
-                                    bottom: 4,
-                                    child: ColoredBox(
-                                      color: Colors.black54,
-                                      child: Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 6, vertical: 2),
-                                        child: Text(
-                                          'Main',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                Positioned(
-                                  right: 4,
-                                  top: 4,
-                                  child: GestureDetector(
-                                    onTap: () => onRemove(index),
-                                    child: const CircleAvatar(
-                                      radius: 12,
-                                      backgroundColor: Colors.black87,
-                                      child: Icon(Icons.close_rounded,
-                                          color: Colors.white, size: 14),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: onTap,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: const Text(
+                            'Add more',
+                            style: TextStyle(
+                              color: PublishStyle.teal,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
                         ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-      ),
-    );
-  }
-}
-
-class _FormPanel extends StatelessWidget {
-  final List<Widget> children;
-
-  const _FormPanel({required this.children});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: storeSoftCardDecoration(radius: 12),
-      child: Column(children: children),
-    );
-  }
-}
-
-class _TextFieldShell extends StatelessWidget {
-  final String label;
-  final String? subtitle;
-  final String hint;
-  final TextEditingController controller;
-  final TextInputType? keyboardType;
-  final String? prefixText;
-  final double minHeight;
-  final int maxLines;
-  final bool enabled;
-  final ValueChanged<String>? onChanged;
-
-  const _TextFieldShell({
-    required this.label,
-    this.subtitle,
-    required this.hint,
-    required this.controller,
-    this.keyboardType,
-    this.prefixText,
-    this.minHeight = 42,
-    this.maxLines = 1,
-    this.enabled = true,
-    this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: Color(0xFF060D35),
-            fontSize: 12.5,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        if (subtitle != null) ...[
-          const SizedBox(height: 3),
-          Text(
-            subtitle!,
-            style: const TextStyle(
-              color: Color(0xFF6E748B),
-              fontSize: 10.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-        const SizedBox(height: 7),
-        TextField(
-          key: ValueKey(controller),
-          controller: controller,
-          enabled: enabled,
-          keyboardType: keyboardType,
-          onChanged: onChanged,
-          minLines: maxLines > 1 ? maxLines : 1,
-          maxLines: maxLines,
-          style: const TextStyle(
-            color: Color(0xFF060D35),
-            fontSize: 12.5,
-            fontWeight: FontWeight.w700,
-          ),
-          decoration: InputDecoration(
-            constraints: BoxConstraints(minHeight: minHeight),
-            hintText: hint,
-            prefixText: prefixText,
-            hintStyle: const TextStyle(
-              color: Color(0xFF8B90A2),
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-            ),
-            filled: true,
-            fillColor: enabled ? Colors.white : const Color(0xFFF6F7F9),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(7),
-              borderSide: const BorderSide(color: Color(0xFFD5DEE4)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(7),
-              borderSide: const BorderSide(color: Color(0xFF078D92)),
-            ),
-            disabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(7),
-              borderSide: const BorderSide(color: Color(0xFFD5DEE4)),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _DropdownShell<T> extends StatelessWidget {
-  final String label;
-  final String? hint;
-  final T? value;
-  final List<T> items;
-  final ValueChanged<T?> onChanged;
-
-  const _DropdownShell({
-    required this.label,
-    this.hint,
-    required this.value,
-    required this.items,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: Color(0xFF060D35),
-            fontSize: 12.5,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 7),
-        DropdownButtonFormField<T>(
-          key: ValueKey(value),
-          initialValue: value,
-          isExpanded: true,
-          dropdownColor: Colors.white,
-          focusColor: Colors.white,
-          style: const TextStyle(
-            color: Color(0xFF060D35),
-            fontSize: 12.5,
-            fontWeight: FontWeight.w700,
-          ),
-          icon: const Icon(LucideIcons.chevronDown, size: 17),
-          iconEnabledColor: const Color(0xFF060D35),
-          iconDisabledColor: const Color(0xFF8B90A2),
-          borderRadius: BorderRadius.circular(8),
-          hint: hint == null
-              ? null
-              : Text(
-                  hint!,
-                  style: const TextStyle(
-                    color: Color(0xFF8B90A2),
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-          items: [
-            for (final item in items)
-              DropdownMenuItem<T>(
-                value: item,
-                child: Text(
-                  item.toString(),
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF060D35),
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-          ],
-          onChanged: onChanged,
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(7),
-              borderSide: const BorderSide(color: Color(0xFFD5DEE4)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(7),
-              borderSide: const BorderSide(color: Color(0xFF078D92)),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _FlowFooter extends StatelessWidget {
-  final int step;
-  final int totalSteps;
-  final VoidCallback onContinue;
-  final VoidCallback? onBack;
-  final VoidCallback onPublish;
-  final String publishLabel;
-  final bool publishing;
-
-  const _FlowFooter({
-    required this.step,
-    this.totalSteps = 2,
-    required this.onContinue,
-    this.onBack,
-    required this.onPublish,
-    this.publishLabel = 'Publish',
-    this.publishing = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final bottomPad = MediaQuery.of(context).padding.bottom;
-    final primary = SizedBox(
-      height: 50,
-      child: FilledButton(
-        onPressed:
-            publishing ? null : (step < totalSteps ? onContinue : onPublish),
-        style: FilledButton.styleFrom(
-          backgroundColor: const Color(0xFF078D92),
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-        child: publishing
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation(Colors.white),
-                ),
-              )
-            : FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  step < totalSteps ? 'Continue' : publishLabel,
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w900),
-                ),
-              ),
-      ),
-    );
-    return Padding(
-      padding: EdgeInsets.fromLTRB(18, 10, 18, 12 + bottomPad),
-      child: onBack == null
-          ? SizedBox(width: double.infinity, child: primary)
-          : Row(
-              children: [
-                SizedBox(
-                  height: 50,
-                  child: OutlinedButton(
-                    onPressed: publishing ? null : onBack,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF060D35),
-                      side: const BorderSide(color: Color(0xFFD5DEE4)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 18),
-                    ),
-                    child: const Text(
-                      'Back',
-                      style:
-                          TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
-                    ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(child: primary),
               ],
             ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 62,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: images.length + (images.length < maxImages ? 1 : 0),
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, i) {
+              if (i >= images.length) {
+                return PublishDashedBox(
+                  onTap: onTap,
+                  radius: 16,
+                  child: const SizedBox(
+                    width: 60,
+                    height: 60,
+                    child: Icon(LucideIcons.plus,
+                        size: 20, color: PublishStyle.teal),
+                  ),
+                );
+              }
+              final isMain = i == index;
+              return GestureDetector(
+                onTap: () => onSetMain?.call(i),
+                child: SizedBox(
+                  width: 60,
+                  height: 60,
+                  child: Stack(
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isMain
+                                ? PublishStyle.teal
+                                : PublishStyle.cardBorder,
+                            width: isMain ? 2 : 1,
+                          ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: Image.file(
+                            File(images[i].path),
+                            width: 60,
+                            height: 60,
+                            fit: BoxFit.cover,
+                            cacheWidth: 180,
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        right: 2,
+                        top: 2,
+                        child: GestureDetector(
+                          onTap: () => onRemove(i),
+                          child: Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.7),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.close_rounded,
+                                size: 12, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RoundOverlayButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final String? tooltip;
+
+  const _RoundOverlayButton({
+    required this.icon,
+    required this.onTap,
+    this.tooltip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip ?? '',
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.45),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+          ),
+          child: Icon(icon, size: 15, color: Colors.white),
+        ),
+      ),
     );
   }
 }
 
 class _ProductVariant {
-  String color;
+  String color = '#8B5E3C';
   final TextEditingController sizeController = TextEditingController();
   final TextEditingController stockController = TextEditingController();
   final TextEditingController priceController = TextEditingController();
 
-  _ProductVariant({this.color = '#8B5E3C'});
+  _ProductVariant();
 
   void dispose() {
     sizeController.dispose();
@@ -2181,54 +2076,64 @@ class _HighlightsEditor extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Key Highlights *',
-          style: TextStyle(
-            color: Color(0xFF060D35),
-            fontSize: 12.5,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 7),
         for (var i = 0; i < controllers.length; i++) ...[
           Row(
             key: ValueKey(controllers[i]),
-            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Expanded(
-                child: _TextFieldShell(
-                  label: 'Highlight ${i + 1}',
-                  hint: hint,
-                  controller: controllers[i],
+              Container(
+                width: 24,
+                height: 24,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: PublishStyle.purpleSoft,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  '${i + 1}',
+                  style: const TextStyle(
+                    color: PublishStyle.purple,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: TextField(
+                  controller: controllers[i],
+                  cursorColor: PublishStyle.teal,
+                  style: const TextStyle(
+                    color: PublishStyle.ink,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  decoration: publishInputDecoration(hint: hint),
+                ),
+              ),
+              const SizedBox(width: 3),
               IconButton(
                 onPressed: () {
                   controllers.removeAt(i);
                   onChanged();
                 },
-                icon: const Icon(Icons.close_rounded, size: 18),
-                color: const Color(0xFF8B90A2),
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(LucideIcons.x,
+                    size: 16, color: PublishStyle.soft),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          if (i != controllers.length - 1) const SizedBox(height: 8),
         ],
-        if (controllers.length < max)
-          TextButton(
-            onPressed: () {
+        if (controllers.length < max) ...[
+          const SizedBox(height: 10),
+          PublishAddButton(
+            label: 'Add highlight',
+            onTap: () {
               controllers.add(TextEditingController());
               onChanged();
             },
-            child: const Text(
-              '+ Add Highlight (Max 5)',
-              style: TextStyle(
-                color: Color(0xFF078D92),
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
           ),
+        ],
       ],
     );
   }
@@ -2501,24 +2406,17 @@ class _VariantsEditorState extends State<_VariantsEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Variants (optional)',
-          style: TextStyle(
-            color: Color(0xFF060D35),
-            fontSize: 12.5,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 7),
         for (var i = 0; i < widget.variants.length; i++) ...[
           Container(
             key: ValueKey(widget.variants[i]),
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.fromLTRB(12, 10, 8, 12),
             decoration: BoxDecoration(
-              border: Border.all(color: const Color(0xFFD5DEE4)),
-              borderRadius: BorderRadius.circular(8),
+              color: PublishStyle.fieldFill,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: PublishStyle.fieldBorder),
             ),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
@@ -2544,35 +2442,38 @@ class _VariantsEditorState extends State<_VariantsEditor> {
                         });
                         widget.onChanged();
                       },
-                      icon: const Icon(Icons.close_rounded, size: 18),
-                      color: const Color(0xFF8B90A2),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Remove variant',
+                      icon: const Icon(LucideIcons.trash2,
+                          size: 17, color: PublishStyle.soft),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                _TextFieldShell(
-                  label: 'Size (e.g. One Size)',
+                const SizedBox(height: 10),
+                PublishField(
+                  label: 'Size',
                   hint: 'One Size',
                   controller: widget.variants[i].sizeController,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
-                      child: _TextFieldShell(
+                      child: PublishField(
                         label: 'Stock',
                         hint: '0',
                         controller: widget.variants[i].stockController,
                         keyboardType: TextInputType.number,
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 10),
                     Expanded(
-                      child: _TextFieldShell(
-                        label: 'Price (₹)',
+                      child: PublishField(
+                        label: 'Price',
                         hint: '0',
                         controller: widget.variants[i].priceController,
                         keyboardType: TextInputType.number,
+                        prefixText: '₹ ',
                       ),
                     ),
                   ],
@@ -2580,53 +2481,15 @@ class _VariantsEditorState extends State<_VariantsEditor> {
               ],
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
         ],
-        TextButton(
-          onPressed: () {
+        PublishAddButton(
+          label: 'Add variant',
+          onTap: () {
             setState(() => widget.variants.add(_ProductVariant()));
             widget.onChanged();
           },
-          child: const Text(
-            '+ Add Variant',
-            style: TextStyle(
-              color: Color(0xFF078D92),
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
         ),
-      ],
-    );
-  }
-}
-
-class _CheckRow extends StatelessWidget {
-  final String label;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  const _CheckRow({
-    required this.label,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF060D35),
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        Switch.adaptive(value: value, onChanged: onChanged),
       ],
     );
   }

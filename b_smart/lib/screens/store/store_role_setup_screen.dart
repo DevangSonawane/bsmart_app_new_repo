@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../api/phase2_store_api.dart';
 import '../../models/auth/auth_user_model.dart';
 import '../../services/auth/auth_service.dart';
+import '../../services/razorpay_checkout_service.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_theme.dart';
 
@@ -81,9 +82,7 @@ class _StoreRoleGateSliverState extends State<StoreRoleGateSliver> {
           );
         }
         if (snapshot.data == 'influencer') return widget.child;
-        final role = (snapshot.data ?? '').isEmpty
-            ? 'member'
-            : snapshot.data!;
+        final role = (snapshot.data ?? '').isEmpty ? 'member' : snapshot.data!;
         final label = role[0].toUpperCase() + role.substring(1);
         return SliverList.list(
           children: [
@@ -174,6 +173,7 @@ class _StoreRoleSetupScreenState extends State<StoreRoleSetupScreen> {
 
   bool _creatorMode = true;
   bool _saving = false;
+  final RazorpayCheckoutService _razorpay = RazorpayCheckoutService();
 
   @override
   void initState() {
@@ -188,6 +188,7 @@ class _StoreRoleSetupScreenState extends State<StoreRoleSetupScreen> {
 
   @override
   void dispose() {
+    _razorpay.dispose();
     _businessTypeController.dispose();
     _storeNameController.dispose();
     _storeDescriptionController.dispose();
@@ -331,33 +332,90 @@ class _StoreRoleSetupScreenState extends State<StoreRoleSetupScreen> {
       return;
     }
 
+    final startTrial = await _chooseSubscriptionStart();
+    if (startTrial == null || !mounted) return;
     setState(() => _saving = true);
     try {
-      await Phase2StoreApi().switchUserRole(
-        userId: userId,
-        body: {
-          'role': 'influencer',
-          'business_type': businessType,
-          'store_name': storeName,
-          'store_description': description,
-          'products_type': _products,
-          'service_type': _services,
+      final api = Phase2StoreApi();
+      final subscription =
+          await api.createAccountSubscription(startTrial: startTrial);
+      final raw = subscription['razorpay'];
+      final razorpay = raw is Map
+          ? raw.map((key, value) => MapEntry(key.toString(), value))
+          : <String, dynamic>{};
+      final keyId = razorpay['key_id']?.toString() ?? '';
+      final subscriptionId = razorpay['subscription_id']?.toString() ?? '';
+      if (keyId.isEmpty || subscriptionId.isEmpty) {
+        throw StateError(
+            'Subscription details were not returned by the server.');
+      }
+      _razorpay.openSubscription(
+        keyId: keyId,
+        subscriptionId: subscriptionId,
+        description: startTrial ? '7-day trial' : '₹99/month subscription',
+        onSuccess: (_) async {
+          try {
+            await api.switchUserRole(userId: userId, body: {
+              'role': 'influencer',
+              'business_type': businessType,
+              'store_name': storeName,
+              'store_description': description,
+              'products_type': _products,
+              'service_type': _services,
+            });
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Creator mode enabled.')),
+            );
+            Navigator.of(context).pop(true);
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('Mandate succeeded, but store setup failed: $e'),
+              ));
+            }
+          } finally {
+            if (mounted) setState(() => _saving = false);
+          }
+        },
+        onFailure: (failure) {
+          if (!mounted) return;
+          setState(() => _saving = false);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(failure.dismissed
+                ? 'Subscription setup cancelled.'
+                : failure.message),
+          ));
         },
       );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Creator mode enabled.')),
-      );
-      Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Store setup failed: $e')),
       );
-    } finally {
-      if (mounted) setState(() => _saving = false);
+      setState(() => _saving = false);
     }
   }
+
+  Future<bool?> _chooseSubscriptionStart() => showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Activate your store'),
+          content: const Text(
+              'A Razorpay mandate is required. Choose when your ₹99/month subscription starts.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('7-day free trial')),
+            FilledButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Subscribe now')),
+          ],
+        ),
+      );
 }
 
 class _Header extends StatelessWidget {
@@ -474,7 +532,6 @@ class _CreatorSwitch extends StatelessWidget {
           Switch.adaptive(
             value: value,
             onChanged: onChanged,
-            activeThumbColor: const Color(0xFF078D92),
           ),
         ],
       ),
@@ -590,20 +647,17 @@ class _ChipPanel extends StatelessWidget {
                   ),
                   decoration: InputDecoration(
                     hintText: hint,
-                    hintStyle: const TextStyle(
-                        color: BStoreColors.textMuted),
+                    hintStyle: const TextStyle(color: BStoreColors.textMuted),
                     isDense: true,
                     filled: true,
                     fillColor: Colors.white,
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide:
-                          const BorderSide(color: Color(0xFFD5DEE4)),
+                      borderSide: const BorderSide(color: Color(0xFFD5DEE4)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide:
-                          const BorderSide(color: Color(0xFF078D92)),
+                      borderSide: const BorderSide(color: Color(0xFF078D92)),
                     ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),

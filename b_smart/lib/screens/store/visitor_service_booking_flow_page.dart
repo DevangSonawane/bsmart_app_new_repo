@@ -14,6 +14,8 @@ import 'store_theme.dart';
 import 'store_address_book.dart';
 import 'store_models.dart';
 import 'store_saved_address_page.dart';
+import 'service_cart_page.dart';
+import 'service_cart_state.dart';
 
 class VisitorServiceBookingFlowPage extends StatefulWidget {
   final String? ownerUserId;
@@ -44,12 +46,20 @@ class _VisitorServiceBookingFlowPageState
   String _selectedTime = '10:00 AM';
   String _selectedDuration = '2-3 hrs';
   bool _useBCoins = false;
-  String _paymentMethod = 'wallet';
+  int _coinsToUse = 0;
   bool _submitting = false;
   String? _bookingId;
   String? _bookingError;
   final RazorpayCheckoutService _razorpay = RazorpayCheckoutService();
-  final Set<String> _selectedSubservices = {};
+
+  /// A selected option's count. Keeping quantities rather than a set also
+  /// lets the request faithfully represent server-side pricing variants.
+  final Map<String, int> _subserviceQuantities = {};
+  int _baseQuantity = 1;
+
+  bool get _hasVariants => widget.item.raw['has_variants'] == true;
+  bool get _baseAllowsMultiple =>
+      !_hasVariants && widget.item.raw['allow_multiple'] == true;
 
   @override
   void dispose() {
@@ -64,7 +74,9 @@ class _VisitorServiceBookingFlowPageState
     _dateWindowStart = _selectedDate;
     _providerFuture = _loadProvider();
     StoreAddressBook.instance.ensureLoaded();
-    _selectedSubservices.addAll(_defaultSubservices());
+    for (final name in _defaultSubservices()) {
+      _subserviceQuantities[name] = 1;
+    }
   }
 
   List<_BookingDate> get _visibleDates {
@@ -195,9 +207,8 @@ class _VisitorServiceBookingFlowPageState
   }
 
   static bool _isAfternoon(String label) {
-    final match =
-        RegExp(r'(\d{1,2}):(\d{2})\s*([AP]M)', caseSensitive: false)
-            .firstMatch(label.trim());
+    final match = RegExp(r'(\d{1,2}):(\d{2})\s*([AP]M)', caseSensitive: false)
+        .firstMatch(label.trim());
     if (match == null) return false;
     var hour = int.tryParse(match.group(1) ?? '12') ?? 12;
     final suffix = (match.group(3) ?? 'AM').toUpperCase();
@@ -219,8 +230,8 @@ class _VisitorServiceBookingFlowPageState
       if (_selectedDayUnavailable) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-                'Provider is unavailable on this day. Pick another date.'),
+            content:
+                Text('Provider is unavailable on this day. Pick another date.'),
           ),
         );
         return;
@@ -230,6 +241,12 @@ class _VisitorServiceBookingFlowPageState
       return;
     }
     if (_step == 1) {
+      if (_hasVariants && _subserviceQuantities.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Select at least one service option.')),
+        );
+        return;
+      }
       setState(() => _step += 1);
       return;
     }
@@ -247,25 +264,28 @@ class _VisitorServiceBookingFlowPageState
     });
     try {
       final slot = _timeSlot24h(_selectedTime);
-      final bookingDate =
-          DateFormat('yyyy-MM-dd').format(_selectedDate);
-      final response =
-          await StoreMockState.instance.createBooking({
-        'service_id': widget.item.raw['id'] ??
-            widget.item.raw['_id'] ??
-            widget.item.id,
+      final bookingDate = DateFormat('yyyy-MM-dd').format(_selectedDate);
+      final response = await StoreMockState.instance.createBooking({
+        'service_id':
+            widget.item.raw['id'] ?? widget.item.raw['_id'] ?? widget.item.id,
         'booking_date': bookingDate,
         'time_slot': slot,
-        if (_selectedSubservices.isNotEmpty)
+        if (_subserviceQuantities.isNotEmpty)
           'selected_subservices': [
-            for (final name in _selectedSubservices) {'name': name}
+            for (final entry in _subserviceQuantities.entries)
+              {'name': entry.key, 'quantity': entry.value}
           ],
+        if (_baseAllowsMultiple) 'base_quantity': _baseQuantity,
         'customer_address': _address?.toCustomerJson() ?? const {},
-        'payment_method': _paymentMethod,
+        'coins_to_use': _coinsToUse,
       });
       final id = _bookingIdFrom(response);
       if (!mounted) return;
-      if (_paymentMethod == 'razorpay') {
+      // A Razorpay block appears only for an unpaid remainder. Coins are held
+      // server-side until this verification succeeds.
+      if (RazorpayCheckoutService.razorpayOf(response,
+              fallbackTotal: widget.item.price) !=
+          null) {
         await _payBookingWithRazorpay(response, id);
         return;
       }
@@ -350,11 +370,40 @@ class _VisitorServiceBookingFlowPageState
     );
   }
 
+  void _addToServiceCart() {
+    final address = _address;
+    if (address == null) {
+      setState(() =>
+          _bookingError = 'Add a service address before adding this booking.');
+      return;
+    }
+    final id =
+        (widget.item.raw['id'] ?? widget.item.raw['_id'] ?? widget.item.id)
+            .toString();
+    final total = _estimatedTotal.round();
+    ServiceCartState.instance.add(ServiceCartLine(
+      title: widget.title,
+      total: total,
+      payload: {
+        'service_id': id,
+        'booking_date': DateFormat('yyyy-MM-dd').format(_selectedDate),
+        'time_slot': _timeSlot24h(_selectedTime),
+        'selected_subservices': [
+          for (final entry in _subserviceQuantities.entries)
+            {'name': entry.key, 'quantity': entry.value}
+        ],
+        if (_baseAllowsMultiple) 'base_quantity': _baseQuantity,
+        'customer_address': address.toCustomerJson(),
+      },
+    ));
+    Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const ServiceCartPage()));
+  }
+
   /// Converts "10:00 AM" to {"start": "10:00", "end": "12:00"} (2h default).
   static Map<String, String> _timeSlot24h(String label) {
-    final match =
-        RegExp(r'(\d{1,2}):(\d{2})\s*([AP]M)', caseSensitive: false)
-            .firstMatch(label.trim());
+    final match = RegExp(r'(\d{1,2}):(\d{2})\s*([AP]M)', caseSensitive: false)
+        .firstMatch(label.trim());
     var hour = 10;
     var minute = 0;
     if (match != null) {
@@ -370,11 +419,11 @@ class _VisitorServiceBookingFlowPageState
     return {'start': fmt(hour, minute), 'end': fmt(endHour, minute)};
   }
 
-  /// All subservices offered by the service, each with name/price strings.
-  List<Map<String, String>> get _allSubservices {
+  /// All subservices offered by the service.
+  List<Map<String, dynamic>> get _allSubservices {
     final raw = widget.item.raw['subservices'];
     if (raw is! List) return const [];
-    final out = <Map<String, String>>[];
+    final out = <Map<String, dynamic>>[];
     for (final entry in raw) {
       if (entry is! Map) continue;
       final map = Map<String, dynamic>.from(entry);
@@ -384,10 +433,36 @@ class _VisitorServiceBookingFlowPageState
         'name': name,
         'price': map['price']?.toString().trim() ?? '',
         'hours': (map['hours'] ?? map['duration'])?.toString().trim() ?? '',
+        'allow_multiple': map['allow_multiple'] == true,
+        'image_url': _imageUrl(map['image']),
       });
     }
     return out;
   }
+
+  static String _imageUrl(dynamic image) {
+    if (image is Map) {
+      return (image['fileUrl'] ?? image['file_url'] ?? '').toString();
+    }
+    return '';
+  }
+
+  double get _estimatedTotal {
+    final base =
+        double.tryParse(widget.item.raw['price']?.toString() ?? '') ?? 0;
+    final options = {
+      for (final option in _allSubservices) option['name']: option
+    };
+    final optionTotal = _subserviceQuantities.entries.fold<double>(0, (sum, e) {
+      final price =
+          double.tryParse(options[e.key]?['price']?.toString() ?? '') ?? 0;
+      return sum + price * e.value;
+    });
+    return (_hasVariants ? 0 : base * _baseQuantity) + optionTotal;
+  }
+
+  String get _estimatedTotalLabel =>
+      '₹${_estimatedTotal.toStringAsFixed(_estimatedTotal.truncateToDouble() == _estimatedTotal ? 0 : 2)}';
 
   /// Default selection: first subservice (preserves previous auto behavior).
   Set<String> _defaultSubservices() {
@@ -410,14 +485,14 @@ class _VisitorServiceBookingFlowPageState
   }
 
   static String _bookingIdFrom(Map<String, dynamic> response) {
-    for (final key in ['id', '_id', 'booking_id']) {
+    for (final key in ['id', '_id', 'booking_id', 'order_id']) {
       final v = response[key]?.toString().trim();
       if (v != null && v.isNotEmpty) return v;
     }
-    for (final key in ['booking', 'data', 'item']) {
+    for (final key in ['order', 'booking', 'data', 'item']) {
       final nested = response[key];
       if (nested is Map) {
-        for (final k in ['id', '_id', 'booking_id']) {
+        for (final k in ['id', '_id', 'booking_id', 'order_id']) {
           final v = nested[k]?.toString().trim();
           if (v != null && v.isNotEmpty) return v;
         }
@@ -499,132 +574,145 @@ class _VisitorServiceBookingFlowPageState
           data: BStoreTheme.data(context),
           child: Scaffold(
             backgroundColor: const Color(0xFFFFFEFC),
-          body: SafeArea(
-            top: false,
-            child: AnimatedBuilder(
-              animation: StoreAddressBook.instance,
-              builder: (context, _) => Column(
-              children: [
-                Expanded(
-                  child: ListView(
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      MediaQuery.of(context).padding.top + 18,
-                      16,
-                      _step == 3 ? 18 : 8,
+            body: SafeArea(
+              top: false,
+              child: AnimatedBuilder(
+                animation: StoreAddressBook.instance,
+                builder: (context, _) => Column(
+                  children: [
+                    Expanded(
+                      child: ListView(
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          MediaQuery.of(context).padding.top + 18,
+                          16,
+                          _step == 3 ? 18 : 8,
+                        ),
+                        children: [
+                          _BookingHeader(
+                            title: switch (_step) {
+                              0 => 'Select availability',
+                              1 => 'Review request',
+                              2 => 'Payment',
+                              _ => 'Request sent',
+                            },
+                            onBack: () {
+                              if (_step == 0) {
+                                Navigator.of(context).maybePop();
+                              } else {
+                                setState(() => _step -= 1);
+                              }
+                            },
+                          ),
+                          if (_step < 3) ...[
+                            const SizedBox(height: 10),
+                            _StepDots(current: _step),
+                          ],
+                          SizedBox(height: _step == 0 ? 22 : 16),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 180),
+                            child: switch (_step) {
+                              0 => _SelectAvailabilityStep(
+                                  key: const ValueKey('availability'),
+                                  dates: _visibleDates,
+                                  selectedDate: _selectedDate,
+                                  selectedTime: _selectedTime,
+                                  selectedDuration: _selectedDuration,
+                                  morningTimes: _morningSlots,
+                                  afternoonTimes: _afternoonSlots,
+                                  dayUnavailable: _selectedDayUnavailable,
+                                  serviceAddress: _address?.summaryLine ??
+                                      'Add a service address',
+                                  onDateSelected: (date) {
+                                    setState(() => _selectedDate = date);
+                                    _ensureTimeInSlots();
+                                  },
+                                  onCalendarTap: _pickDate,
+                                  onTimeSelected: (time) {
+                                    setState(() => _selectedTime = time);
+                                  },
+                                  onDurationChanged: (value) {
+                                    if (value == null) return;
+                                    setState(() => _selectedDuration = value);
+                                  },
+                                  onAddressTap: _pickAddress,
+                                ),
+                              1 => _ReviewRequestStep(
+                                  key: const ValueKey('review'),
+                                  service: widget,
+                                  provider: provider,
+                                  selectedDate: _selectedBookingDate,
+                                  selectedTime: _selectedTime,
+                                  selectedDuration: _selectedDuration,
+                                  addressLine: _address?.summaryLine ??
+                                      'Add a service address',
+                                  onAddressTap: _pickAddress,
+                                  subservices: _allSubservices,
+                                  quantities: _subserviceQuantities,
+                                  hasVariants: _hasVariants,
+                                  baseAllowsMultiple: _baseAllowsMultiple,
+                                  baseQuantity: _baseQuantity,
+                                  estimatedTotal: _estimatedTotalLabel,
+                                  onBaseQuantityChanged: (quantity) =>
+                                      setState(() => _baseQuantity = quantity),
+                                  onSubserviceQuantityChanged:
+                                      (name, quantity) {
+                                    setState(() {
+                                      if (quantity > 0) {
+                                        _subserviceQuantities[name] = quantity;
+                                      } else {
+                                        _subserviceQuantities.remove(name);
+                                      }
+                                    });
+                                  },
+                                  useBCoins: _useBCoins,
+                                  onUseBCoinsChanged: (value) {
+                                    setState(() => _useBCoins = value);
+                                  },
+                                ),
+                              2 => _PaymentStep(
+                                  key: const ValueKey('payment'),
+                                  amount: _estimatedTotalLabel,
+                                  coinsToUse: _coinsToUse,
+                                  submitting: _submitting,
+                                  error: _bookingError,
+                                  onCoinsChanged: (v) =>
+                                      setState(() => _coinsToUse = v),
+                                ),
+                              _ => _RequestSentStep(
+                                  key: const ValueKey('sent'),
+                                  providerName:
+                                      provider?.name ?? 'the provider',
+                                  bookingId: _bookingId,
+                                ),
+                            },
+                          ),
+                        ],
+                      ),
                     ),
-                    children: [
-                      _BookingHeader(
-                        title: switch (_step) {
-                          0 => 'Select availability',
-                          1 => 'Review request',
-                          2 => 'Payment',
-                          _ => 'Request sent',
-                        },
-                        onBack: () {
-                          if (_step == 0) {
-                            Navigator.of(context).maybePop();
-                          } else {
-                            setState(() => _step -= 1);
-                          }
-                        },
+                    if (_step < 3)
+                      if (_step == 2)
+                        TextButton.icon(
+                          onPressed: _submitting ? null : _addToServiceCart,
+                          icon: const Icon(LucideIcons.shoppingBag, size: 17),
+                          label: const Text('Add to service cart'),
+                        ),
+                    if (_step < 3)
+                      _BookingFooterButton(
+                        label: _submitting
+                            ? 'Booking...'
+                            : switch (_step) {
+                                0 => 'Continue',
+                                1 => 'Continue to payment',
+                                _ => 'Confirm payment',
+                              },
+                        icon: _step == 2 ? LucideIcons.lockKeyhole : null,
+                        onPressed: _submitting ? () {} : _handleFooterTap,
                       ),
-                      if (_step < 3) ...[
-                        const SizedBox(height: 10),
-                        _StepDots(current: _step),
-                      ],
-                      SizedBox(height: _step == 0 ? 22 : 16),
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 180),
-                        child: switch (_step) {
-                          0 => _SelectAvailabilityStep(
-                              key: const ValueKey('availability'),
-                              dates: _visibleDates,
-                              selectedDate: _selectedDate,
-                              selectedTime: _selectedTime,
-                              selectedDuration: _selectedDuration,
-                              morningTimes: _morningSlots,
-                              afternoonTimes: _afternoonSlots,
-                              dayUnavailable: _selectedDayUnavailable,
-                              serviceAddress: _address?.summaryLine ??
-                                  'Add a service address',
-                              onDateSelected: (date) {
-                                setState(() => _selectedDate = date);
-                                _ensureTimeInSlots();
-                              },
-                              onCalendarTap: _pickDate,
-                              onTimeSelected: (time) {
-                                setState(() => _selectedTime = time);
-                              },
-                              onDurationChanged: (value) {
-                                if (value == null) return;
-                                setState(() => _selectedDuration = value);
-                              },
-                              onAddressTap: _pickAddress,
-                            ),
-                          1 => _ReviewRequestStep(
-                              key: const ValueKey('review'),
-                              service: widget,
-                              provider: provider,
-                              selectedDate: _selectedBookingDate,
-                              selectedTime: _selectedTime,
-                              selectedDuration: _selectedDuration,
-                              addressLine: _address?.summaryLine ??
-                                  'Add a service address',
-                              onAddressTap: _pickAddress,
-                              subservices: _allSubservices,
-                              selectedSubservices: _selectedSubservices,
-                              onSubserviceToggled: (name, selected) {
-                                setState(() {
-                                  if (selected) {
-                                    _selectedSubservices.add(name);
-                                  } else {
-                                    _selectedSubservices.remove(name);
-                                  }
-                                });
-                              },
-                              useBCoins: _useBCoins,
-                              onUseBCoinsChanged: (value) {
-                                setState(() => _useBCoins = value);
-                              },
-                            ),
-                          2 => _PaymentStep(
-                              key: const ValueKey('payment'),
-                              amount: widget.price,
-                              selectedMethod: _paymentMethod,
-                              submitting: _submitting,
-                              error: _bookingError,
-                              onMethodChanged: (v) =>
-                                  setState(() => _paymentMethod = v),
-                            ),
-                          _ => _RequestSentStep(
-                              key: const ValueKey('sent'),
-                              providerName: provider?.name ?? 'the provider',
-                              bookingId: _bookingId,
-                            ),
-                        },
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
-                if (_step < 3)
-                  _BookingFooterButton(
-                    label: _submitting
-                        ? 'Booking...'
-                        : switch (_step) {
-                            0 => 'Continue',
-                            1 => 'Continue to payment',
-                            _ => _paymentMethod == 'razorpay'
-                                ? 'Pay ${widget.price} with Razorpay'
-                                : 'Pay ${widget.price}',
-                          },
-                    icon: _step == 2 ? LucideIcons.lockKeyhole : null,
-                    onPressed: _submitting ? () {} : _handleFooterTap,
-                  ),
-              ],
               ),
             ),
-          ),
           ),
         );
       },
@@ -795,8 +883,7 @@ class _SelectAvailabilityStep extends StatelessWidget {
         const SizedBox(height: 14),
         Container(
           width: double.infinity,
-          padding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           decoration: BoxDecoration(
             color: const Color(0xFFEAF7F6),
             borderRadius: BorderRadius.circular(12),
@@ -822,8 +909,7 @@ class _SelectAvailabilityStep extends StatelessWidget {
                 onTap: onCalendarTap,
                 borderRadius: BorderRadius.circular(8),
                 child: const Padding(
-                  padding:
-                      EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                   child: Text(
                     'Change',
                     style: TextStyle(
@@ -994,9 +1080,7 @@ class _DateChip extends StatelessWidget {
           color: selected ? const Color(0xFF078D92) : Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: selected
-                ? const Color(0xFF078D92)
-                : const Color(0xFFE2E6EA),
+            color: selected ? const Color(0xFF078D92) : const Color(0xFFE2E6EA),
             width: selected ? 0 : 1.2,
           ),
           boxShadow: [
@@ -1166,9 +1250,7 @@ class _TimeChip extends StatelessWidget {
           backgroundColor: selected ? const Color(0xFF078D92) : Colors.white,
           foregroundColor: selected ? Colors.white : const Color(0xFF060D35),
           side: BorderSide(
-            color: selected
-                ? const Color(0xFF078D92)
-                : const Color(0xFFE1E5EA),
+            color: selected ? const Color(0xFF078D92) : const Color(0xFFE1E5EA),
             width: 1.2,
           ),
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1231,14 +1313,14 @@ class _BookingSelectTile extends StatelessWidget {
 }
 
 class _SubservicePicker extends StatelessWidget {
-  final List<Map<String, String>> subservices;
-  final Set<String> selected;
-  final void Function(String name, bool selected) onToggled;
+  final List<Map<String, dynamic>> subservices;
+  final Map<String, int> quantities;
+  final void Function(String name, int quantity) onQuantityChanged;
 
   const _SubservicePicker({
     required this.subservices,
-    required this.selected,
-    required this.onToggled,
+    required this.quantities,
+    required this.onQuantityChanged,
   });
 
   @override
@@ -1265,7 +1347,7 @@ class _SubservicePicker extends StatelessWidget {
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
-                '${selected.length}/${subservices.length} selected',
+                '${quantities.length}/${subservices.length} selected',
                 style: const TextStyle(
                   color: Color(0xFF078D92),
                   fontSize: 11,
@@ -1288,10 +1370,11 @@ class _SubservicePicker extends StatelessWidget {
                       '${subservices[i]['hours']}h',
                   ].join(' · ')
                 : '',
-            selected:
-                selected.contains(subservices[i]['name']),
-            onTap: () => onToggled(subservices[i]['name'] ?? '',
-                !selected.contains(subservices[i]['name'])),
+            imageUrl: subservices[i]['image_url']?.toString() ?? '',
+            allowMultiple: subservices[i]['allow_multiple'] == true,
+            quantity: quantities[subservices[i]['name']] ?? 0,
+            onQuantityChanged: (quantity) => onQuantityChanged(
+                subservices[i]['name']?.toString() ?? '', quantity),
           ),
           if (i != subservices.length - 1) const SizedBox(height: 8),
         ],
@@ -1303,33 +1386,35 @@ class _SubservicePicker extends StatelessWidget {
 class _SubserviceRow extends StatelessWidget {
   final String name;
   final String subtitle;
-  final bool selected;
-  final VoidCallback onTap;
+  final String imageUrl;
+  final bool allowMultiple;
+  final int quantity;
+  final ValueChanged<int> onQuantityChanged;
 
   const _SubserviceRow({
     required this.name,
     required this.subtitle,
-    required this.selected,
-    required this.onTap,
+    required this.imageUrl,
+    required this.allowMultiple,
+    required this.quantity,
+    required this.onQuantityChanged,
   });
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: onTap,
+      onTap: () => onQuantityChanged(quantity == 0 ? 1 : 0),
       borderRadius: BorderRadius.circular(12),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
         decoration: BoxDecoration(
-          color: selected
-              ? const Color(0xFFEAF7F6)
-              : const Color(0xFFF7F8FA),
+          color:
+              quantity > 0 ? const Color(0xFFEAF7F6) : const Color(0xFFF7F8FA),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: selected
+            color: quantity > 0
                 ? const Color(0xFF078D92)
                 : const Color(0xFFE8EBF0),
             width: 1.2,
@@ -1337,27 +1422,35 @@ class _SubserviceRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: selected
-                    ? const Color(0xFF078D92)
-                    : Colors.white,
+            if (imageUrl.isNotEmpty)
+              ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: selected
-                      ? const Color(0xFF078D92)
-                      : const Color(0xFFC9CED6),
-                  width: 1.4,
-                ),
+                child: SafeNetworkImage(
+                    url: imageUrl,
+                    width: 38,
+                    height: 38,
+                    fit: BoxFit.cover,
+                    debugLabel: 'subservice-option'),
+              )
+            else
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                    color:
+                        quantity > 0 ? const Color(0xFF078D92) : Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: quantity > 0
+                            ? const Color(0xFF078D92)
+                            : const Color(0xFFC9CED6),
+                        width: 1.4)),
+                child: quantity > 0
+                    ? const Icon(LucideIcons.check,
+                        color: Colors.white, size: 15)
+                    : null,
               ),
-              child: selected
-                  ? const Icon(LucideIcons.check,
-                      color: Colors.white, size: 15)
-                  : null,
-            ),
             const SizedBox(width: 11),
             Expanded(
               child: Column(
@@ -1389,11 +1482,52 @@ class _SubserviceRow extends StatelessWidget {
                 ],
               ),
             ),
+            if (allowMultiple) ...[
+              IconButton(
+                  onPressed: quantity > 0
+                      ? () => onQuantityChanged(quantity - 1)
+                      : null,
+                  icon: const Icon(LucideIcons.minus, size: 17)),
+              Text('$quantity',
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
+              IconButton(
+                  onPressed: () => onQuantityChanged(quantity + 1),
+                  icon: const Icon(LucideIcons.plus, size: 17)),
+            ],
           ],
         ),
       ),
     );
   }
+}
+
+class _QuantityCard extends StatelessWidget {
+  final String label;
+  final int quantity;
+  final ValueChanged<int> onChanged;
+
+  const _QuantityCard(
+      {required this.label, required this.quantity, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: storeSoftCardDecoration(radius: 16),
+        child: Row(children: [
+          Expanded(
+              child: Text(label,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, color: Color(0xFF060D35)))),
+          IconButton(
+              onPressed: quantity > 1 ? () => onChanged(quantity - 1) : null,
+              icon: const Icon(LucideIcons.minus, size: 18)),
+          Text('$quantity',
+              style: const TextStyle(fontWeight: FontWeight.w900)),
+          IconButton(
+              onPressed: () => onChanged(quantity + 1),
+              icon: const Icon(LucideIcons.plus, size: 18)),
+        ]),
+      );
 }
 
 class _ReviewRequestStep extends StatelessWidget {
@@ -1404,9 +1538,14 @@ class _ReviewRequestStep extends StatelessWidget {
   final String selectedDuration;
   final String addressLine;
   final VoidCallback onAddressTap;
-  final List<Map<String, String>> subservices;
-  final Set<String> selectedSubservices;
-  final void Function(String name, bool selected) onSubserviceToggled;
+  final List<Map<String, dynamic>> subservices;
+  final Map<String, int> quantities;
+  final bool hasVariants;
+  final bool baseAllowsMultiple;
+  final int baseQuantity;
+  final String estimatedTotal;
+  final ValueChanged<int> onBaseQuantityChanged;
+  final void Function(String name, int quantity) onSubserviceQuantityChanged;
   final bool useBCoins;
   final ValueChanged<bool> onUseBCoinsChanged;
 
@@ -1420,8 +1559,13 @@ class _ReviewRequestStep extends StatelessWidget {
     required this.addressLine,
     required this.onAddressTap,
     required this.subservices,
-    required this.selectedSubservices,
-    required this.onSubserviceToggled,
+    required this.quantities,
+    required this.hasVariants,
+    required this.baseAllowsMultiple,
+    required this.baseQuantity,
+    required this.estimatedTotal,
+    required this.onBaseQuantityChanged,
+    required this.onSubserviceQuantityChanged,
     required this.useBCoins,
     required this.onUseBCoinsChanged,
   });
@@ -1483,9 +1627,8 @@ class _ReviewRequestStep extends StatelessWidget {
                     child: _SlotTile(
                       icon: LucideIcons.mapPin,
                       label: 'Address',
-                      value: addressLine.isEmpty
-                          ? 'Select address'
-                          : addressLine,
+                      value:
+                          addressLine.isEmpty ? 'Select address' : addressLine,
                     ),
                   ),
                 ],
@@ -1522,9 +1665,17 @@ class _ReviewRequestStep extends StatelessWidget {
             decoration: storeSoftCardDecoration(radius: 16),
             child: _SubservicePicker(
               subservices: subservices,
-              selected: selectedSubservices,
-              onToggled: onSubserviceToggled,
+              quantities: quantities,
+              onQuantityChanged: onSubserviceQuantityChanged,
             ),
+          ),
+        ],
+        if (baseAllowsMultiple) ...[
+          const SizedBox(height: 10),
+          _QuantityCard(
+            label: 'Service quantity',
+            quantity: baseQuantity,
+            onChanged: onBaseQuantityChanged,
           ),
         ],
         const SizedBox(height: 10),
@@ -1559,7 +1710,7 @@ class _ReviewRequestStep extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      service.price,
+                      estimatedTotal,
                       style: const TextStyle(
                         color: Color(0xFF078D92),
                         fontSize: 20,
@@ -1958,18 +2109,18 @@ class _ReviewDivider extends StatelessWidget {
 
 class _PaymentStep extends StatefulWidget {
   final String amount;
-  final String selectedMethod;
+  final int coinsToUse;
   final bool submitting;
   final String? error;
-  final ValueChanged<String> onMethodChanged;
+  final ValueChanged<int> onCoinsChanged;
 
   const _PaymentStep({
     super.key,
     required this.amount,
-    this.selectedMethod = 'wallet',
+    required this.coinsToUse,
     this.submitting = false,
     this.error,
-    required this.onMethodChanged,
+    required this.onCoinsChanged,
   });
 
   @override
@@ -1981,14 +2132,13 @@ class _PaymentStepState extends State<_PaymentStep> {
 
   @override
   Widget build(BuildContext context) {
-    final method = widget.selectedMethod;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _AmountDueCard(amount: widget.amount),
         const SizedBox(height: 14),
         const Text(
-          'Choose payment method',
+          'Split your payment',
           style: TextStyle(
             color: Color(0xFF060D35),
             fontSize: 15,
@@ -1996,30 +2146,31 @@ class _PaymentStepState extends State<_PaymentStep> {
           ),
         ),
         const SizedBox(height: 9),
-        _PaymentMethodTile(
-          selected: method == 'wallet',
-          title: 'Wallet / bCoins',
-          subtitle: '1 coin = ₹1 · deducted instantly',
-          badge: method == 'wallet' ? 'Selected' : null,
-          iconChild: const Icon(
-            LucideIcons.wallet,
-            color: Color(0xFF060D35),
-            size: 26,
-          ),
-          onTap: () => widget.onMethodChanged('wallet'),
-        ),
-        const SizedBox(height: 8),
-        _PaymentMethodTile(
-          selected: method == 'razorpay',
-          title: 'Razorpay',
-          subtitle: 'UPI · cards · netbanking',
-          badge: method == 'razorpay' ? 'Selected' : null,
-          iconChild: const Icon(
-            LucideIcons.creditCard,
-            color: Color(0xFF060D35),
-            size: 26,
-          ),
-          onTap: () => widget.onMethodChanged('razorpay'),
+        FutureBuilder<int>(
+          future: WalletService().getCoinBalance(),
+          builder: (context, snapshot) {
+            final total = _amountFromLabel(widget.amount);
+            final maximum = (snapshot.data ?? 0).clamp(0, total);
+            final selected = widget.coinsToUse.clamp(0, maximum);
+            return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('bCoins ₹$selected  ·  Razorpay ₹${total - selected}',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 13)),
+                  Slider(
+                    value: selected.toDouble(),
+                    min: 0,
+                    max: maximum.toDouble(),
+                    onChanged: snapshot.hasData
+                        ? (value) => widget.onCoinsChanged(value.round())
+                        : null,
+                  ),
+                  const Text(
+                      'Coins are charged only after the complete payment is confirmed.',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF697386))),
+                ]);
+          },
         ),
         if (widget.error != null) ...[
           const SizedBox(height: 10),
@@ -2041,6 +2192,9 @@ class _PaymentStepState extends State<_PaymentStep> {
     );
   }
 }
+
+int _amountFromLabel(String value) =>
+    (double.tryParse(value.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0).round();
 
 class _AmountDueCard extends StatelessWidget {
   final String amount;
@@ -2076,144 +2230,6 @@ class _AmountDueCard extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _PaymentMethodTile extends StatelessWidget {
-  final bool selected;
-  final String title;
-  final String? subtitle;
-  final String? badge;
-  final Widget iconChild;
-  final VoidCallback onTap;
-
-  const _PaymentMethodTile({
-    required this.selected,
-    required this.title,
-    required this.iconChild,
-    required this.onTap,
-    this.subtitle,
-    this.badge,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 54),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: storeSoftCardDecoration(radius: 12),
-        child: Row(
-          children: [
-            _RadioMark(selected: selected),
-            const SizedBox(width: 9),
-            Container(
-              width: 40,
-              height: 32,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(9),
-                border: Border.all(color: const Color(0xFFE7EAF0)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.035),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: iconChild,
-            ),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF060D35),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF596174),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (badge != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF078D92),
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: Text(
-                  badge!,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              )
-            else
-              const Icon(
-                LucideIcons.chevronRight,
-                color: Color(0xFF29304D),
-                size: 21,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _RadioMark extends StatelessWidget {
-  final bool selected;
-
-  const _RadioMark({required this.selected});
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 160),
-      width: 18,
-      height: 18,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: selected ? const Color(0xFF078D92) : const Color(0xFF596174),
-          width: selected ? 2.2 : 1.5,
-        ),
-      ),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFF078D92) : Colors.transparent,
-          shape: BoxShape.circle,
-        ),
       ),
     );
   }

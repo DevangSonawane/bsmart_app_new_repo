@@ -23,6 +23,7 @@ const TX_META = {
   AD_BUDGET_DEDUCTION:      { label: 'Ad Budget Deducted',     icon: TrendingDown,  color: 'text-rose-400',    bg: 'bg-rose-400/10',    dir: 'debit'  },
   AD_LIKE_BUDGET_REFUND:    { label: 'Like Budget Refund',     icon: TrendingUp,    color: 'text-sky-400',     bg: 'bg-sky-400/10',     dir: 'credit' },
   VENDOR_REGISTRATION_CREDIT:{ label: 'Registration Bonus',   icon: Sparkles,      color: 'text-amber-400',   bg: 'bg-amber-400/10',   dir: 'credit' },
+  REGISTRATION_CREDIT:      { label: 'Registration Bonus',     icon: Sparkles,      color: 'text-amber-400',   bg: 'bg-amber-400/10',   dir: 'credit' },
   VENDOR_RECHARGE:          { label: 'Wallet Recharge',        icon: TrendingUp,    color: 'text-emerald-400', bg: 'bg-emerald-400/10', dir: 'credit' },
   ADMIN_ADJUSTMENT:         { label: 'Admin Adjustment',       icon: SlidersHorizontal, color: 'text-violet-400', bg: 'bg-violet-400/10', dir: 'credit' },
   REEL_VIEW_REWARD:         { label: 'Reel View Reward',       icon: Eye,           color: 'text-emerald-400', bg: 'bg-emerald-400/10', dir: 'credit' },
@@ -33,8 +34,18 @@ const TX_META = {
   SAVE:                     { label: 'Save Reward',            icon: Bookmark,      color: 'text-emerald-400', bg: 'bg-emerald-400/10', dir: 'credit' },
 };
 
+// Fallback for any transaction type not in TX_META — turn "SOME_NEW_TYPE"
+// into "Some New Type" instead of showing the raw constant.
+const humanizeTxType = (type) =>
+  String(type || '').toLowerCase().split('_').filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') || 'Transaction';
+
 const getTxMeta = (type) =>
-  TX_META[type] || { label: type, icon: Coins, color: 'text-gray-400', bg: 'bg-gray-400/10', dir: 'credit' };
+  TX_META[type] || { label: humanizeTxType(type), icon: Coins, color: 'text-gray-400', bg: 'bg-gray-400/10', dir: 'credit' };
+
+// The API's own tx.label is sometimes just the raw SCREAMING_SNAKE_CASE type
+// repeated — ignore it when that's the case so the humanized label shows instead.
+const isRawEnumLabel = (value) => typeof value === 'string' && /^[A-Z0-9]+(_[A-Z0-9]+)*$/.test(value);
 
 const formatDate = (iso) => {
   if (!iso) return '—';
@@ -278,7 +289,7 @@ const WalletDetails = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${BASE_URL}/api/wallet/member/${userObject._id}/history`, {
+      const res = await fetch(`${BASE_URL}/api/wallet/me/history`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -491,7 +502,7 @@ const WalletDetails = () => {
                     {/* Info */}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-800 dark:text-white/90 truncate leading-snug">
-                        {tx.label || meta.label}
+                        {tx.label && !isRawEnumLabel(tx.label) ? tx.label : meta.label}
                       </p>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <span className="text-[11px] text-gray-400 dark:text-white/30 font-mono">

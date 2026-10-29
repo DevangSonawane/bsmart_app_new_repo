@@ -7,6 +7,7 @@ import '../../models/store_profile.dart';
 import '../../utils/current_user.dart';
 import 'store_profile_state.dart';
 import 'store_theme.dart';
+import 'store_subscription_card.dart';
 
 /// Storefront profile viewer/editor.
 ///
@@ -131,6 +132,11 @@ class _StoreProfilePageState extends State<StoreProfilePage> {
                             profile == null ? null : () => _openEditor(profile),
                       ),
                     ),
+                  if (isSelf)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                          child: StoreSubscriptionCard())),
                   const SliverToBoxAdapter(child: SizedBox(height: 28)),
                 ],
               );

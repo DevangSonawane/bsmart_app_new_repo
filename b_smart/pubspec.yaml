@@ -90,6 +90,8 @@ dependencies:
   record: ^6.2.0        # real microphone recording
   just_audio: ^0.9.36   # audio preview in picker
   socket_io_client: ^2.0.3+1
+  flutter_webrtc: ^0.12.12
+  flutter_callkit_incoming: ^3.0.0
 
   http_parser: any
 dev_dependencies:

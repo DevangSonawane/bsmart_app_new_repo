@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../api/phase2_store_api.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_models.dart';
+import 'store_theme.dart';
 
 /// Seller editor for `weekly_availability`.
 ///
@@ -23,14 +24,16 @@ class SelfStoreAvailabilityScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFFFFEFC),
-      body: SafeArea(
-        top: false,
-        child: SelfStoreAvailabilityPage(
-          serviceId: serviceId,
-          serviceName: serviceName,
-          initialAvailability: initialAvailability,
+    return BStoreThemeScope(
+      child: Scaffold(
+        backgroundColor: const Color(0xFFFFFEFC),
+        body: SafeArea(
+          top: false,
+          child: SelfStoreAvailabilityPage(
+            serviceId: serviceId,
+            serviceName: serviceName,
+            initialAvailability: initialAvailability,
+          ),
         ),
       ),
     );
@@ -66,8 +69,7 @@ class _DayWindow {
   });
 }
 
-class _SelfStoreAvailabilityPageState
-    extends State<SelfStoreAvailabilityPage> {
+class _SelfStoreAvailabilityPageState extends State<SelfStoreAvailabilityPage> {
   static const _days = [
     'monday',
     'tuesday',
@@ -115,13 +117,11 @@ class _SelfStoreAvailabilityPageState
     final slots = raw[day];
     if (slots is List && slots.isNotEmpty && slots.first is Map) {
       final first = Map<String, dynamic>.from(slots.first as Map);
-      final start =
-          _parseTime(first['start']?.toString() ?? '') ?? fallback;
+      final start = _parseTime(first['start']?.toString() ?? '') ?? fallback;
       final end = _parseTime(first['end']?.toString() ?? '') ?? fallbackEnd;
       return _DayWindow(enabled: true, start: start, end: end);
     }
-    return _DayWindow(
-        enabled: false, start: fallback, end: fallbackEnd);
+    return _DayWindow(enabled: false, start: fallback, end: fallbackEnd);
   }
 
   static String _format(TimeOfDay time) =>
@@ -270,8 +270,7 @@ class _SelfStoreAvailabilityPageState
             ),
             child: Text(
               _saving ? 'Saving...' : 'Save availability',
-              style: const TextStyle(
-                  fontSize: 14, fontWeight: FontWeight.w900),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
             ),
           ),
         ),
@@ -328,7 +327,6 @@ class _DayRow extends StatelessWidget {
                 ),
                 Switch.adaptive(
                   value: window.enabled,
-                  activeThumbColor: const Color(0xFF078D92),
                   onChanged: onToggle,
                 ),
               ],

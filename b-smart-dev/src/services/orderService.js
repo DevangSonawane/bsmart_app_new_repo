@@ -66,6 +66,8 @@ export const normalizeOrder = (order = {}) => {
       region: shipping.state || shipping.region || '',
       postalCode: shipping.pincode || shipping.postalCode || shipping.zip || '',
       country: shipping.country || 'India',
+      phone: shipping.phone || shipping.mobile || '',
+      email: buyer.email || '',
     },
     confirmed: ['Confirmed', 'Processing', 'Shipped', 'Delivered'].includes(status),
     packed: ['Processing', 'Shipped', 'Delivered'].includes(status),

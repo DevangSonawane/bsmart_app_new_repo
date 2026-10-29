@@ -6,6 +6,7 @@ import socketService from './services/socketService';
 import { registerWebPush } from './services/pushService';
 
 import Layout from './components/Layout';
+import MarketplaceLayout from './components/MarketplaceLayout';
 import Home from './pages/Home';
 import CreatePost from './pages/CreatePost';
 import Reels from './pages/Reels';
@@ -30,7 +31,12 @@ import StoreProfile from './myStore/pages/Profile';
 import StoreProducts from './myStore/pages/Products';
 import StoreServices from './myStore/pages/Services';
 import ProductDetail from './pages/ProductDetail';
+import CategoryPage from './pages/CategoryPage';
+import ProductsPage from './pages/ProductsPage';
+import ServicesPage from './pages/ServicesPage';
 import ServiceDetail from './pages/ServiceDetail';
+import ServiceCart from './pages/ServiceCart';
+import ServiceCheckout from './pages/ServiceCheckout';
 import Cart from './pages/Cart';
 import Checkout from './pages/Checkout';
 import VendorAds from './pages/VendorAds';
@@ -157,22 +163,10 @@ function App() {
             <Route path="/promote"          element={<Promote />} />
             <Route path="/create"           element={<ProtectedRoute><CreatePost /></ProtectedRoute>} />
             <Route path="/ads"              element={<ProtectedRoute><Ads /></ProtectedRoute>} />
-            <Route path="/market"           element={<ProtectedRoute><Market /></ProtectedRoute>} />
-            <Route path="/market/my-orders" element={<ProtectedRoute><MyOrders /></ProtectedRoute>} />
-            <Route path="/market/my-orders/:orderId" element={<ProtectedRoute><OrderDetail /></ProtectedRoute>} />
             <Route path="/orders/:orderId" element={<ProtectedRoute><OrderDetail /></ProtectedRoute>} />
             <Route path="/admin/orders" element={<ProtectedRoute allowedRoles={['admin']} redirectTo="/"><AdminOrders /></ProtectedRoute>} />
             <Route path="/admin/orders/:orderId" element={<ProtectedRoute allowedRoles={['admin']} redirectTo="/"><AdminOrderDetail /></ProtectedRoute>} />
             <Route path="/admin/influencers" element={<ProtectedRoute allowedRoles={['admin']} redirectTo="/"><AdminInfluencers /></ProtectedRoute>} />
-            <Route path="/market/wishlist" element={<ProtectedRoute><Wishlist /></ProtectedRoute>} />
-            <Route path="/market/add-product" element={<ProtectedRoute allowedRoles={['influencer']} redirectTo="/market"><AddProduct /></ProtectedRoute>} />
-            <Route path="/market/edit-product/:productId" element={<ProtectedRoute allowedRoles={['influencer']} redirectTo="/market"><EditProduct /></ProtectedRoute>} />
-            <Route path="/market/add-service" element={<ProtectedRoute allowedRoles={['influencer']} redirectTo="/market"><AddService /></ProtectedRoute>} />
-            <Route path="/market/edit-service/:serviceId" element={<ProtectedRoute allowedRoles={['influencer']} redirectTo="/market"><EditService /></ProtectedRoute>} />
-            <Route path="/market/product/:productId" element={<ProtectedRoute><ProductDetail /></ProtectedRoute>} />
-            <Route path="/market/service/:serviceId" element={<ProtectedRoute><ServiceDetail /></ProtectedRoute>} />
-            <Route path="/cart"             element={<ProtectedRoute><Cart /></ProtectedRoute>} />
-            <Route path="/checkout"         element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
             <Route path="/vendor-ads"       element={<ProtectedRoute><VendorAds /></ProtectedRoute>} />
             <Route path="/profile"          element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/profile/:userId"  element={<ProtectedRoute><Profile /></ProtectedRoute>} />
@@ -206,6 +200,24 @@ function App() {
 
           </Route>
 
+          {/* Marketplace (buyer side) — own layout with a back-button navbar
+              instead of the main app Sidebar, same idea as My Store's layout. */}
+          <Route element={<MarketplaceLayout />}>
+            <Route path="/market"           element={<ProtectedRoute><Market /></ProtectedRoute>} />
+            <Route path="/market/my-orders" element={<ProtectedRoute><MyOrders /></ProtectedRoute>} />
+            <Route path="/market/my-orders/:orderId" element={<ProtectedRoute><OrderDetail /></ProtectedRoute>} />
+            <Route path="/market/wishlist" element={<ProtectedRoute><Wishlist /></ProtectedRoute>} />
+            <Route path="/market/products" element={<ProtectedRoute><ProductsPage /></ProtectedRoute>} />
+            <Route path="/market/services" element={<ProtectedRoute><ServicesPage /></ProtectedRoute>} />
+            <Route path="/market/category/:categoryName" element={<ProtectedRoute><CategoryPage /></ProtectedRoute>} />
+            <Route path="/market/product/:productId" element={<ProtectedRoute><ProductDetail /></ProtectedRoute>} />
+            <Route path="/market/service/:serviceId" element={<ProtectedRoute><ServiceDetail /></ProtectedRoute>} />
+            <Route path="/market/service-cart" element={<ProtectedRoute><ServiceCart /></ProtectedRoute>} />
+            <Route path="/market/service-checkout" element={<ProtectedRoute><ServiceCheckout /></ProtectedRoute>} />
+            <Route path="/cart"             element={<ProtectedRoute><Cart /></ProtectedRoute>} />
+            <Route path="/checkout"         element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
+          </Route>
+
           <Route path="/vendor" element={
             <ProtectedRoute>
               <VendorLayout />
@@ -234,6 +246,21 @@ function App() {
             <Route path="bookings/:bookingId" element={<StoreBookings />} />
             <Route path="products" element={<StoreProducts />} />
             <Route path="services" element={<StoreServices />} />
+          </Route>
+
+          {/* Add/Edit Product & Service — same My Store sidebar as /market/my-store,
+              kept at their original URLs so existing links elsewhere don't break. */}
+          <Route path="/market/add-product" element={<ProtectedRoute allowedRoles={['influencer']} redirectTo="/market"><StoreLayout /></ProtectedRoute>}>
+            <Route index element={<AddProduct />} />
+          </Route>
+          <Route path="/market/edit-product/:productId" element={<ProtectedRoute allowedRoles={['influencer']} redirectTo="/market"><StoreLayout /></ProtectedRoute>}>
+            <Route index element={<EditProduct />} />
+          </Route>
+          <Route path="/market/add-service" element={<ProtectedRoute allowedRoles={['influencer']} redirectTo="/market"><StoreLayout /></ProtectedRoute>}>
+            <Route index element={<AddService />} />
+          </Route>
+          <Route path="/market/edit-service/:serviceId" element={<ProtectedRoute allowedRoles={['influencer']} redirectTo="/market"><StoreLayout /></ProtectedRoute>}>
+            <Route index element={<EditService />} />
           </Route>
 
           <Route path="/post/:postId" element={

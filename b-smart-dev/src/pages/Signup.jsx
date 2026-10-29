@@ -8,10 +8,12 @@ import { markNewSignup } from '../utils/tour';
 import { ArrowLeft, User, Mail, Phone, Lock, Eye, EyeOff, ChevronDown, CheckCircle2, XCircle, Loader2, UserPlus } from 'lucide-react';
 import AuthFooter from '../components/AuthFooter';
 import AuthVisualPanel from '../components/AuthVisualPanel';
+import CoinRewardModal from '../components/CoinRewardModal';
 
 const Signup = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const [signupBonus, setSignupBonus] = useState(0);
   const [form, setForm] = useState({
     name: '',
     username: '',
@@ -113,11 +115,15 @@ const Signup = () => {
         }
       });
 
-      const { token, user } = response.data;
+      const { token, user, registration_bonus_amount } = response.data;
       authService.setSession(token);
       dispatch(setUser(user));
       markNewSignup();
-      navigate('/');
+      if (registration_bonus_amount) {
+        setSignupBonus(registration_bonus_amount);
+      } else {
+        navigate('/');
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Something went wrong');
     } finally {
@@ -559,6 +565,13 @@ const Signup = () => {
           <AuthFooter />
         </div>
       </div>
+      <CoinRewardModal
+        isOpen={signupBonus > 0}
+        onClose={() => navigate('/')}
+        amount={signupBonus}
+        title="Welcome to bSmart!"
+        message="Here's a signup bonus to get you started."
+      />
     </div>
   );
 };

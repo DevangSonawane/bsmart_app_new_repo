@@ -10,9 +10,15 @@ const SOCKET_URL = (
 
 let socket = null;
 let userId = null;
+let authToken = null;
 
 // Multiple subscribers can listen to the same event
 // Key = event name, Value = Set of callback functions
+//
+// Voice/video call signaling (call:*) rides this SAME socket connection —
+// the backend registers call handlers on every chat connection (see
+// server.js), so a separate io() connection would just be a redundant
+// second socket for the same user.
 const subscribers = {
   'new-message': new Set(),
   'user-typing': new Set(),
@@ -23,6 +29,12 @@ const subscribers = {
   'group-member-added': new Set(),
   'group-member-removed': new Set(),
   'online-users-updated': new Set(),
+  'call:ringing': new Set(),
+  'call:accepted': new Set(),
+  'call:rejected': new Set(),
+  'call:ended': new Set(),
+  'call:missed': new Set(),
+  'call:peer-ready': new Set(),
 };
 
 const attachAllListeners = () => {
@@ -40,6 +52,7 @@ const attachAllListeners = () => {
 // Call this ONCE when the app starts (from Sidebar or main layout)
 export const initChatSocket = (token, callbacks = {}, registeredUserId = null) => {
   if (registeredUserId) userId = registeredUserId;
+  if (token) authToken = token;
 
   // Register callbacks as subscribers
   const callbackMap = {
@@ -52,6 +65,12 @@ export const initChatSocket = (token, callbacks = {}, registeredUserId = null) =
     onGroupMemberAdded: 'group-member-added',
     onGroupMemberRemoved: 'group-member-removed',
     onOnlineUsersUpdated: 'online-users-updated',
+    onCallRinging: 'call:ringing',
+    onCallAccepted: 'call:accepted',
+    onCallRejected: 'call:rejected',
+    onCallEnded: 'call:ended',
+    onCallMissed: 'call:missed',
+    onCallPeerReady: 'call:peer-ready',
   };
 
   Object.entries(callbackMap).forEach(([key, eventName]) => {
@@ -60,10 +79,10 @@ export const initChatSocket = (token, callbacks = {}, registeredUserId = null) =
     }
   });
 
-  // If socket already exists and is connected, just register userId
+  // If socket already exists and is connected, just (re-)register
   if (socket) {
-    if (socket.connected && userId) {
-      socket.emit('register', userId);
+    if (socket.connected && authToken) {
+      socket.emit('register', authToken);
     }
     return socket;
   }
@@ -81,7 +100,7 @@ export const initChatSocket = (token, callbacks = {}, registeredUserId = null) =
   attachAllListeners();
 
   socket.on('connect', () => {
-    if (userId) socket.emit('register', userId);
+    if (authToken) socket.emit('register', authToken);
   });
 
   socket.on('connect_error', (error) => {
@@ -107,6 +126,12 @@ export const removeChatSocketCallbacks = (callbacks = {}) => {
     onGroupMemberAdded: 'group-member-added',
     onGroupMemberRemoved: 'group-member-removed',
     onOnlineUsersUpdated: 'online-users-updated',
+    onCallRinging: 'call:ringing',
+    onCallAccepted: 'call:accepted',
+    onCallRejected: 'call:rejected',
+    onCallEnded: 'call:ended',
+    onCallMissed: 'call:missed',
+    onCallPeerReady: 'call:peer-ready',
   };
   Object.entries(callbackMap).forEach(([key, eventName]) => {
     if (typeof callbacks[key] === 'function') {
@@ -125,6 +150,7 @@ export const disconnectChatSocket = () => {
   socket.disconnect();
   socket = null;
   userId = null;
+  authToken = null;
 };
 
 export const joinRoom = (conversationId) => {
@@ -172,4 +198,29 @@ export const emitMessageReactionUpdate = (conversationId, messageId, action, emo
       ...(uid ? { userId: uid } : {}),
     });
   }
+};
+
+// ── Voice/video call signaling ───────────────────────────────────────────────
+// `ack` is the server's acknowledgement callback (socket.io ack), e.g.
+// ({ callId, status, error }) => {...}.
+export const emitCallInitiate = (receiverId, callType, ack) => {
+  if (socket) socket.emit('call:initiate', { receiverId, callType }, ack);
+};
+
+export const emitCallAccept = (callId, ack) => {
+  if (socket) socket.emit('call:accept', { callId }, ack);
+};
+
+export const emitCallReject = (callId, reason) => {
+  if (socket) socket.emit('call:reject', { callId, reason });
+};
+
+export const emitCallEnd = (callId, reason) => {
+  if (socket) socket.emit('call:end', { callId, reason });
+};
+
+// Tells the server I've published my audio track to Cloudflare, so it can
+// check whether BOTH sides are ready and tell both to pull.
+export const emitCallTrackPublished = (callId) => {
+  if (socket) socket.emit('call:track-published', { callId });
 };

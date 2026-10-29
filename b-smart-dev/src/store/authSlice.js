@@ -36,6 +36,7 @@ const initialState = {
   isAuthenticated: false,
   loading: true,
   error: null,
+  dailyReward: null,
 };
 
 const getBanMessage = (user = {}) => {
@@ -62,6 +63,9 @@ const authSlice = createSlice({
     setLoading: (state, action) => {
       state.loading = action.payload;
     },
+    clearDailyReward: (state) => {
+      state.dailyReward = null;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -82,6 +86,9 @@ const authSlice = createSlice({
         state.loading = false;
         state.isAuthenticated = !!action.payload?.token;
         state.userObject = action.payload?.token ? user : null;
+        state.dailyReward = action.payload?.daily_reward_granted
+          ? { granted: true, amount: action.payload.daily_reward_amount }
+          : null;
       })
       .addCase(login.rejected, (state, action) => {
         state.loading = false;
@@ -119,5 +126,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { reset, setUser, setLoading } = authSlice.actions;
+export const { reset, setUser, setLoading, clearDailyReward } = authSlice.actions;
 export default authSlice.reducer;

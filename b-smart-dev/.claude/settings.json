@@ -4,7 +4,12 @@
       "Bash(xargs grep -l \"location\")",
       "Bash(grep -v \"//\\\\|import\\\\|useState\\\\|setLocation\\\\|target_location\\\\|location_data\")",
       "Bash(grep -v \"//\\\\|import\\\\|useState\\\\|setLocation\\\\|target_location\\\\|window.location\\\\|location_data\")",
-      "Bash(grep -v \"//\\\\|import\\\\|useState\\\\|window.location\\\\|location_data\\\\|target_location\")"
+      "Bash(grep -v \"//\\\\|import\\\\|useState\\\\|window.location\\\\|location_data\\\\|target_location\")",
+      "Bash(powershell -NoProfile -Command \"Get-CimInstance Win32_Process -Filter 'ProcessId=44676' | Select-Object ProcessId,Name,CommandLine | Format-List\")",
+      "Bash(powershell -NoProfile -Command \"Stop-Process -Id 44676 -Force\")",
+      "PowerShell(Get-NetTCPConnection -LocalPort 5180 -State Listen -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"ProcessId=31604\")",
+      "PowerShell(Stop-Process -Id 31604 -Force)"
     ]
   }
 }

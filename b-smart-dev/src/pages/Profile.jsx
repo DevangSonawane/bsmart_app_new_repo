@@ -1330,7 +1330,7 @@ const Profile = () => {
     const storeNavItem = isOwnProfile
         ? isInfluencer
             ? { label: 'My Store', icon: <Store size={18} />, to: '/market/my-store' }
-            : { label: 'Become an Influencer', icon: <Store size={18} />, onClick: () => setShowInfluencerModal(true) }
+            : { label: 'Create Store', icon: <Store size={18} />, onClick: () => setShowInfluencerModal(true) }
         : { label: 'Marketplace', icon: <Store size={18} />, to: '/market' };
     const SIDEBAR_NAV = [
         { label: 'Saved items', icon: <Bookmark size={18} />, to: '/settings/saved' },

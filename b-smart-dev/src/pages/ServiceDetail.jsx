@@ -14,6 +14,8 @@ import influencerServiceService from '../services/influencerServiceService';
 import serviceBookingService from '../services/serviceBookingService';
 import addressService from '../services/addressService';
 import { fetchWallet } from '../store/walletSlice';
+import { addItem as addToServiceCart } from '../store/serviceCartSlice';
+import PaymentSplitSlider from '../components/PaymentSplitSlider';
 
 const panel = 'rounded-xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm';
 const primary = 'rounded-lg bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange text-white text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed';
@@ -44,13 +46,15 @@ function BookingPage({ service }) {
   const [selectedSavedAddress, setSelectedSavedAddress] = useState('');
   const [addressesLoading, setAddressesLoading] = useState(false);
   const [note, setNote] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('wallet');
+  const [coinsToUse, setCoinsToUse] = useState(0);
   const [selectedSubservices, setSelectedSubservices] = useState([]);
   const [reviewing, setReviewing] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [addedToCart, setAddedToCart] = useState(false);
   const [bookingMessage, setBookingMessage] = useState('');
   const [error, setError] = useState('');
+  const walletBalance = useSelector((state) => state.wallet.balance) || 0;
 
   const times = availableTimes(service, date);
   const images = service.images || [];
@@ -62,6 +66,15 @@ function BookingPage({ service }) {
   const dates = Array.from({ length: 5 }, (_, index) => { const value = new Date(`${date || firstDate}T12:00:00`); value.setDate(value.getDate() + index); return localDate(value); });
   const chosenDay = new Date(`${date}T12:00:00`);
   const addressText = [address.address_line1, address.city, address.pincode].filter(Boolean).join(', ');
+  const subservicesTotal = selectedSubservices.reduce((sum, name) => {
+    const match = service.subservices?.find((item) => item.name === name);
+    return sum + (match ? Number(match.price) || 0 : 0);
+  }, 0);
+  const totalAmount = (Number(service.price) || 0) + subservicesTotal;
+
+  useEffect(() => {
+    dispatch(fetchWallet());
+  }, [dispatch]);
 
   useEffect(() => {
     if (!atCustomer) return;
@@ -123,6 +136,28 @@ function BookingPage({ service }) {
     setSelectedSubservices((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name]);
   };
 
+  const buildItemPayload = () => ({
+    service_id: service.id,
+    booking_date: date,
+    time_slot: { start: time, end: slotEnd(time) },
+    selected_subservices: selectedSubservices.map((name) => ({ name })),
+    ...(atCustomer ? { customer_address: address } : {}),
+    ...(note.trim() ? { notes: note.trim() } : {}),
+  });
+
+  const addToCart = () => {
+    if (!availableTimes(service, date).includes(time)) { setError('Choose an available date and time.'); return; }
+    if (atCustomer && [address.address_line1, address.city, address.pincode].some((value) => !String(value || '').trim())) { setError('Enter your complete service address.'); setAddressOpen(true); return; }
+    setError('');
+    dispatch(addToServiceCart({
+      ...buildItemPayload(),
+      serviceName: service.name,
+      serviceImage: images[0] || '',
+      itemTotal: totalAmount,
+    }));
+    setAddedToCart(true);
+  };
+
   const submit = async (event) => {
     event.preventDefault();
     if (!availableTimes(service, date).includes(time)) { setError('Choose an available date and time.'); setReviewing(false); return; }
@@ -134,27 +169,22 @@ function BookingPage({ service }) {
     setSubmitting(true);
     setError('');
     try {
-      const result = await serviceBookingService.create({
-        service_id: service.id,
-        booking_date: date,
-        time_slot: { start: time, end: slotEnd(time) },
-        selected_subservices: selectedSubservices.map((name) => ({ name })),
-        payment_method: paymentMethod,
-        ...(atCustomer ? { customer_address: address } : {}),
-        ...(note.trim() ? { note: note.trim() } : {}),
+      const result = await serviceBookingService.createOrder({
+        items: [buildItemPayload()],
+        coins_to_use: coinsToUse,
       });
-      const booking = result?.booking || result?.service_booking || result?.data?.booking || result?.data?.service_booking || result?.data || {};
-      const bookingId = booking._id || booking.id || result?.id || result?._id;
+      const order = result?.order || result?.data?.order || {};
+      const orderId = order._id || order.id;
 
-      if (paymentMethod === 'wallet') {
+      if (order.payment_status === 'paid') {
         dispatch(fetchWallet());
-        setBookingMessage('Your wallet payment is confirmed and the booking is created.');
+        setBookingMessage('Payment confirmed and the booking is created.');
         setSubmitted(true);
         return;
       }
 
       const razorpay = result?.razorpay || result?.data?.razorpay;
-      if (!bookingId || !razorpay?.order_id || !razorpay?.key_id) throw new Error('Razorpay booking details were not returned.');
+      if (!orderId || !razorpay?.order_id || !razorpay?.key_id) throw new Error('Razorpay order details were not returned.');
       const loaded = await serviceBookingService.loadRazorpay();
       if (!loaded) throw new Error('Payment gateway failed to load. Please try again.');
       const rzp = new window.Razorpay({
@@ -167,7 +197,8 @@ function BookingPage({ service }) {
         prefill: { name: user?.name || user?.full_name || '', contact: user?.phone || '', email: user?.email || '' },
         handler: async (paymentResponse) => {
           try {
-            await serviceBookingService.verifyPayment(bookingId, paymentResponse);
+            await serviceBookingService.verifyOrderPayment(orderId, paymentResponse);
+            dispatch(fetchWallet());
             setBookingMessage('Payment verified. Your booking is confirmed.');
             setSubmitted(true);
           } catch (err) {
@@ -192,7 +223,7 @@ function BookingPage({ service }) {
 
   if (submitted) {
     return (
-      <div className="max-w-[1280px] ml-auto px-4 py-20 text-center">
+      <div className="max-w-[1280px] mx-auto px-4 py-20 text-center">
         <CheckCircle2 size={44} className="mx-auto text-[#fa3f5e] mb-4" />
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Booking created</h1>
         <p className="text-sm text-gray-500 mt-3">{service.name} - {date} - {bookingTime(time)}</p>
@@ -202,7 +233,7 @@ function BookingPage({ service }) {
     );
   }
 
-  return <div className="w-full max-w-[1280px] ml-auto px-4 md:px-6 py-6 bg-gray-50 dark:bg-black min-h-screen text-gray-900 dark:text-white">
+  return <div className="w-full max-w-[1280px] mx-auto px-4 md:px-6 py-6 bg-gray-50 dark:bg-black min-h-screen text-gray-900 dark:text-white">
     <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 mb-5"><Link to={canUseStoreLinks ? '/market/my-store' : '/market'} className="hover:text-[#fa3f5e]">{canUseStoreLinks ? 'My Store' : 'Marketplace'}</Link><ChevronRight size={14} aria-hidden="true" /><Link to={canUseStoreLinks ? '/market/my-store/services' : '/market'} className="hover:text-[#fa3f5e]">{canUseStoreLinks ? 'My Services' : 'Services'}</Link><ChevronRight size={14} aria-hidden="true" /><span aria-current="page" className="text-[#fa3f5e]">{service.name}</span></nav>
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-5 items-start">
       <main className="min-w-0 space-y-4">
@@ -240,20 +271,24 @@ function BookingPage({ service }) {
           </div>
         ) : (
         <form onSubmit={submit} className="space-y-4"><h2 className="text-base font-bold text-gray-900 dark:text-white">{reviewing ? 'Review your booking' : 'Select availability'}</h2>
-          {reviewing ? <div className="space-y-3 text-sm text-gray-500"><p className="font-semibold text-gray-900 dark:text-white">{service.name}</p><p>{chosenDay.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} - {bookingTime(time)}</p><p>{service.duration}</p><p className="break-words">{atCustomer ? addressText : service.method === 'Online' ? 'Online' : service.address}</p>{selectedSubservices.length > 0 && <p>Selected: {selectedSubservices.join(', ')}</p>}<p className="font-semibold text-[#fa3f5e]">{servicePrice(service)}</p><p className="text-xs">Payment: {paymentMethod === 'wallet' ? 'Wallet' : 'Razorpay'}</p><button type="button" onClick={() => setReviewing(false)} className="text-xs text-[#fa3f5e]">Edit booking</button></div> : <>
+          {reviewing ? <div className="space-y-3 text-sm text-gray-500"><p className="font-semibold text-gray-900 dark:text-white">{service.name}</p><p>{chosenDay.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} - {bookingTime(time)}</p><p>{service.duration}</p><p className="break-words">{atCustomer ? addressText : service.method === 'Online' ? 'Online' : service.address}</p>{selectedSubservices.length > 0 && <p>Selected: {selectedSubservices.join(', ')}</p>}<p className="font-semibold text-[#fa3f5e]">₹{totalAmount.toLocaleString()}</p><p className="text-xs">{coinsToUse > 0 ? `Coins ₹${Math.min(coinsToUse, walletBalance, totalAmount).toLocaleString()} + Razorpay ₹${Math.max(0, totalAmount - Math.min(coinsToUse, walletBalance, totalAmount)).toLocaleString()}` : 'Paid fully via Razorpay'}</p><button type="button" onClick={() => setReviewing(false)} className="text-xs text-[#fa3f5e]">Edit booking</button></div> : <>
             <div className="flex items-center gap-2"><div className="grid grid-cols-5 gap-1 flex-1 min-w-0">{dates.map((value) => { const day = new Date(`${value}T12:00:00`); return <button type="button" key={value} onClick={() => selectDate(value)} aria-pressed={date === value} className={`rounded-lg border py-2 text-center ${date === value ? 'border-[#fa3f5e] text-[#fa3f5e] bg-pink-50/30 dark:bg-pink-900/10' : 'border-gray-100 dark:border-gray-800 text-gray-500'}`}><span className="block text-[10px]">{day.toLocaleDateString('en-US', { weekday: 'short' })}</span><strong className="block text-sm mt-1">{day.getDate()}</strong><span className="block text-[10px] mt-1">{day.toLocaleDateString('en-US', { month: 'short' })}</span></button>; })}</div><button type="button" aria-label="Choose another date" aria-expanded={calendarOpen} onClick={() => setCalendarOpen(!calendarOpen)} className="rounded-lg border border-gray-100 dark:border-gray-800 p-2 text-gray-500"><CalendarDays size={18} /></button></div>
             {calendarOpen && <label className="block text-xs text-gray-500">Choose another date<input type="date" required min={localDate()} value={date} onChange={(event) => selectDate(event.target.value)} className={`${inputCls} mt-1`} /></label>}
             <h3 className="text-sm font-bold text-gray-900 dark:text-white">{Number.isNaN(chosenDay.getTime()) ? 'Choose a date' : chosenDay.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}</h3>
             {['Morning', 'Afternoon'].map((period) => { const periodTimes = times.filter((slot) => period === 'Morning' ? slot < '12:00' : slot >= '12:00'); return periodTimes.length > 0 && <fieldset key={period}><legend className="text-xs text-insta-purple mb-2">{period}</legend><div className="grid grid-cols-3 gap-2">{(showAllTimes ? periodTimes : periodTimes.slice(0, 3)).map((slot) => <button type="button" key={slot} aria-pressed={time === slot} onClick={() => { setTime(slot); setError(''); }} className={`rounded-lg border py-2 text-[11px] ${time === slot ? 'bg-[#fa3f5e] border-[#fa3f5e] text-white' : 'border-gray-100 dark:border-gray-800 text-gray-500'}`}>{bookingTime(slot)}</button>)}</div></fieldset>; })}
             {(times.filter((slot) => slot < '12:00').length > 3 || times.filter((slot) => slot >= '12:00').length > 3) && <button type="button" onClick={() => setShowAllTimes(!showAllTimes)} className="text-[11px] text-[#fa3f5e]">{showAllTimes ? 'Show fewer times' : 'More available times'}</button>}{!times.length && <p className="text-xs text-gray-500">No available times on this date. Choose another day.</p>}
             <div className="flex items-center gap-2 rounded-lg border border-gray-100 dark:border-gray-800 p-3 text-xs"><Clock size={16} className="text-gray-500" />{service.duration}</div>
-            {service.subservices?.length > 0 && <fieldset className="space-y-2"><legend className="text-sm font-bold text-gray-900 dark:text-white">Subservices</legend>{service.subservices.map((item) => <label key={item.name} className="flex items-center gap-2 text-sm text-gray-500"><input type="checkbox" checked={selectedSubservices.includes(item.name)} onChange={() => toggleSubservice(item.name)} className="accent-[#fa3f5e]" />{item.name}</label>)}</fieldset>}
+            {service.subservices?.length > 0 && <fieldset className="space-y-2"><legend className="text-sm font-bold text-gray-900 dark:text-white">Subservices</legend>{service.subservices.map((item) => <label key={item.name} className="flex items-center gap-2 text-sm text-gray-500"><input type="checkbox" checked={selectedSubservices.includes(item.name)} onChange={() => toggleSubservice(item.name)} className="accent-[#fa3f5e]" />{item.name}{item.sqft ? ` · ${item.sqft} sqft` : ''} — ₹{item.price}</label>)}</fieldset>}
             {atCustomer ? <div><button type="button" onClick={() => setAddressOpen(!addressOpen)} aria-expanded={addressOpen} className="w-full flex items-center gap-2 p-3 rounded-lg border border-gray-100 dark:border-gray-800 text-left"><MapPin size={17} className="text-gray-500 shrink-0" /><span className="flex-1 min-w-0 text-[11px] text-gray-500">Service address<span className="block truncate text-xs text-gray-900 dark:text-white mt-0.5">{addressesLoading ? 'Loading saved addresses...' : addressText || 'Add your address'}</span></span><ChevronRight size={16} /></button>{addressOpen && <div className="space-y-2">{savedAddresses.length > 0 && <label className="block text-xs text-gray-500">Saved address<select value={selectedSavedAddress} onChange={(event) => chooseSavedAddress(event.target.value)} className={`${inputCls} mt-1`}><option value="">Choose saved address</option>{savedAddresses.map((entry) => <option key={entry.id} value={entry.id}>{entry.label} - {entry.city}, {entry.pincode}</option>)}</select></label>}<label className="block text-xs text-gray-500">Address line<input required value={address.address_line1} onChange={(event) => updateAddress('address_line1', event.target.value)} className={`${inputCls} mt-1`} /></label><label className="block text-xs text-gray-500">City<input required value={address.city} onChange={(event) => updateAddress('city', event.target.value)} className={`${inputCls} mt-1`} /></label><label className="block text-xs text-gray-500">Pincode<input required value={address.pincode} onChange={(event) => updateAddress('pincode', event.target.value)} className={`${inputCls} mt-1`} /></label></div>}</div> : <p className="text-xs flex gap-2 text-gray-500"><MapPin size={16} />{service.method === 'Online' ? 'Joining details will be arranged with the provider.' : service.address || 'Contact the provider for the location.'}</p>}
-            <fieldset className="space-y-2"><legend className="text-sm font-bold text-gray-900 dark:text-white">Payment method</legend>{[['wallet', 'Wallet'], ['razorpay', 'Razorpay']].map(([value, label]) => <label key={value} className="flex items-center gap-2 text-sm text-gray-500"><input type="radio" name="payment_method" value={value} checked={paymentMethod === value} onChange={() => setPaymentMethod(value)} className="accent-[#fa3f5e]" />{label}</label>)}</fieldset>
+            <div><h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">How to pay</h3><PaymentSplitSlider totalAmount={totalAmount} walletBalance={walletBalance} value={coinsToUse} onChange={setCoinsToUse} /></div>
             <details><summary className="text-[11px] text-gray-500 cursor-pointer">Add a note (optional)</summary><label className="block text-xs text-gray-500 mt-2">Note for the provider<textarea value={note} onChange={(event) => setNote(event.target.value)} className={`${inputCls} mt-1`} rows={2} /></label></details>
           </>}
           {error && <p role="alert" className="text-xs text-[#fa3f5e]">{error}</p>}
-          <button disabled={!time || submitting} className={`${primary} w-full py-3`}>{submitting ? 'Processing...' : reviewing ? 'Book service' : 'Continue'}</button>
+          {addedToCart && <p className="text-xs text-green-600">Added to cart. <Link to="/market/service-cart" className="underline">View cart</Link> to add more services or check out.</p>}
+          <div className="flex gap-2">
+            {!reviewing && <button type="button" onClick={addToCart} className="flex-1 rounded-lg border border-gray-200 dark:border-gray-700 py-3 text-sm font-bold text-gray-800 dark:text-gray-200 disabled:opacity-40" disabled={!time}>Add to cart</button>}
+            <button disabled={!time || submitting} className={`${primary} flex-1 py-3`}>{submitting ? 'Processing...' : reviewing ? 'Book now' : 'Continue'}</button>
+          </div>
         </form>
         )}
       </aside>

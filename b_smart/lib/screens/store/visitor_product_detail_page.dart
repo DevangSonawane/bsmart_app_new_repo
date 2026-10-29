@@ -1232,7 +1232,7 @@ class _TitlePriceCard extends StatelessWidget {
                   isOutOfStock
                       ? 'Out of stock'
                       : lowStock
-                          ? 'Only $stockQuantity left in stock — order soon'
+                          ? 'Only ${groupThousands('$stockQuantity')} left in stock — order soon'
                           : stockLabel,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,

@@ -62,12 +62,15 @@ const unwrapBooking = (data) => normalizeServiceBooking(data?.booking || data?.s
 
 const serviceBookingService = {
   loadRazorpay,
-  create: async (payload) => {
-    const { data } = await api.post('/service-bookings', payload);
+  // payload: { items: [{ service_id, booking_date, time_slot, selected_subservices,
+  // customer_address, notes }], coins_to_use }. items.length === 1 covers the
+  // single-service "Book now" flow; the cart checkout passes more than one.
+  createOrder: async (payload) => {
+    const { data } = await api.post('/service-bookings/orders', payload);
     return data;
   },
-  verifyPayment: async (bookingId, payment) => {
-    const { data } = await api.post(`/service-bookings/${bookingId}/verify-payment`, {
+  verifyOrderPayment: async (orderId, payment) => {
+    const { data } = await api.post(`/service-bookings/orders/${orderId}/verify-payment`, {
       razorpay_order_id: payment.razorpay_order_id,
       razorpay_payment_id: payment.razorpay_payment_id,
       razorpay_signature: payment.razorpay_signature,

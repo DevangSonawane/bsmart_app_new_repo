@@ -24,8 +24,8 @@ class RazorpayCheckoutFailure {
 
 /// Thin wrapper around the Razorpay native Checkout SDK.
 ///
-/// Backend contract (Phase 2 md): `POST /api/orders/checkout` (or
-/// `POST /api/service-bookings`) with `payment_method: razorpay` returns
+/// Backend contract: `POST /api/orders/checkout` (or
+/// `POST /api/service-bookings/orders`) with `coins_to_use` returns
 /// `razorpay: { order_id, amount, key_id }`. Open that order here, then call
 /// the matching `verify-payment` endpoint with the success payload.
 class RazorpayCheckoutService {
@@ -76,6 +76,41 @@ class RazorpayCheckoutService {
           if (contact != null && contact.isNotEmpty) 'contact': contact,
           if (email != null && email.isNotEmpty) 'email': email,
         },
+      });
+    } catch (e) {
+      onFailure(RazorpayCheckoutFailure('Could not open Razorpay: $e'));
+    }
+  }
+
+  /// Opens Razorpay's recurring-mandate checkout. Unlike [open], this must
+  /// receive a Razorpay `subscription_id` and deliberately has no order amount.
+  void openSubscription({
+    required String keyId,
+    required String subscriptionId,
+    String name = 'B-Smart Store',
+    String? description,
+    required void Function(RazorpayCheckoutSuccess) onSuccess,
+    required void Function(RazorpayCheckoutFailure) onFailure,
+  }) {
+    dispose();
+    _onSuccess = onSuccess;
+    _onFailure = onFailure;
+    if (!isAvailable) {
+      onFailure(const RazorpayCheckoutFailure(
+          'Razorpay Checkout is only available on Android/iOS.'));
+      return;
+    }
+    try {
+      _razorpay = Razorpay();
+      _razorpay!.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handleSuccess);
+      _razorpay!.on(Razorpay.EVENT_PAYMENT_ERROR, _handleError);
+      _razorpay!.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleWallet);
+      _razorpay!.open({
+        'key': keyId,
+        'subscription_id': subscriptionId,
+        'name': name,
+        if (description != null && description.isNotEmpty)
+          'description': description,
       });
     } catch (e) {
       onFailure(RazorpayCheckoutFailure('Could not open Razorpay: $e'));

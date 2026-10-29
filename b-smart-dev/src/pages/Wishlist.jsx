@@ -8,7 +8,7 @@ export default function Wishlist() {
   const { products, loading, error, toggle, clear } = useMarketplaceWishlist();
 
   return (
-    <div className="min-h-screen bg-white dark:bg-black pb-24 max-w-[1300px] ml-auto px-4 pt-6">
+    <div className="min-h-screen bg-white dark:bg-black pb-24 max-w-[1300px] mx-auto px-4 pt-6">
       <Link to="/market" className="inline-flex items-center gap-2 text-sm font-semibold text-[#fa3f5e] mb-5"><ArrowLeft size={16} />Back to Marketplace</Link>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Wishlist</h1>

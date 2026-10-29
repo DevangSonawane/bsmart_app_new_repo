@@ -41,6 +41,7 @@ import 'services/push_service.dart';
 import 'services/home_onboarding_service.dart';
 import 'services/session_reset_service.dart';
 import 'utils/timezone_service.dart';
+import 'widgets/call_overlay.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -437,10 +438,10 @@ class _BSmartAppState extends State<BSmartApp> with WidgetsBindingObserver {
             textScaler: TextScaler.linear(themeNotifier.fontScale),
             accessibleNavigation: themeNotifier.reduceMotion,
           ),
-          child: ProfileSetupGate(
+          child: CallOverlay(child: ProfileSetupGate(
             routeVersion: _routeVersion,
             child: child ?? const SizedBox.shrink(),
-          ),
+          )),
         );
       },
       onGenerateRoute: (settings) {

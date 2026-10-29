@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import {
-  MapPin, Plus, Check, CreditCard, ChevronRight, Lock, X,
-  Home, Briefcase, Wallet, ShieldCheck, Package, Loader2,
+  MapPin, Plus, Check, ChevronRight, Lock, X,
+  Home, Briefcase, ShieldCheck, Package, Loader2, Pencil, QrCode, BadgeCheck,
 } from 'lucide-react';
 import { setCartItems } from '../store/cartSlice';
 import { placeOrder } from '../store/ordersSlice';
@@ -12,6 +12,7 @@ import { inputCls } from '../components/productForm/ProductFormFields';
 import checkoutService, { loadRazorpay } from '../services/checkoutService';
 import addressService from '../services/addressService';
 import CheckoutSuccessView from '../components/checkout/CheckoutSuccessView';
+import PaymentSplitSlider from '../components/PaymentSplitSlider';
 
 const panel = 'bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl shadow-sm';
 const primary = 'rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange focus:outline-none focus-visible:ring-2 focus-visible:ring-insta-pink focus-visible:ring-offset-2 disabled:opacity-40 disabled:cursor-not-allowed';
@@ -31,21 +32,16 @@ function ProductImage({ item }) {
   );
 }
 
-function AddressDrawer({ addresses, selected, loading, actionId, onClose, onSelect, onSave, onDelete, onSetDefault, onUseAddress }) {
-  const [pending, setPending] = useState(selected);
+function AddressSelector({ addresses, selected, loading, actionId, onSelect, onSave, onDelete, onSetDefault }) {
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState('');
   const [form, setForm] = useState(blankAddress);
-
-  useEffect(() => {
-    setPending(selected);
-  }, [selected]);
 
   const submit = (event) => {
     event.preventDefault();
     if (Object.values(form).some((value) => !String(value).trim())) return;
     onSave(form, editingId).then((saved) => {
-      if (saved?.id) setPending(saved.id);
+      if (saved?.id) onSelect(saved.id);
       setAdding(false);
       setEditingId('');
       setForm(blankAddress);
@@ -73,77 +69,78 @@ function AddressDrawer({ addresses, selected, loading, actionId, onClose, onSele
   };
 
   return (
-    <aside aria-labelledby="address-title" className="min-w-0 w-full lg:sticky lg:top-0 h-[min(720px,90dvh)] lg:h-[calc(100dvh-32px)] bg-white dark:bg-gray-900 text-gray-900 dark:text-white border-l border-gray-100 dark:border-gray-800 shadow-sm rounded-xl">
-      <div className="flex h-full flex-col">
-        <div className="flex items-center gap-4 border-b border-gray-100 dark:border-gray-800 px-5 py-5">
-          <button type="button" onClick={onClose} aria-label="Close address selector" className="p-1 text-gray-500"><X size={19} /></button>
-          <h2 id="address-title" className="text-sm font-semibold">Select address</h2>
-        </div>
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          <p className="text-xs text-gray-500 dark:text-gray-400">Saved addresses</p>
-          {loading && <p className="flex items-center gap-2 text-xs text-gray-500"><Loader2 size={14} className="animate-spin" />Loading addresses...</p>}
-          {!loading && !addresses.length && <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">No saved addresses yet. Add one to continue checkout.</p>}
-          {addresses.map((address) => (
-            <label key={address.id} className={`flex items-center gap-3 rounded-xl border p-4 cursor-pointer ${pending === address.id ? 'border-[#fa3f5e] bg-pink-50/40 dark:bg-pink-900/10' : 'border-gray-200 dark:border-gray-700'}`}>
-              <input
-                type="radio"
-                name="delivery-address"
-                value={address.id}
-                checked={pending === address.id}
-                onChange={() => {
-                  setPending(address.id);
-                  onSelect(address.id);
-                }}
-                className="accent-[#fa3f5e] w-4 h-4 shrink-0"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="flex items-center gap-2 text-sm font-semibold">
-                  <span className="text-[#fa3f5e]">{address.label === 'Work' ? <Briefcase size={18} /> : <Home size={18} />}</span>
-                  {address.label}
-                  {address.is_default && <span className="rounded bg-purple-50 dark:bg-purple-900/20 px-2 py-1 text-[10px] text-insta-purple">Default</span>}
-                </p>
-                <p className="text-xs leading-6 text-gray-500 dark:text-gray-400 mt-2 break-words">
-                  {address.name} · {address.phone}<br />
-                  {address.address_line1}<br />
-                  {address.city}, {address.state} {address.pincode}
-                </p>
-                <div className="flex flex-wrap items-center gap-3 mt-3 text-[11px] font-semibold">
-                  <button type="button" onClick={(event) => { event.preventDefault(); startEdit(address); }} className="text-gray-600 dark:text-gray-300">Edit</button>
-                  {!address.is_default && <button type="button" disabled={actionId === address.id} onClick={(event) => { event.preventDefault(); onSetDefault(address.id); }} className="text-insta-purple disabled:opacity-50">{actionId === address.id ? 'Setting...' : 'Set default'}</button>}
-                  <button type="button" disabled={actionId === address.id} onClick={(event) => { event.preventDefault(); onDelete(address.id); }} className="text-[#fa3f5e] disabled:opacity-50">{actionId === address.id ? 'Deleting...' : 'Delete'}</button>
-                </div>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Saved addresses</p>
+        {!adding && (
+          <button type="button" onClick={() => setAdding(true)} className="inline-flex items-center gap-1 text-xs font-semibold text-[#fa3f5e]">
+            <Plus size={14} />Add Address
+          </button>
+        )}
+      </div>
+      {loading && <p className="flex items-center gap-2 text-xs text-gray-500"><Loader2 size={14} className="animate-spin" />Loading addresses...</p>}
+      {!loading && !addresses.length && <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">No saved addresses yet. Add one to continue checkout.</p>}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {addresses.map((address) => (
+          <label key={address.id} className={`relative flex items-start gap-3 rounded-xl border p-4 cursor-pointer ${selected === address.id ? 'border-[#fa3f5e] bg-pink-50/40 dark:bg-pink-900/10' : 'border-gray-200 dark:border-gray-700'}`}>
+            <input
+              type="radio"
+              name="delivery-address"
+              value={address.id}
+              checked={selected === address.id}
+              onChange={() => onSelect(address.id)}
+              className="accent-[#fa3f5e] w-4 h-4 shrink-0 mt-0.5"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                <span className="text-[#fa3f5e]">{address.label === 'Work' ? <Briefcase size={16} /> : <Home size={16} />}</span>
+                {address.label}
+              </p>
+              <p className="text-xs leading-6 text-gray-500 dark:text-gray-400 mt-2 break-words">
+                {address.name}<br />
+                {address.address_line1}<br />
+                {address.city}, {address.state} {address.pincode}<br />
+                {address.phone}
+              </p>
+              <div className="flex flex-wrap items-center gap-3 mt-3 text-[11px] font-semibold">
+                {selected === address.id
+                  ? <span className="inline-flex items-center gap-1 text-emerald-600"><Check size={12} /> Deliver here</span>
+                  : <button type="button" onClick={(event) => { event.preventDefault(); onSelect(address.id); }} className="text-[#fa3f5e]">Deliver here</button>}
+                <button type="button" onClick={(event) => { event.preventDefault(); startEdit(address); }} className="inline-flex items-center gap-1 text-gray-600 dark:text-gray-300"><Pencil size={11} />Edit</button>
+                {!address.is_default && <button type="button" disabled={actionId === address.id} onClick={(event) => { event.preventDefault(); onSetDefault(address.id); }} className="text-insta-purple disabled:opacity-50">{actionId === address.id ? 'Setting...' : 'Set default'}</button>}
+                <button type="button" disabled={actionId === address.id} onClick={(event) => { event.preventDefault(); onDelete(address.id); }} className="text-gray-400 hover:text-red-500 disabled:opacity-50">{actionId === address.id ? 'Deleting...' : 'Delete'}</button>
               </div>
+            </div>
+            {address.is_default && <span className="absolute top-3 right-3 rounded-full bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 text-[10px] font-bold text-insta-purple">DEFAULT</span>}
+          </label>
+        ))}
+      </div>
+
+      {adding ? (
+        <form onSubmit={submit} className="space-y-3 rounded-xl border border-gray-100 dark:border-gray-800 p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold uppercase tracking-wide text-gray-400">{editingId ? 'Edit address' : 'New address'}</p>
+            <button type="button" onClick={cancelForm} aria-label="Cancel" className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><X size={16} /></button>
+          </div>
+          {[
+            ['label', 'Address label'],
+            ['name', 'Recipient name'],
+            ['phone', 'Phone'],
+            ['address_line1', 'Street address'],
+            ['city', 'City'],
+            ['state', 'State'],
+            ['pincode', 'Pincode'],
+          ].map(([key, label]) => (
+            <label key={key} className="block text-xs text-gray-500 dark:text-gray-400">
+              {label}
+              <input required maxLength={key === 'phone' ? 20 : 150} name={key} value={form[key]} onChange={(event) => setForm({ ...form, [key]: event.target.value })} className={`${inputCls} mt-1`} />
             </label>
           ))}
-          <button type="button" onClick={() => (adding ? cancelForm() : setAdding(true))} aria-expanded={adding} className="w-full flex items-center justify-center gap-2 border border-dashed border-[#fa3f5e]/40 rounded-lg py-4 text-xs font-semibold text-[#fa3f5e]">
-            <Plus size={18} />{adding ? 'Cancel address form' : 'Add new address'}
-          </button>
-          {adding && (
-            <form onSubmit={submit} className="space-y-3">
-              {[
-                ['label', 'Address label'],
-                ['name', 'Recipient name'],
-                ['phone', 'Phone'],
-                ['address_line1', 'Street address'],
-                ['city', 'City'],
-                ['state', 'State'],
-                ['pincode', 'Pincode'],
-              ].map(([key, label]) => (
-                <label key={key} className="block text-xs text-gray-500 dark:text-gray-400">
-                  {label}
-                  <input required maxLength={key === 'phone' ? 20 : 150} name={key} value={form[key]} onChange={(event) => setForm({ ...form, [key]: event.target.value })} className={`${inputCls} mt-1`} />
-                </label>
-              ))}
-              <button disabled={Boolean(actionId)} className={`${primary} w-full py-3`}>{actionId ? 'Saving...' : editingId ? 'Update address' : 'Save address'}</button>
-            </form>
-          )}
-        </div>
-        <div className="p-5 border-t border-gray-100 dark:border-gray-800">
-          <button type="button" disabled={!pending} onClick={() => { onSelect(pending); onUseAddress(pending); }} className={`${primary} w-full py-3`}>Use this address & Continue</button>
-          <p className="mt-3 text-center text-[10px] text-gray-400"><Lock size={11} className="mr-1 inline" />Payment opens after confirming your delivery address</p>
-        </div>
-      </div>
-    </aside>
+          <button disabled={Boolean(actionId)} className={`${primary} w-full py-3`}>{actionId ? 'Saving...' : editingId ? 'Update address' : 'Save address'}</button>
+        </form>
+      ) : null}
+    </div>
   );
 }
 
@@ -158,8 +155,7 @@ export default function Checkout() {
   const [selectedAddress, setSelectedAddress] = useState('');
   const [addressesLoading, setAddressesLoading] = useState(true);
   const [addressActionId, setAddressActionId] = useState('');
-  const [addressOpen, setAddressOpen] = useState(true);
-  const [paymentMethod, setPaymentMethod] = useState('wallet');
+  const [coinsToUse, setCoinsToUse] = useState(0);
   const [sameBilling, setSameBilling] = useState(true);
   const [billing, setBilling] = useState('');
   const [placed, setPlaced] = useState(false);
@@ -170,12 +166,13 @@ export default function Checkout() {
 
   const address = addresses.find((entry) => entry.id === selectedAddress) || blankAddress;
   const subtotal = items.reduce((sum, item) => sum + item.price * item.qty, 0);
-  const discount = 0;
   const total = subtotal;
+  const coinsApplied = Math.max(0, Math.min(coinsToUse, balance, total));
+  const discount = coinsApplied;
+  const razorpayAmount = Math.max(0, total - coinsApplied);
   const payment = step === 'Payment';
   const hasSelectedAddress = Boolean(addresses.find((entry) => entry.id === selectedAddress));
   const hasCompleteAddress = hasSelectedAddress && ['name', 'phone', 'address_line1', 'city', 'state', 'pincode'].every((key) => String(address?.[key] || '').trim());
-  const walletInsufficient = payment && paymentMethod === 'wallet' && balance < total;
 
   const loadAddresses = useCallback(async ({ keepSelected = true } = {}) => {
     setAddressesLoading(true);
@@ -254,12 +251,10 @@ export default function Checkout() {
     const complete = chosenAddress && ['name', 'phone', 'address_line1', 'city', 'state', 'pincode'].every((key) => String(chosenAddress?.[key] || '').trim());
     if (!complete) {
       setCheckoutError('Please select or add a complete delivery address before continuing.');
-      setAddressOpen(true);
       return false;
     }
     setSelectedAddress(addressId);
     setCheckoutError('');
-    setAddressOpen(false);
     setStep('Payment');
     return true;
   };
@@ -283,7 +278,7 @@ export default function Checkout() {
         image: item.image,
       })),
       amount: apiOrder?.amount ?? apiOrder?.total_amount ?? total,
-      paymentMethod,
+      paymentMethod: apiOrder?.payment_method || (coinsApplied >= total ? 'wallet' : coinsApplied > 0 ? 'hybrid' : 'razorpay'),
       paymentStatus,
       status,
       address: {
@@ -306,8 +301,6 @@ export default function Checkout() {
       continueToPayment();
       return;
     }
-    if (walletInsufficient) return;
-
     const shippingAddress = buildShippingAddress();
     if (Object.values(shippingAddress).some((value) => !String(value).trim())) {
       setCheckoutError('Please complete the delivery address.');
@@ -317,16 +310,16 @@ export default function Checkout() {
     setCheckingOut(true);
     setCheckoutError('');
     try {
-      const result = await checkoutService.checkout({ paymentMethod, shippingAddress });
+      const result = await checkoutService.checkout({ coinsToUse: coinsApplied, shippingAddress });
       const apiOrder = result?.order || result?.data?.order || result?.data;
       const backendOrderId = apiOrder?._id || apiOrder?.id || apiOrder?.order_id || result?.id || result?._id;
 
-      if (paymentMethod === 'wallet') {
+      if (apiOrder?.payment_status === 'paid') {
         const localOrder = recordLocalOrder(apiOrder, shippingAddress, 'Confirmed', 'Paid');
         setConfirmedOrder(localOrder);
         dispatch(setCartItems([]));
         dispatch(fetchWallet());
-        setOrderMessage('Your wallet payment is confirmed and the cart has been cleared.');
+        setOrderMessage('Your payment is confirmed and the cart has been cleared.');
         setPlaced(true);
         return;
       }
@@ -362,6 +355,7 @@ export default function Checkout() {
             const localOrder = recordLocalOrder(verifiedOrder, shippingAddress, 'Confirmed', 'Paid');
             setConfirmedOrder(localOrder);
             dispatch(setCartItems([]));
+            dispatch(fetchWallet());
             setOrderMessage('Payment verified. Your order is confirmed and the cart has been cleared.');
             setPlaced(true);
           } catch (err) {
@@ -420,7 +414,7 @@ export default function Checkout() {
   }));
   const successOrderId = confirmedOrder?.apiOrderId || confirmedOrder?.id || 'Processing';
   const successDate = confirmedOrder?.createdAt ? new Date(confirmedOrder.createdAt) : new Date();
-  const successPaymentMethod = confirmedOrder?.paymentMethod || paymentMethod;
+  const successPaymentMethod = confirmedOrder?.paymentMethod || (coinsApplied > 0 ? 'hybrid' : 'razorpay');
   const successTotal = confirmedOrder?.amount ?? total;
 
   if (placed) {
@@ -430,6 +424,7 @@ export default function Checkout() {
         orderDate={successDate}
         paymentMethod={successPaymentMethod}
         total={successTotal}
+        discount={confirmedOrder?.coinsDiscount ?? discount}
         items={successItems.map((item) => ({
           ...products.find((product) => String(product.id) === String(item.productId)),
           ...item,
@@ -444,157 +439,140 @@ export default function Checkout() {
   }
 
   return (
-    <div className={`min-h-screen bg-gray-50 dark:bg-black w-full max-w-[1300px] ml-auto px-4 md:px-6 pt-4 pb-12 text-gray-900 dark:text-white grid gap-4 items-start ${addressOpen && !payment ? 'lg:grid-cols-[minmax(0,1fr)_280px]' : 'grid-cols-1'}`}>
-      <div className="min-w-0">
-        <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Checkout</h1>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {payment ? 'Choose a payment method and confirm your order.' : 'Select a delivery address to continue.'}
-            </p>
-          </div>
-          <nav aria-label="Checkout progress" className="w-full md:max-w-[420px]">
-            <ol className="flex items-start">
-              {['Cart', 'Details', 'Payment'].map((label, index) => {
-                const complete = index === 0 || (index === 1 && payment);
-                const current = label === step;
-                const stepState = complete ? 'Complete' : current ? 'Current' : 'Pending';
-                const content = (
-                  <>
-                    <span className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition ${
-                      complete
-                        ? 'bg-emerald-500 text-white'
-                        : current
-                          ? 'bg-[#fa3f5e] text-white'
-                          : 'border border-gray-200 bg-white text-gray-400 dark:border-gray-700 dark:bg-gray-900'
-                    }`}>
-                      {complete ? <Check size={14} /> : index + 1}
-                    </span>
-                    <span className={`mt-2 text-xs font-semibold ${current ? 'text-gray-950 dark:text-white' : complete ? 'text-emerald-600' : 'text-gray-400'}`}>{label}</span>
-                    <span className="sr-only">{stepState}</span>
-                  </>
-                );
-                return (
-                  <li key={label} className="relative flex flex-1 justify-center">
-                    {index < 2 && <span aria-hidden="true" className={`absolute left-1/2 top-4 h-px w-full ${complete && (index === 0 || payment) ? 'bg-[#fa3f5e]' : 'bg-gray-200 dark:bg-gray-700'}`} />}
-                    {label === 'Cart'
-                      ? <Link to="/cart" className="relative flex flex-col items-center rounded-lg px-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-insta-pink">{content}</Link>
-                      : <button type="button" aria-current={current ? 'step' : undefined} onClick={() => (label === 'Payment' ? continueToPayment() : setStep(label))} className="relative flex flex-col items-center rounded-lg px-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-insta-pink">{content}</button>}
-                  </li>
-                );
-              })}
-            </ol>
-          </nav>
+    <div className="min-h-screen bg-gray-50 dark:bg-black w-full max-w-[1300px] mx-auto px-4 md:px-6 pt-4 pb-12 text-gray-900 dark:text-white">
+      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Checkout</h1>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {payment ? 'Choose a payment method and confirm your order.' : 'Select a delivery address to continue.'}
+          </p>
         </div>
-
-        <form onSubmit={submit} className={`grid grid-cols-1 gap-4 items-start ${payment ? 'md:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)] md:gap-6' : 'md:grid-cols-[minmax(0,2fr)_minmax(190px,1fr)]'}`}>
-          <main className="min-w-0 space-y-3">
-            {!payment ? (
-              <>
-                <section className={`${panel} p-3 flex items-start gap-3`}>
-                  <span className="p-2 rounded-full bg-pink-50 dark:bg-pink-900/20 text-[#fa3f5e]"><MapPin size={20} /></span>
-                  <div className="flex-1 min-w-0">
-                    <h2 className="text-sm font-semibold">Delivery address</h2>
-                    <p className="text-xs font-semibold mt-2">{hasSelectedAddress ? address.label || 'Saved address' : 'No delivery address selected'}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 break-words">
-                      {hasSelectedAddress
-                        ? <>{address.name} &middot; {address.phone}<br />{address.address_line1}, {address.city}, {address.state} {address.pincode}</>
-                        : 'Choose a saved address or add a new one to continue.'}
-                    </p>
-                  </div>
-                  {!addressOpen && (
-                    <button type="button" onClick={() => setAddressOpen(true)} className="flex items-center gap-1 text-xs text-[#fa3f5e] py-1">
-                      Change <ChevronRight size={14} />
-                    </button>
-                  )}
-                </section>
-                <section className={`${panel} p-3`}><h2 className="text-sm font-semibold mb-4">Order summary</h2>{itemList}</section>
-                <section className={`${panel} p-3`}>
-                  <button type="button" onClick={() => continueToPayment()} className="flex items-center gap-3 w-full text-xs pb-4 mb-4 border-b border-gray-100 dark:border-gray-800">
-                    <CreditCard size={20} className="text-[#fa3f5e]" />
-                    <span className="flex-1 text-left">{paymentMethod === 'wallet' ? 'Wallet coins' : 'Razorpay'}</span>
-                    <ChevronRight size={16} />
-                  </button>
-                  {billingControl}
-                </section>
-              </>
-            ) : (
-              <>
-                <h2 className="text-lg font-semibold">Choose payment method</h2>
-                <div role="radiogroup" aria-label="Payment method" className="space-y-3">
-                  {[
-                    ['wallet', 'Wallet coins', Wallet],
-                    ['razorpay', 'Razorpay', CreditCard],
-                  ].map(([id, label, Icon]) => (
-                    <div key={id}>
-                      <label className={`${panel} flex items-center gap-3 px-3 py-2.5 min-h-[64px] cursor-pointer ${paymentMethod === id ? '!border-[#fa3f5e]' : ''}`}>
-                        <input type="radio" name="payment-method" value={id} checked={paymentMethod === id} onChange={() => setPaymentMethod(id)} className="w-4 h-4 shrink-0 accent-[#fa3f5e]" />
-                        <span className="w-12 h-10 shrink-0 rounded-lg border border-gray-100 dark:border-gray-800 flex items-center justify-center text-gray-700 dark:text-gray-300">{React.createElement(Icon, { size: 23 })}</span>
-                        <span className="flex-1 min-w-0 text-sm font-semibold">{label}</span>
-                        {paymentMethod === id ? <span className="rounded bg-[#fa3f5e] text-white px-2 py-1 text-[10px]">Selected</span> : <ChevronRight size={17} className="text-gray-400" />}
-                      </label>
-                      {id === 'wallet' && paymentMethod === id && <p className="px-4 pt-2 text-xs text-gray-400">{balance.toLocaleString('en-IN')} coins available{walletInsufficient ? ' - insufficient balance for this order.' : ''}</p>}
-                      {id === 'razorpay' && paymentMethod === id && <p className="px-4 pt-2 text-xs text-gray-400">Opens Razorpay Checkout. Stock and cart update after payment verification.</p>}
-                    </div>
-                  ))}
-                </div>
-                <section className={`${panel} p-3`}>{billingControl}</section>
-                <div className="flex items-start gap-3 px-2 py-2">
-                  <ShieldCheck size={30} className="text-[#fa3f5e] shrink-0" />
-                  <div>
-                    <h3 className="text-xs font-semibold">Secure payment</h3>
-                    <p className="text-xs text-gray-400 mt-1">Wallet orders are confirmed immediately. Razorpay orders stay pending until verified.</p>
-                  </div>
-                </div>
-              </>
-            )}
-          </main>
-
-          <aside className={`${panel} min-w-0 lg:sticky lg:top-4 ${payment ? 'p-5' : 'p-3'}`} aria-label="Payment summary">
-            {payment && <><h2 className="text-sm font-semibold mb-5">Order summary</h2><div className="pb-5 mb-5 border-b border-gray-100 dark:border-gray-800">{itemList}</div></>}
-            <dl className="space-y-4 text-xs text-gray-500 dark:text-gray-400 pb-5 border-b border-gray-100 dark:border-gray-800">
-              <div className="flex justify-between gap-3"><dt>Subtotal</dt><dd>{money(subtotal)}</dd></div>
-              {!payment && <div className="flex justify-between gap-3"><dt>Delivery</dt><dd className="text-[#fa3f5e] font-semibold">Free</dd></div>}
-              <div className="flex justify-between gap-3 text-insta-purple"><dt>Wallet discount</dt><dd>{money(discount)}</dd></div>
-            </dl>
-            <div className="flex justify-between items-center py-3 gap-3"><span className="text-sm font-semibold">{payment ? 'Amount due' : 'Total'}</span><strong className="text-xl text-[#fa3f5e]">{money(total)}</strong></div>
-            {checkoutError && <p role="alert" className="text-xs text-red-500 mb-3">{checkoutError}</p>}
-            {payment ? (
-              <>
-                <button type="submit" disabled={checkingOut || walletInsufficient} className={`${primary} w-full py-3 flex items-center justify-center gap-2`}>
-                  {checkingOut ? <><Loader2 size={16} className="animate-spin" />Processing</> : <><Lock size={16} />Pay {money(total)}</>}
-                </button>
-                <p className="text-[10px] text-gray-400 text-center mt-3"><Lock size={11} className="inline mr-1" />Secure checkout</p>
-              </>
-            ) : (
-              <>
-                {!addressOpen && (
-                  <button type="button" disabled={!hasCompleteAddress} onClick={() => continueToPayment()} className={`${primary} w-full py-3 flex items-center justify-center gap-2`}>
-                    Continue to payment <ChevronRight size={16} />
-                  </button>
-                )}
-                <p className="text-[10px] text-gray-400 text-center mt-3"><Lock size={11} className="inline mr-1" />Select a delivery address to unlock payment</p>
-              </>
-            )}
-          </aside>
-        </form>
-        {!payment && <p className="text-[11px] text-gray-400 mt-5">Wallet uses coins at 1 coin = Rs 1. Razorpay opens the secure payment gateway.</p>}
+        <nav aria-label="Checkout progress" className="w-full md:max-w-[460px]">
+          <ol className="flex items-start">
+            {['Cart', 'Shipping', 'Payment', 'Confirmation'].map((label, index) => {
+              const complete = index === 0 || (index === 1 && payment);
+              const current = (index === 1 && !payment) || (index === 2 && payment);
+              const stepState = complete ? 'Complete' : current ? 'Current' : 'Pending';
+              const interactive = index === 0 || index === 1 || (index === 2 && hasCompleteAddress);
+              const content = (
+                <>
+                  <span className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition ${
+                    complete
+                      ? 'bg-emerald-500 text-white'
+                      : current
+                        ? 'bg-[#fa3f5e] text-white'
+                        : 'border border-gray-200 bg-white text-gray-400 dark:border-gray-700 dark:bg-gray-900'
+                  }`}>
+                    {complete ? <Check size={14} /> : index + 1}
+                  </span>
+                  <span className={`mt-2 text-xs font-semibold ${current ? 'text-gray-950 dark:text-white' : complete ? 'text-emerald-600' : 'text-gray-400'}`}>{label}</span>
+                  <span className="sr-only">{stepState}</span>
+                </>
+              );
+              return (
+                <li key={label} className="relative flex flex-1 justify-center">
+                  {index < 3 && <span aria-hidden="true" className={`absolute left-1/2 top-4 h-px w-full ${complete ? 'bg-[#fa3f5e]' : 'bg-gray-200 dark:bg-gray-700'}`} />}
+                  {label === 'Cart'
+                    ? <Link to="/cart" className="relative flex flex-col items-center rounded-lg px-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-insta-pink">{content}</Link>
+                    : interactive
+                      ? <button type="button" aria-current={current ? 'step' : undefined} onClick={() => (label === 'Payment' ? continueToPayment() : setStep('Details'))} className="relative flex flex-col items-center rounded-lg px-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-insta-pink">{content}</button>
+                      : <span aria-disabled="true" className="relative flex flex-col items-center px-2">{content}</span>}
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
       </div>
 
-      {addressOpen && !payment && (
-        <AddressDrawer
-          addresses={addresses}
-          selected={selectedAddress}
-          loading={addressesLoading}
-          actionId={addressActionId}
-          onClose={() => setAddressOpen(false)}
-          onSelect={(id) => setSelectedAddress(id)}
-          onUseAddress={continueToPayment}
-          onSave={saveAddress}
-          onDelete={deleteAddress}
-          onSetDefault={setDefaultAddress}
-        />
-      )}
+      <form onSubmit={submit} className="grid grid-cols-1 gap-4 items-start md:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)] md:gap-6">
+        <main className="min-w-0 space-y-4">
+          {!payment ? (
+            <>
+              <section className={`${panel} p-4`}>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="p-1.5 rounded-full bg-pink-50 dark:bg-pink-900/20 text-[#fa3f5e]"><MapPin size={16} /></span>
+                  <h2 className="text-sm font-bold">1. Delivery Address</h2>
+                </div>
+                <AddressSelector
+                  addresses={addresses}
+                  selected={selectedAddress}
+                  loading={addressesLoading}
+                  actionId={addressActionId}
+                  onSelect={(id) => setSelectedAddress(id)}
+                  onSave={saveAddress}
+                  onDelete={deleteAddress}
+                  onSetDefault={setDefaultAddress}
+                />
+              </section>
+              <section className={`${panel} p-4`}><h2 className="text-sm font-bold mb-4">Order summary</h2>{itemList}</section>
+              <section className={`${panel} p-4`}>{billingControl}</section>
+            </>
+          ) : (
+            <>
+              <section className={`${panel} p-4`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-full bg-pink-50 dark:bg-pink-900/20 text-[#fa3f5e]"><QrCode size={16} /></span>
+                    <h2 className="text-sm font-bold">2. Select Payment Method</h2>
+                  </div>
+                  <span className="rounded-full bg-emerald-50 dark:bg-emerald-900/20 px-2.5 py-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">RECOMMENDED</span>
+                </div>
+                <div className="flex items-center gap-3 rounded-xl border border-gray-100 dark:border-gray-800 p-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#072654] text-white text-[10px] font-black">RP</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold flex items-center gap-1.5">Razorpay Checkout <BadgeCheck size={13} className="text-emerald-500" /></p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">UPI, Cards, NetBanking &amp; Wallets — opens Razorpay's secure checkout.</p>
+                  </div>
+                </div>
+              </section>
+              <section className={`${panel} p-4`}>
+                <PaymentSplitSlider totalAmount={total} walletBalance={balance} value={coinsToUse} onChange={setCoinsToUse} />
+              </section>
+              <section className={`${panel} p-4`}>{billingControl}</section>
+              <div className="flex items-start gap-3 px-2 py-2">
+                <ShieldCheck size={30} className="text-[#fa3f5e] shrink-0" />
+                <div>
+                  <h3 className="text-xs font-semibold">Secure payment</h3>
+                  <p className="text-xs text-gray-400 mt-1">Orders fully covered by coins are confirmed immediately. Any remaining amount goes through Razorpay, and stays pending until verified.</p>
+                </div>
+              </div>
+            </>
+          )}
+        </main>
+
+        <aside className={`${panel} min-w-0 p-5 lg:sticky lg:top-4`} aria-label="Order review">
+          <h2 className="text-sm font-bold mb-5">Order Review</h2>
+          <div className="pb-5 mb-5 border-b border-gray-100 dark:border-gray-800">{itemList}</div>
+          <dl className="space-y-4 text-xs text-gray-500 dark:text-gray-400 pb-5 border-b border-gray-100 dark:border-gray-800">
+            <div className="flex justify-between gap-3"><dt>Subtotal</dt><dd>{money(subtotal)}</dd></div>
+            <div className="flex justify-between gap-3"><dt>Shipping</dt><dd className="text-[#fa3f5e] font-semibold">Free</dd></div>
+            {payment && coinsApplied > 0 && <div className="flex justify-between gap-3 text-insta-purple"><dt>Paid with coins</dt><dd>-{money(coinsApplied)}</dd></div>}
+            {payment && razorpayAmount > 0 && <div className="flex justify-between gap-3"><dt>Via Razorpay</dt><dd>{money(razorpayAmount)}</dd></div>}
+          </dl>
+          <div className="flex justify-between items-center py-3 gap-3"><span className="text-sm font-semibold">Total Amount</span><strong className="text-xl text-[#fa3f5e]">{money(total)}</strong></div>
+          {checkoutError && <p role="alert" className="text-xs text-red-500 mb-3">{checkoutError}</p>}
+          {payment ? (
+            <>
+              <button type="submit" disabled={checkingOut} className="w-full py-3.5 rounded-full text-sm font-bold text-white bg-gradient-to-r from-[#9f1239] to-[#fa3f5e] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                {checkingOut
+                  ? <><Loader2 size={16} className="animate-spin" />Processing</>
+                  : razorpayAmount > 0
+                    ? <><Lock size={16} />Pay {money(razorpayAmount)} via Razorpay</>
+                    : <><Lock size={16} />Place order</>}
+              </button>
+              <p className="text-[10px] text-gray-400 text-center mt-3"><Lock size={11} className="inline mr-1" />Secure checkout</p>
+            </>
+          ) : (
+            <>
+              <button type="button" disabled={!hasCompleteAddress} onClick={() => continueToPayment()} className="w-full py-3.5 rounded-full text-sm font-bold text-white bg-gradient-to-r from-[#9f1239] to-[#fa3f5e] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                Continue to payment <ChevronRight size={16} />
+              </button>
+              <p className="text-[10px] text-gray-400 text-center mt-3"><Lock size={11} className="inline mr-1" />Select a delivery address to unlock payment</p>
+            </>
+          )}
+        </aside>
+      </form>
+      {!payment && <p className="text-[11px] text-gray-400 mt-5">Wallet uses coins at 1 coin = Rs 1. Razorpay opens the secure payment gateway.</p>}
     </div>
   );
 }

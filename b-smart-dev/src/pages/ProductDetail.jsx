@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import { useDispatch, useSelector } from 'react-redux';
 import {
   ChevronRight, ChevronDown, Heart, Star, Minus, Plus,
-  ShoppingCart, Package, Loader2, ShieldCheck,
+  ShoppingCart, Package, Loader2, ShieldCheck, Zap, Truck, RotateCcw,
 } from 'lucide-react';
 import { addItem } from '../store/cartSlice';
 import { CATEGORY_STYLE } from '../data/marketplaceCategoryStyle';
@@ -71,6 +71,7 @@ const ProductDetail = () => {
   const currentApiProduct = apiProduct && String(apiProduct.id) === String(productId) ? apiProduct : null;
   const product = currentApiProduct || fallbackProduct;
   const [qty, setQty] = useState(1);
+  const [selectedVariant, setSelectedVariant] = useState(0);
   const [adding, setAdding] = useState(false);
   const favorite = isSaved('product', productId);
   
@@ -134,6 +135,8 @@ const ProductDetail = () => {
   const reviewsCount = Number(product.reviews || 0);
   const rating = Number(product.rating || 0);
   const ratingPercent = Math.min(100, Math.max(0, (rating / 5) * 100));
+  const hasDiscount = Number(product.mrp) > Number(product.price);
+  const discountPercent = hasDiscount ? Math.round((1 - Number(product.price) / Number(product.mrp)) * 100) : 0;
 
   const handleZoomMove = (event) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -155,7 +158,7 @@ const ProductDetail = () => {
       images: product.images || [],
       image: product.images?.[0],
       qty,
-      variant: product.variants?.[0] ? { color: product.variants[0].color, size: product.variants[0].size || 'One Size' } : undefined,
+      variant: product.variants?.[selectedVariant] ? { color: product.variants[selectedVariant].color, size: product.variants[selectedVariant].size || 'One Size' } : undefined,
       storeName: product.vendor,
       storeAvatar: product.seller?.avatar_url,
       storeType: 'Influencer Store',
@@ -192,7 +195,7 @@ const ProductDetail = () => {
     .map(({ product: item }) => item);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-black pb-24 max-w-[1300px] ml-auto px-4 md:px-6 pt-6">
+    <div className="min-h-screen bg-gray-50 dark:bg-black pb-24 max-w-[1300px] mx-auto px-4 md:px-6 pt-6">
       {/* Breadcrumb */}
       <div className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 mb-5">
         <Link to={canUseStoreLinks ? '/market/my-store' : '/market'} className="hover:text-[#fa3f5e]">{canUseStoreLinks ? 'My Store' : 'Marketplace'}</Link>
@@ -241,6 +244,30 @@ const ProductDetail = () => {
               </button>
             ))}
           </div>
+
+          {!canUseStoreLinks && (
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-5 text-xs text-gray-500 dark:text-gray-400">
+              <span className="inline-flex items-center gap-1.5"><ShieldCheck size={14} className="text-[#fa3f5e]" /> Secure checkout</span>
+              <span className="inline-flex items-center gap-1.5"><Truck size={14} className="text-[#fa3f5e]" /> {product.dispatchTime ? `Dispatched in ${product.dispatchTime}` : 'Ships in 1-2 days'}</span>
+              <span className="inline-flex items-center gap-1.5"><RotateCcw size={14} className="text-[#fa3f5e]" /> {product.returnPolicy || '7 Days Replacement'}</span>
+            </div>
+          )}
+
+          <div className="rounded-xl border border-gray-100 dark:border-gray-800 px-3 mt-5">
+            {product.dimensions && (
+              <AccordionRow title="Dimensions">{product.dimensions}</AccordionRow>
+            )}
+            <AccordionRow title="Delivery" defaultOpen>
+              {product.dispatchTime ? `Dispatched in ${product.dispatchTime}. ` : 'Ships in 1-2 business days. '}
+              {product.countryOfOrigin && `Made in ${product.countryOfOrigin}.`}
+            </AccordionRow>
+            <AccordionRow title="Return Policy">
+              {product.returnPolicy || '7 Days Replacement'}
+            </AccordionRow>
+            {product.warranty && product.warranty !== 'None' && (
+              <AccordionRow title="Warranty">{product.warranty}</AccordionRow>
+            )}
+          </div>
         </div>
 
         {/* Info */}
@@ -257,18 +284,31 @@ const ProductDetail = () => {
             {product.stockQuantity > 0 && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600 dark:bg-emerald-900/20">In stock</span>}
           </div>
 
-          <p className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-            ₹{product.price.toFixed(2)} <span className="text-sm font-normal text-gray-400">INR</span>
-          </p>
+          <div className="flex flex-wrap items-center gap-2.5 mb-4">
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">
+              ₹{product.price.toFixed(2)} <span className="text-sm font-normal text-gray-400">INR</span>
+            </p>
+            {hasDiscount && (
+              <>
+                <span className="text-sm text-gray-400 line-through">₹{Number(product.mrp).toFixed(2)}</span>
+                <span className="rounded-full bg-pink-50 dark:bg-pink-900/20 px-2.5 py-1 text-xs font-bold text-[#fa3f5e]">{discountPercent}% OFF</span>
+              </>
+            )}
+          </div>
 
           <p className="text-sm text-gray-600 dark:text-gray-300 leading-6 mb-5">
             {product.description}
           </p>
 
           {product.highlights?.length > 0 && (
-            <ul className="grid gap-2 text-sm text-gray-600 dark:text-gray-300 mb-6">
-              {product.highlights.map((h, i) => <li key={i} className="flex gap-2 leading-5"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-[#fa3f5e]" />{h}</li>)}
-            </ul>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-6">
+              {product.highlights.map((h, i) => (
+                <div key={i} className="flex items-start gap-2 rounded-xl border border-gray-100 dark:border-gray-800 p-3">
+                  <ShieldCheck size={15} className="mt-0.5 shrink-0 text-[#fa3f5e]" />
+                  <p className="text-xs leading-5 text-gray-600 dark:text-gray-300">{h}</p>
+                </div>
+              ))}
+            </div>
           )}
 
           {canUseStoreLinks ? (
@@ -282,6 +322,25 @@ const ProductDetail = () => {
             </div>
           ) : (
             <>
+              {product.variants?.length > 0 && (
+                <div className="mb-5">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Variant</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {product.variants.map((variant, index) => (
+                      <button
+                        key={variant.id || index}
+                        type="button"
+                        onClick={() => setSelectedVariant(index)}
+                        className={`text-left rounded-xl border-2 p-3 transition-colors ${selectedVariant === index ? 'border-[#fa3f5e] bg-pink-50/50 dark:bg-pink-900/10' : 'border-gray-100 dark:border-gray-800'}`}
+                      >
+                        <p className="text-sm font-bold text-gray-900 dark:text-white">{[variant.color, variant.size].filter(Boolean).join(' / ') || `Option ${index + 1}`}</p>
+                        {variant.price && <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">₹{Number(variant.price).toFixed(2)}</p>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center gap-3 mb-5">
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Quantity</span>
                 <div className="flex items-center border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
@@ -295,66 +354,26 @@ const ProductDetail = () => {
                 </div>
               </div>
 
-              <div className="flex gap-3 mb-6">
-                <button
-                  onClick={addToCart}
-                  disabled={adding}
-                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange"
-                >
-                  {adding ? <Loader2 size={16} className="animate-spin" /> : <ShoppingCart size={16} />} Add to Cart
-                </button>
+              <div className="flex flex-col gap-3 mb-5">
                 <button
                   onClick={handleBuyNow}
                   disabled={adding}
-                  className="flex-1 py-3 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200"
+                  className="flex items-center justify-center gap-2 py-3.5 rounded-full text-sm font-bold text-white bg-gradient-to-r from-[#9f1239] to-[#fa3f5e]"
                 >
-                  Buy Now
+                  <Zap size={16} /> Buy Now
+                </button>
+                <button
+                  onClick={addToCart}
+                  disabled={adding}
+                  className="flex items-center justify-center gap-2 py-3.5 rounded-full text-sm font-bold border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200"
+                >
+                  {adding ? <Loader2 size={16} className="animate-spin" /> : <ShoppingCart size={16} />} Add to Cart
                 </button>
               </div>
             </>
           )}
-
-          <div className="rounded-xl border border-gray-100 dark:border-gray-800 px-3">
-            {product.dimensions && (
-              <AccordionRow title="Dimensions">{product.dimensions}</AccordionRow>
-            )}
-            <AccordionRow title="Delivery" defaultOpen>
-              {product.dispatchTime ? `Dispatched in ${product.dispatchTime}. ` : 'Ships in 1-2 business days. '}
-              {product.countryOfOrigin && `Made in ${product.countryOfOrigin}.`}
-            </AccordionRow>
-            <AccordionRow title="Return Policy">
-              {product.returnPolicy || '7 Days Replacement'}
-            </AccordionRow>
-            {product.warranty && product.warranty !== 'None' && (
-              <AccordionRow title="Warranty">{product.warranty}</AccordionRow>
-            )}
-          </div>
         </div>
       </div>
-
-      {/* Seller bar */}
-      {!canUseStoreLinks && <div className="mt-10 bg-gray-50 dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-4 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center font-bold text-gray-600 dark:text-gray-300">
-            {product.vendor.charAt(0)}
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900 dark:text-white text-sm">Sold by {product.vendor}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-              <Star size={11} className="fill-amber-400 text-amber-400" /> {product.vendorRating} Vendor Rating
-              <span className="mx-1">·</span> {product.vendorLocation}
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button className="px-4 py-2 rounded-lg text-xs font-bold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300">
-            View Store
-          </button>
-          <button className="px-4 py-2 rounded-lg text-xs font-bold text-white bg-[#fa3f5e]">
-            Follow
-          </button>
-        </div>
-      </div>}
 
       {!canUseStoreLinks && (
         <section className="mt-5 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:p-5">

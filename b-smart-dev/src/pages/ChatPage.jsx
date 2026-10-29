@@ -5,6 +5,7 @@ import {
   Info,
   ImagePlus,
   MessageCircle,
+  Phone,
   Search,
   SendHorizontal,
   Smile,
@@ -20,6 +21,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import VoiceMessageBubble from '../components/VoiceMessageBubble';
 import VoiceRecorder from '../components/VoiceRecorder';
 import PostDetailModal from '../components/PostDetailModal';
+import CallOverlay from '../components/CallOverlay';
 import * as chatService from '../services/chatService';
 import { getFollowing } from '../services/followService';
 import api from '../lib/api';
@@ -915,6 +917,7 @@ export default function ChatPage() {
   const activatingConversationRef = useRef({ conversationId: '', promise: null });
   const fetchedSharedReelIdsRef = useRef(new Set());
   const autoDownloadImagesRef = useRef(false);
+  const callOverlayRef = useRef(null);
 
   const [search, setSearch] = useState('');
   const [input, setInput] = useState('');
@@ -2719,18 +2722,33 @@ export default function ChatPage() {
                     </div>
                   </>
                 ) : (
-                  <Link
-                    to={`/profile/${otherUserId}`}
-                    className="flex min-w-0 flex-1 items-center gap-3 transition hover:opacity-90"
-                  >
-                    <Avatar user={otherUser} className="h-9 w-9 flex-shrink-0" />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-bold tracking-tight">{activeConversationTitle}</p>
-                      <p className="truncate text-[11px] font-medium uppercase tracking-widest text-gray-500 dark:text-gray-400">
-                        {activeConversationSubtitle}
-                      </p>
-                    </div>
-                  </Link>
+                  <>
+                    <Link
+                      to={`/profile/${otherUserId}`}
+                      className="flex min-w-0 flex-1 items-center gap-3 transition hover:opacity-90"
+                    >
+                      <Avatar user={otherUser} className="h-9 w-9 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold tracking-tight">{activeConversationTitle}</p>
+                        <p className="truncate text-[11px] font-medium uppercase tracking-widest text-gray-500 dark:text-gray-400">
+                          {activeConversationSubtitle}
+                        </p>
+                      </div>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => callOverlayRef.current?.startCall(otherUserId, {
+                        id: otherUserId,
+                        name: activeConversationTitle,
+                        avatar: otherUser?.avatar_url || otherUser?.avatar,
+                      }, 'voice')}
+                      className="flex-shrink-0 rounded-full border border-gray-200 p-2 text-gray-600 transition hover:bg-gray-50 disabled:opacity-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5"
+                      aria-label="Voice call"
+                      title="Voice call"
+                    >
+                      <Phone size={16} />
+                    </button>
+                  </>
                 )}
                 {activeConversation?.isGroup ? (
                   <div className="flex items-center gap-2">
@@ -3145,6 +3163,7 @@ export default function ChatPage() {
         post={sharedDetailItem}
         onClose={() => setSharedDetailItem(null)}
       />
+      <CallOverlay ref={callOverlayRef} currentUserId={currentUserId} token={token} />
     </div>
   );
 }

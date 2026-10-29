@@ -18,12 +18,16 @@ class AuthLoginOutcome {
   final String? email;
   final String? message;
   final model.AuthUser? user;
+  final bool dailyRewardGranted;
+  final int dailyRewardAmount;
 
   const AuthLoginOutcome({
     required this.requires2fa,
     this.email,
     this.message,
     this.user,
+    this.dailyRewardGranted = false,
+    this.dailyRewardAmount = 0,
   });
 }
 
@@ -57,6 +61,7 @@ class AuthService {
 
   // In-memory storage for signup sessions during the flow
   final Map<String, SignupSession> _sessions = {};
+  int lastRegistrationBonusAmount = 0;
 
   AuthService._internal();
 
@@ -365,6 +370,9 @@ class AuthService {
         clientTimezoneName: timezone.name,
         clientTimezoneOffsetMinutes: timezone.offsetMinutes,
       );
+      // Trust the server flag rather than inferring from the wallet balance.
+      lastRegistrationBonusAmount =
+          (data['registration_bonus_amount'] as num?)?.toInt() ?? 0;
 
       final user = data['user'] as Map<String, dynamic>? ?? {};
 
@@ -427,6 +435,8 @@ class AuthService {
       return AuthLoginOutcome(
         requires2fa: false,
         user: _userFromApiMap(user),
+        dailyRewardGranted: data['daily_reward_granted'] == true,
+        dailyRewardAmount: (data['daily_reward_amount'] as num?)?.toInt() ?? 0,
       );
     } on RestrictedLoginException {
       rethrow;

@@ -255,6 +255,19 @@ class Phase2StoreApi {
     }));
   }
 
+  /// Creates a multi-vendor service order. A single item is also supported.
+  /// The response may include a `razorpay` sibling when coins don't cover it.
+  Future<Map<String, dynamic>> createServiceBookingOrder({
+    required List<Map<String, dynamic>> items,
+    int coinsToUse = 0,
+  }) async {
+    return _rawMap(await _post('/service-bookings/orders', body: {
+      'items': items,
+      'coins_to_use': coinsToUse,
+    }));
+  }
+
+  @Deprecated('Use createServiceBookingOrder for the cart-compatible API.')
   Future<Map<String, dynamic>> createServiceBooking({
     required Map<String, dynamic> body,
   }) async {
@@ -281,13 +294,36 @@ class Phase2StoreApi {
     required String razorpayPaymentId,
     required String razorpaySignature,
   }) async {
-    return _asMap(
-        await _post('/service-bookings/$bookingId/verify-payment', body: {
-      'razorpay_order_id': razorpayOrderId,
-      'razorpay_payment_id': razorpayPaymentId,
-      'razorpay_signature': razorpaySignature,
-    }));
+    return _asMap(await _post(
+        '/service-bookings/orders/$bookingId/verify-payment',
+        body: {
+          'razorpay_order_id': razorpayOrderId,
+          'razorpay_payment_id': razorpayPaymentId,
+          'razorpay_signature': razorpaySignature,
+        }));
   }
+
+  Future<Map<String, dynamic>> createAccountSubscription({
+    required bool startTrial,
+  }) async =>
+      _rawMap(await _post('/listing-subscriptions/account', body: {
+        'start_trial': startTrial,
+      }));
+
+  Future<Map<String, dynamic>?> myAccountSubscription() async {
+    final data =
+        _rawMap(await _personalGet('/listing-subscriptions/account/me'));
+    final subscription = data['subscription'];
+    return subscription is Map
+        ? subscription.map((key, value) => MapEntry(key.toString(), value))
+        : null;
+  }
+
+  Future<Map<String, dynamic>> upgradeAccountSubscription() async =>
+      _rawMap(await _post('/listing-subscriptions/account/upgrade'));
+
+  Future<Map<String, dynamic>> cancelAccountSubscription(String id) async =>
+      _rawMap(await _post('/listing-subscriptions/$id/cancel'));
 
   Future<List<Map<String, dynamic>>> sellerServiceBookings() async {
     return _asList(await _personalGet('/service-bookings/seller/mine'));

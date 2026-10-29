@@ -61,9 +61,8 @@ class _StoreOrderTrackingListState extends State<StoreOrderTrackingListPage> {
                     ...StoreMockState.instance.buyerBookings
                         .map(TrackingOrder.fromApiBooking),
                   ];
-                  final loading =
-                      StoreMockState.instance.ordersLoading ||
-                          StoreMockState.instance.bookingsLoading;
+                  final loading = StoreMockState.instance.ordersLoading ||
+                      StoreMockState.instance.bookingsLoading;
                   final error = !loading && visibleOrders.isEmpty
                       ? StoreMockState.instance.lastError
                       : null;
@@ -95,9 +94,7 @@ class _StoreOrderTrackingListState extends State<StoreOrderTrackingListPage> {
                           padding: const EdgeInsets.only(top: 12),
                           child: OutlinedButton.icon(
                             onPressed: _retry,
-                            icon: const Icon(
-                                LucideIcons.refreshCw,
-                                size: 16),
+                            icon: const Icon(LucideIcons.refreshCw, size: 16),
                             label: const Text('Retry'),
                           ),
                         ),
@@ -176,21 +173,21 @@ class _StoreOrderTrackingDetailState
       final status = StoreMockState.statusOf(data);
       if (status.isEmpty) return;
       setState(() {
-        _order = TrackingOrder(
-          id: _order.id,
-          title: _order.title,
-          status: status,
-          eta: _order.isService
-              ? (data['booking_date']?.toString() ?? _order.eta)
-              : _order.eta,
-          imageUrl: _order.imageUrl,
-          currentStep: _order.isService
-              ? TrackingOrder.stepForBookingStatus(status)
-              : TrackingOrder.stepForOrderStatus(status),
-          isService: _order.isService,
-          live: true,
-          rawStatus: status,
-        );
+        // Booking responses include resolved server prices and quantities.
+        // Rebuild from that response instead of retaining client estimates.
+        _order = _order.isService
+            ? TrackingOrder.fromApiBooking(data)
+            : TrackingOrder(
+                id: _order.id,
+                title: _order.title,
+                status: status,
+                eta: _order.eta,
+                imageUrl: _order.imageUrl,
+                currentStep: TrackingOrder.stepForOrderStatus(status),
+                isService: false,
+                live: true,
+                rawStatus: status,
+              );
       });
     } catch (_) {
       // Keep list data on failure.
@@ -322,8 +319,8 @@ class _StoreOrderTrackingDetailState
                             label: const Text('Track Order'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: BStoreColors.primary,
-                              side: const BorderSide(
-                                  color: BStoreColors.primary),
+                              side:
+                                  const BorderSide(color: BStoreColors.primary),
                               textStyle: const TextStyle(
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.w900,
@@ -492,11 +489,9 @@ class TrackingOrder {
             fm['product_details'] ??
             fm['item'] ??
             fm['listing'];
-        final pm = prod is Map
-            ? prod.map((k, v) => MapEntry(k.toString(), v))
-            : fm;
-        final lineTitle =
-            (pm['name'] ?? pm['title'] ?? 'Item').toString();
+        final pm =
+            prod is Map ? prod.map((k, v) => MapEntry(k.toString(), v)) : fm;
+        final lineTitle = (pm['name'] ?? pm['title'] ?? 'Item').toString();
         final qty = (fm['quantity'] is num)
             ? (fm['quantity'] as num).toInt()
             : int.tryParse('${fm['quantity'] ?? 1}') ?? 1;
@@ -579,13 +574,8 @@ class TrackingOrder {
       final parts = [
         ship['name'],
         ship['address_line1'] ?? ship['address'],
-        [
-          ship['city'],
-          ship['state'],
-          ship['pincode'] ?? ship['zip']
-        ]
-            .where((e) =>
-                e?.toString().trim().isNotEmpty ?? false)
+        [ship['city'], ship['state'], ship['pincode'] ?? ship['zip']]
+            .where((e) => e?.toString().trim().isNotEmpty ?? false)
             .join(', '),
       ]
           .map((e) => e?.toString().trim() ?? '')
@@ -600,11 +590,28 @@ class TrackingOrder {
     final id = StoreMockState.bookingIdOf(m);
     final status = StoreMockState.statusOf(m);
     final svc = m['service'];
-    final sm = svc is Map
-        ? svc.map((k, v) => MapEntry(k.toString(), v))
-        : m;
+    final sm = svc is Map ? svc.map((k, v) => MapEntry(k.toString(), v)) : m;
     final bookingTitle =
         (sm['name'] ?? sm['title'] ?? 'Service booking').toString();
+    final baseQuantity =
+        int.tryParse(m['base_quantity']?.toString() ?? '') ?? 1;
+    final basePrice = StoreMockState.amountOf({'amount': m['base_price']});
+    final selected = m['selected_subservices'];
+    final optionLines = <TrackingLine>[];
+    if (selected is List) {
+      for (final option in selected) {
+        if (option is! Map) continue;
+        final name = option['name']?.toString().trim() ?? '';
+        if (name.isEmpty) continue;
+        optionLines.add(TrackingLine(
+          title: name,
+          imageUrl: _imageOf(option.map((k, v) => MapEntry(k.toString(), v))),
+          quantity: int.tryParse(option['quantity']?.toString() ?? '') ?? 1,
+          price: StoreMockState.amountOf(
+              option.map((k, v) => MapEntry(k.toString(), v))),
+        ));
+      }
+    }
     return TrackingOrder(
       id: id.isEmpty ? 'booking' : id,
       title: bookingTitle,
@@ -619,9 +626,10 @@ class TrackingOrder {
         TrackingLine(
           title: bookingTitle,
           imageUrl: _imageOf(sm),
-          quantity: 1,
-          price: StoreMockState.amountOf(sm),
+          quantity: baseQuantity,
+          price: basePrice,
         ),
+        ...optionLines,
       ],
       amount: StoreMockState.amountOf(m),
       address: _addressOf(m),
@@ -715,8 +723,7 @@ class _StorePageHeader extends StatelessWidget {
             icon: const Icon(LucideIcons.arrowLeft, size: 25),
             color: BStoreColors.textPrimary,
             padding: EdgeInsets.zero,
-            constraints:
-                const BoxConstraints.tightFor(width: 40, height: 40),
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
           ),
           const SizedBox(width: 2),
           Expanded(
@@ -803,21 +810,19 @@ class TrackingOrderCard extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: TrackingOrder.colorForStatus(
-                                  order.rawStatus)
+                          color: TrackingOrder.colorForStatus(order.rawStatus)
                               .withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
-                          TrackingOrder.prettyStatus(
-                              order.rawStatus.isEmpty
-                                  ? order.status
-                                  : order.rawStatus),
+                          TrackingOrder.prettyStatus(order.rawStatus.isEmpty
+                              ? order.status
+                              : order.rawStatus),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: TrackingOrder.colorForStatus(
-                                order.rawStatus),
+                            color:
+                                TrackingOrder.colorForStatus(order.rawStatus),
                             fontSize: 11,
                             fontWeight: FontWeight.w900,
                           ),
@@ -860,8 +865,7 @@ class _ArrivalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusColor =
-        TrackingOrder.colorForStatus(order.rawStatus);
+    final statusColor = TrackingOrder.colorForStatus(order.rawStatus);
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BStoreDecorations.card(radius: 16),
@@ -884,17 +888,16 @@ class _ArrivalCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: statusColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
-                    TrackingOrder.prettyStatus(
-                        order.rawStatus.isEmpty
-                            ? order.status
-                            : order.rawStatus),
+                    TrackingOrder.prettyStatus(order.rawStatus.isEmpty
+                        ? order.status
+                        : order.rawStatus),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -1451,4 +1454,3 @@ class _StatusNoteCard extends StatelessWidget {
     );
   }
 }
-

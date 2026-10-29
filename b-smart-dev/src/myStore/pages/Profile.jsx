@@ -9,6 +9,8 @@ import useMarketplaceWishlist from '../../hooks/useMarketplaceWishlist';
 import storeProfileService from '../../services/storeProfileService';
 import influencerProductService from '../../services/influencerProductService';
 import influencerServiceService from '../../services/influencerServiceService';
+import SubscriptionTrialModal from '../components/SubscriptionTrialModal';
+import StoreSubscriptionCard from '../../components/StoreSubscriptionCard';
 
 const panel = 'bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl shadow-sm';
 const primary = 'bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange text-white rounded-lg font-semibold';
@@ -213,6 +215,7 @@ export default function StoreProfile() {
 
   return (
     <div className="box-border w-full max-w-[1280px] ml-auto px-4 md:px-8 pt-6 pb-10">
+      <SubscriptionTrialModal />
       <div className={`grid grid-cols-1 min-[900px]:grid-cols-[minmax(0,1fr)_210px] min-[1200px]:grid-cols-[minmax(0,1fr)_240px] gap-4 items-start`}>
         <main className="min-w-0">
           {profileLoading ? <ProfileHeaderSkeleton /> : (
@@ -238,6 +241,7 @@ export default function StoreProfile() {
           </div>
         </main>
         <aside aria-label="Store information" className="space-y-4 min-w-0 min-[900px]:sticky min-[900px]:top-6">
+          <StoreSubscriptionCard />
           {tab !== 'Services' && (
             <Link to="/cart" aria-label={`My Cart, ${count} ${count === 1 ? 'item' : 'items'}`} className={`${panel} min-h-[96px] px-4 py-5 flex items-center gap-3 hover:shadow-md transition-shadow`}>
               <span className="relative w-12 h-12 shrink-0 rounded-full bg-gradient-to-r from-insta-purple via-insta-pink to-insta-orange flex items-center justify-center text-white">

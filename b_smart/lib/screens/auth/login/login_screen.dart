@@ -10,6 +10,7 @@ import '../../../utils/app_error_handler.dart';
 import '../../../state/app_state.dart';
 import '../../../state/auth_actions.dart';
 import '../../home_dashboard.dart';
+import '../../../widgets/coin_reward_dialog.dart';
 import '../apple_sign_in_button.dart';
 import '../google_sign_in_button.dart';
 // Using native GoogleSignIn / secure browser flows; no embedded WebView
@@ -86,6 +87,11 @@ class _LoginScreenState extends State<LoginScreen>
           StoreProvider.of<AppState>(context)
               .dispatch(SetAuthenticated(userId));
         }
+        if (outcome.dailyRewardGranted && mounted)
+          await showCoinRewardDialog(context,
+              amount: outcome.dailyRewardAmount,
+              title: 'Daily reward unlocked!',
+              message: 'Thanks for coming back to B Smart.');
         _navigateToHome();
       }
     } catch (e, st) {

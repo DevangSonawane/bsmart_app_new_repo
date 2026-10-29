@@ -19,6 +19,7 @@ import '../api/users_api.dart';
 import '../api/posts_api.dart';
 import '../api/reels_api.dart';
 import '../services/chat_socket_service.dart';
+import '../services/call_controller.dart';
 import '../services/media_aspect_cache.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
@@ -59,7 +60,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   final _adsService = AdsService();
   final _autoSaveService = ChatMediaAutoSaveService.instance;
 
-  static const bool _showCallButtons = false;
+  static const bool _showCallButtons = true;
 
   String? _currentUserId;
   Map<String, dynamic>? _conversation;
@@ -1620,18 +1621,14 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
         actions: [
           if (_showCallButtons)
             IconButton(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Calling coming soon')),
-                );
-              },
+              onPressed: otherId.isEmpty ? null : () => CallController.instance.start(peer: CallPeer(id: otherId, name: otherName, avatar: _otherProfile?['avatar_url']?.toString())),
               icon: const Icon(LucideIcons.phone),
             ),
           if (_showCallButtons)
             IconButton(
               onPressed: () {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Video call coming soon')),
+                  const SnackBar(content: Text('Video calling is not available yet.')),
                 );
               },
               icon: const Icon(LucideIcons.video),

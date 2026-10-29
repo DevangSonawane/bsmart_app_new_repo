@@ -53,8 +53,9 @@ class _SelfStoreBookingsPageState extends State<SelfStoreBookingsPage> {
     });
   }
 
-  List<_SellerBooking> get _bookings =>
-      StoreMockState.instance.sellerBookings.map(_SellerBooking.fromApi).toList();
+  List<_SellerBooking> get _bookings => StoreMockState.instance.sellerBookings
+      .map(_SellerBooking.fromApi)
+      .toList();
 
   bool _matches(_SellerBooking booking) {
     final status = booking.status;
@@ -62,10 +63,8 @@ class _SelfStoreBookingsPageState extends State<SelfStoreBookingsPage> {
       _BookingTab.incoming =>
         status == 'pending' || status == 'confirmed' || status == 'paid',
       _BookingTab.inProgress => status == 'in_progress',
-      _BookingTab.completed =>
-        status == 'completed' || status == 'delivered',
-      _BookingTab.cancelled =>
-        status == 'cancelled' || status == 'canceled',
+      _BookingTab.completed => status == 'completed' || status == 'delivered',
+      _BookingTab.cancelled => status == 'cancelled' || status == 'canceled',
     };
   }
 
@@ -112,8 +111,7 @@ class _SelfStoreBookingsPageState extends State<SelfStoreBookingsPage> {
     return AnimatedBuilder(
       animation: StoreMockState.instance,
       builder: (context, _) {
-        final filtered =
-            _bookings.where(_matches).toList(growable: false);
+        final filtered = _bookings.where(_matches).toList(growable: false);
         final loading = StoreMockState.instance.bookingsLoading;
         return SliverList.list(
           children: [
@@ -225,14 +223,18 @@ class _SellerBooking {
     final subservices = m['selected_subservices'];
     String serviceName = _text(serviceMap, const ['name', 'title']);
     if (serviceName.isEmpty) {
-      serviceName = _text(m, const ['service_name', 'service_title'],
-          'Service booking');
+      serviceName =
+          _text(m, const ['service_name', 'service_title'], 'Service booking');
     }
     if (subservices is List && subservices.isNotEmpty) {
       final first = subservices.first;
       if (first is Map) {
         final name = first['name']?.toString().trim() ?? '';
-        if (name.isNotEmpty) serviceName = '$serviceName · $name';
+        final quantity = int.tryParse(first['quantity']?.toString() ?? '') ?? 1;
+        if (name.isNotEmpty) {
+          serviceName =
+              '$serviceName · ${quantity > 1 ? '$quantity× ' : ''}$name';
+        }
       } else if ('$first'.trim().isNotEmpty) {
         serviceName = '$serviceName · ${'$first'.trim()}';
       }
@@ -251,10 +253,7 @@ class _SellerBooking {
         addressMap['address_line1'],
         addressMap['city'],
         addressMap['pincode'],
-      ]
-          .where((e) =>
-              e != null && e.toString().trim().isNotEmpty)
-          .join(', '),
+      ].where((e) => e != null && e.toString().trim().isNotEmpty).join(', '),
       paymentMethod: _text(m, const ['payment_method'], 'wallet'),
       status: StoreMockState.statusOf(m).isEmpty
           ? 'pending'
@@ -307,8 +306,7 @@ class _BookingCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-            _BookingRow(
-                icon: LucideIcons.calendarDays, text: booking.date),
+            _BookingRow(icon: LucideIcons.calendarDays, text: booking.date),
             const SizedBox(height: 6),
             _BookingRow(icon: LucideIcons.clock, text: booking.slot),
             const SizedBox(height: 6),

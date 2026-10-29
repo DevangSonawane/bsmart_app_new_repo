@@ -6,15 +6,16 @@ import TopBar from './TopBar';
 import Sidebar from './Sidebar';
 import CreatePostModal from './CreatePostModal';
 import OnboardingTour from './OnboardingTour';
+import CoinRewardModal from './CoinRewardModal';
 import api from '../lib/api';
-import { fetchMe, setUser } from '../store/authSlice';
+import { fetchMe, setUser, clearDailyReward } from '../store/authSlice';
 import { setWalletBalance } from '../store/walletSlice';
 
 
 const Layout = () => {
   const location = useLocation();
   const dispatch = useDispatch();
-  const { userObject } = useSelector((state) => state.auth);
+  const { userObject, dailyReward } = useSelector((state) => state.auth);
   const isMessagesPage = location.pathname.startsWith('/messages');
   const isProfilePage = location.pathname.startsWith('/profile');
   const isSettingsPage = location.pathname.startsWith('/settings');
@@ -242,6 +243,14 @@ const Layout = () => {
       </div>
 
       <BottomNav onOpenCreateModal={handleOpenCreateModal} />
+
+      <CoinRewardModal
+        isOpen={!!dailyReward?.granted}
+        onClose={() => dispatch(clearDailyReward())}
+        amount={dailyReward?.amount || 0}
+        title="Daily reward!"
+        message="Thanks for coming back today — here are some coins on us."
+      />
 
       {/* Create Post Modal */}
       <CreatePostModal

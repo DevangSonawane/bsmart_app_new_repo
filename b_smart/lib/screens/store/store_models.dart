@@ -345,8 +345,9 @@ class StoreMockState extends ChangeNotifier {
     final stock = stockQuantityFor(item, variant: variant);
     if (stock == null) return 'Available';
     if (stock <= 0) return 'Out of stock';
-    if (stock <= 5) return 'Only $stock left';
-    return '$stock in stock';
+    final grouped = groupThousands('$stock');
+    if (stock <= 5) return 'Only $grouped left';
+    return '$grouped in stock';
   }
 
   bool isAtStockLimit(
@@ -821,9 +822,19 @@ class StoreMockState extends ChangeNotifier {
     return res;
   }
 
-  // ── Service bookings (direct booking, no cart per spec) ──
+  // ── Service booking order (one or more services, potentially sellers) ──
   Future<Map<String, dynamic>> createBooking(Map<String, dynamic> body) async {
-    final res = await _api.createServiceBooking(body: body);
+    final coins = body.remove('coins_to_use') as int? ?? 0;
+    final res =
+        await _api.createServiceBookingOrder(items: [body], coinsToUse: coins);
+    unawaited(refreshBuyerBookings());
+    return res;
+  }
+
+  Future<Map<String, dynamic>> createBookingOrder(
+      List<Map<String, dynamic>> items, int coinsToUse) async {
+    final res = await _api.createServiceBookingOrder(
+        items: items, coinsToUse: coinsToUse);
     unawaited(refreshBuyerBookings());
     return res;
   }

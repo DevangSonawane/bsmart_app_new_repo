@@ -1875,9 +1875,11 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
     int maxLines = 1,
   }) async {
     final tempController = TextEditingController(text: controller.text);
+    ModalRoute<String>? dialogRoute;
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) {
+        dialogRoute ??= ModalRoute.of<String>(ctx);
         return AlertDialog(
           title: Text(title),
           content: TextField(
@@ -1902,6 +1904,9 @@ class _AccountDetailsScreenState extends State<AccountDetailsScreen> {
         );
       },
     );
+    // The dialog's TextField still references tempController during the
+    // closing transition; dispose only after the route is fully removed.
+    await dialogRoute?.completed;
     tempController.dispose();
     if (result == null || !mounted) return;
     setState(() {

@@ -221,6 +221,10 @@ class _VisitorServiceDetailPageState extends State<VisitorServiceDetailPage> {
         name: name,
         price: map['price']?.toString().trim() ?? '',
         hours: (map['hours'] ?? map['duration'])?.toString().trim() ?? '',
+        imageUrl: map['image'] is Map
+            ? ((map['image']['fileUrl'] ?? map['image']['file_url'] ?? '')
+                .toString())
+            : '',
       ));
     }
     return out;
@@ -405,11 +409,13 @@ class _SubserviceInfo {
   final String name;
   final String price;
   final String hours;
+  final String imageUrl;
 
   const _SubserviceInfo({
     required this.name,
     required this.price,
     required this.hours,
+    required this.imageUrl,
   });
 }
 
@@ -820,16 +826,23 @@ class _SubserviceRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: const BoxDecoration(
-              color: Color(0xFFEAF7F6),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(LucideIcons.check,
-                color: Color(0xFF078D92), size: 16),
-          ),
+          if (info.imageUrl.isNotEmpty)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: SafeNetworkImage(
+                  url: info.imageUrl,
+                  width: 28,
+                  height: 28,
+                  debugLabel: 'service-subservice'),
+            )
+          else
+            Container(
+                width: 28,
+                height: 28,
+                decoration: const BoxDecoration(
+                    color: Color(0xFFEAF7F6), shape: BoxShape.circle),
+                child: const Icon(LucideIcons.check,
+                    color: Color(0xFF078D92), size: 16)),
           const SizedBox(width: 10),
           Expanded(
             child: Text(

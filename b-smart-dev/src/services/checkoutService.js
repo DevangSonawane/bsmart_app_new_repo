@@ -1,9 +1,12 @@
 import api from '../lib/api';
 
 export const checkoutService = {
-  checkout: async ({ paymentMethod, shippingAddress }) => {
+  // coinsToUse: how many wallet coins to apply toward the order total
+  // (clamped server-side). Defaults to 0 — fully Razorpay unless the buyer
+  // drags the payment slider.
+  checkout: async ({ coinsToUse = 0, shippingAddress }) => {
     const { data } = await api.post('/orders/checkout', {
-      payment_method: paymentMethod,
+      coins_to_use: coinsToUse,
       shipping_address: shippingAddress,
     });
     return data;
