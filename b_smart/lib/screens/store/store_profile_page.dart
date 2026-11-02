@@ -133,10 +133,12 @@ class _StoreProfilePageState extends State<StoreProfilePage> {
                       ),
                     ),
                   if (isSelf)
-                    SliverToBoxAdapter(
+                    const SliverToBoxAdapter(
                       child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                          child: StoreSubscriptionCard())),
+                        padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        child: StoreSubscriptionCard(),
+                      ),
+                    ),
                   const SliverToBoxAdapter(child: SizedBox(height: 28)),
                 ],
               );
@@ -188,34 +190,133 @@ class _ProfileBody extends StatelessWidget {
         children: [
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BStoreDecorations.card(radius: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  profile.storeName.isEmpty ? 'Store' : profile.storeName,
-                  style: const TextStyle(
-                    color: BStoreColors.textPrimary,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                  ),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF087C80), Color(0xFF166A77)],
+              ),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: BStoreColors.primary.withValues(alpha: 0.22),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
                 ),
-                if (profile.storeType.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    profile.storeType,
-                    style: const TextStyle(
-                      color: BStoreColors.accentPurple,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w900,
+              ],
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  right: -28,
+                  top: -40,
+                  child: Container(
+                    width: 132,
+                    height: 132,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.09),
                     ),
                   ),
-                ],
-                if (profile.about.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Text(profile.about, style: BStoreTypography.body),
-                ],
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.16),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.35),
+                            ),
+                          ),
+                          child: const Icon(
+                            LucideIcons.store,
+                            color: Colors.white,
+                            size: 25,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                profile.storeName.isEmpty
+                                    ? 'Store'
+                                    : profile.storeName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              if (profile.storeType.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  profile.storeType,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.78),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (profile.about.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        profile.about,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.9),
+                          fontSize: 13,
+                          height: 1.4,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                    if (badges.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(LucideIcons.badgeCheck,
+                                size: 14, color: Colors.white),
+                            SizedBox(width: 5),
+                            Text(
+                              'Trusted store',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ],
             ),
           ),
@@ -249,43 +350,46 @@ class _ProfileBody extends StatelessWidget {
           ),
           if (badges.isNotEmpty) ...[
             const SizedBox(height: 16),
-            const Text(
-              'Trust badges',
-              style: BStoreTypography.sectionTitle,
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final badge in badges) _TrustBadge(label: badge),
-              ],
+            _ProfileInfoSection(
+              icon: LucideIcons.badgeCheck,
+              title: 'Trust badges',
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final badge in badges) _TrustBadge(label: badge),
+                ],
+              ),
             ),
           ],
           if (profile.serviceAreas.isNotEmpty) ...[
             const SizedBox(height: 16),
-            const Text('Service areas', style: BStoreTypography.sectionTitle),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final area in profile.serviceAreas)
-                  _TagChip(icon: LucideIcons.mapPin, label: area),
-              ],
+            _ProfileInfoSection(
+              icon: LucideIcons.mapPin,
+              title: 'Service areas',
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final area in profile.serviceAreas)
+                    _TagChip(icon: LucideIcons.mapPin, label: area),
+                ],
+              ),
             ),
           ],
           if (profile.languages.isNotEmpty) ...[
             const SizedBox(height: 16),
-            const Text('Languages', style: BStoreTypography.sectionTitle),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final language in profile.languages)
-                  _TagChip(icon: LucideIcons.languages, label: language),
-              ],
+            _ProfileInfoSection(
+              icon: LucideIcons.languages,
+              title: 'Languages',
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final language in profile.languages)
+                    _TagChip(icon: LucideIcons.languages, label: language),
+                ],
+              ),
             ),
           ],
           if (profile.memberSince.isNotEmpty) ...[
@@ -368,6 +472,49 @@ class _StatTile extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileInfoSection extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final Widget child;
+
+  const _ProfileInfoSection({
+    required this.icon,
+    required this.title,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BStoreDecorations.card(radius: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: BStoreColors.primarySoft,
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Icon(icon, size: 15, color: BStoreColors.primary),
+              ),
+              const SizedBox(width: 9),
+              Text(title, style: BStoreTypography.sectionTitle),
+            ],
+          ),
+          const SizedBox(height: 12),
+          child,
         ],
       ),
     );

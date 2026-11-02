@@ -91,7 +91,8 @@ class PublishStep {
   });
 }
 
-/// Dark "seller studio" hero used at the top of both publish flows.
+/// Compact page header and progress timeline used at the top of both publish
+/// flows. Keeping this deliberately plain lets the form content lead.
 class PublishFlowHeader extends StatelessWidget {
   final String eyebrow;
   final String title;
@@ -120,310 +121,142 @@ class PublishFlowHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final current = steps[(step - 1).clamp(0, steps.length - 1)];
-    final pct = (completion.clamp(0.0, 1.0) * 100).round();
-    return Container(
-      margin: const EdgeInsets.fromLTRB(14, 8, 14, 0),
-      decoration: BoxDecoration(
-        gradient: PublishStyle.heroGradient,
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: [
-          BoxShadow(
-            color: PublishStyle.teal.withValues(alpha: 0.26),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          Positioned(
-            right: -54,
-            top: -66,
-            child: Container(
-              width: 168,
-              height: 168,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    PublishStyle.teal.withValues(alpha: 0.48),
-                    PublishStyle.teal.withValues(alpha: 0.0),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            left: -46,
-            bottom: -76,
-            child: Container(
-              width: 150,
-              height: 150,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    PublishStyle.purple.withValues(alpha: 0.42),
-                    PublishStyle.purple.withValues(alpha: 0.0),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              MediaQuery.of(context).padding.top + 14,
-              16,
-              18,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Material(
+      color: Colors.white,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(
+          12,
+          MediaQuery.of(context).padding.top + 8,
+          12,
+          14,
+        ),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: PublishStyle.cardBorder)),
+        ),
+        child: Column(
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    _GlassIconButton(
-                      icon: LucideIcons.chevronLeft,
-                      label: 'Back',
-                      onTap: onBack,
-                    ),
-                    const Spacer(),
-                    if (onSaveDraft != null)
-                      _GlassTextButton(
-                        label:
-                            saving ? 'Saving…' : (draftLabel ?? 'Save draft'),
-                        icon: saving ? null : LucideIcons.fileText,
-                        onTap: saving ? null : onSaveDraft,
-                        busy: saving,
-                      ),
-                  ],
+                IconButton(
+                  tooltip: 'Back',
+                  onPressed: onBack,
+                  icon: const Icon(LucideIcons.chevronLeft),
+                  color: PublishStyle.ink,
                 ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 9, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.16),
-                        ),
-                      ),
-                      child: Text(
-                        eyebrow.toUpperCase(),
-                        style: const TextStyle(
-                          color: Color(0xFFC7D0EE),
-                          fontSize: 9.5,
-                          letterSpacing: 1.05,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
+                const SizedBox(width: 2),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: PublishStyle.ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
                     ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 9, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: PublishStyle.neon.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: PublishStyle.neon.withValues(alpha: 0.4),
-                        ),
-                      ),
-                      child: Text(
-                        '$pct% ready',
-                        style: const TextStyle(
-                          color: PublishStyle.neon,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    height: 1.1,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.4,
                   ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  'Step $step of ${steps.length} · ${current.label}',
-                  style: const TextStyle(
-                    color: Color(0xFF9AA3C7),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    for (var i = 0; i < steps.length; i++) ...[
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => onStepTap(i + 1),
-                          behavior: HitTestBehavior.opaque,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              AnimatedContainer(
-                                duration: const Duration(milliseconds: 260),
-                                curve: Curves.easeOutCubic,
-                                height: 5,
-                                decoration: BoxDecoration(
-                                  color: i + 1 < step
-                                      ? PublishStyle.neon
-                                      : i + 1 == step
-                                          ? Colors.white
-                                          : Colors.white
-                                              .withValues(alpha: 0.16),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  if (i + 1 < step) ...[
-                                    const Icon(
-                                      LucideIcons.check,
-                                      size: 11,
-                                      color: PublishStyle.neon,
-                                    ),
-                                    const SizedBox(width: 4),
-                                  ],
-                                  Flexible(
-                                    child: Text(
-                                      steps[i].label,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: i + 1 <= step
-                                            ? Colors.white
-                                            : const Color(0xFF8B95BB),
-                                        fontSize: 10.5,
-                                        fontWeight: i + 1 == step
-                                            ? FontWeight.w800
-                                            : FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (i != steps.length - 1) const SizedBox(width: 10),
-                    ],
-                  ],
                 ),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _GlassIconButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _GlassIconButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: label,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.16),
-            ),
-          ),
-          child: Icon(icon, size: 20, color: Colors.white),
-        ),
-      ),
-    );
-  }
-}
-
-class _GlassTextButton extends StatelessWidget {
-  final String label;
-  final IconData? icon;
-  final VoidCallback? onTap;
-  final bool busy;
-
-  const _GlassTextButton({
-    required this.label,
-    required this.onTap,
-    this.icon,
-    this.busy = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.16),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (busy)
-              const SizedBox(
-                width: 12,
-                height: 12,
-                child: CircularProgressIndicator(
-                  strokeWidth: 1.8,
-                  valueColor: AlwaysStoppedAnimation(Colors.white),
-                ),
-              )
-            else if (icon != null)
-              Icon(icon, size: 13, color: Colors.white),
-            if (busy || icon != null) const SizedBox(width: 6),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-              ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                for (var i = 0; i < steps.length; i++) ...[
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => onStepTap(i + 1),
+                      behavior: HitTestBehavior.opaque,
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  height: 2,
+                                  color: i == 0
+                                      ? Colors.transparent
+                                      : (i < step
+                                          ? PublishStyle.teal
+                                          : PublishStyle.fieldBorder),
+                                ),
+                              ),
+                              _PublishTimelineDot(
+                                icon: steps[i].icon,
+                                active: i + 1 == step,
+                                complete: i + 1 < step,
+                              ),
+                              Expanded(
+                                child: Container(
+                                  height: 2,
+                                  color: i < steps.length - 1
+                                      ? (i + 1 < step
+                                          ? PublishStyle.teal
+                                          : PublishStyle.fieldBorder)
+                                      : Colors.transparent,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            steps[i].label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: i + 1 <= step
+                                  ? PublishStyle.ink
+                                  : PublishStyle.soft,
+                              fontSize: 11,
+                              fontWeight: i + 1 == step
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _PublishTimelineDot extends StatelessWidget {
+  final IconData icon;
+  final bool active;
+  final bool complete;
+
+  const _PublishTimelineDot({
+    required this.icon,
+    required this.active,
+    required this.complete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDone = active || complete;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: isDone ? PublishStyle.teal : Colors.white,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: isDone ? PublishStyle.teal : PublishStyle.fieldBorder,
+          width: 1.5,
+        ),
+      ),
+      child: Icon(
+        complete ? LucideIcons.check : icon,
+        size: 14,
+        color: isDone ? Colors.white : PublishStyle.soft,
       ),
     );
   }

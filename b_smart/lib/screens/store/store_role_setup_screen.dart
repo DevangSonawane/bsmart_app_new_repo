@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../api/api_exceptions.dart';
 import '../../api/phase2_store_api.dart';
 import '../../models/auth/auth_user_model.dart';
 import '../../services/auth/auth_service.dart';
@@ -163,28 +164,17 @@ class StoreRoleSetupScreen extends StatefulWidget {
 }
 
 class _StoreRoleSetupScreenState extends State<StoreRoleSetupScreen> {
-  final _businessTypeController = TextEditingController(text: 'Fashion');
+  final _businessTypeController = TextEditingController();
   final _storeNameController = TextEditingController();
   final _storeDescriptionController = TextEditingController();
   final _productController = TextEditingController();
   final _serviceController = TextEditingController();
-  final _products = <String>['clothing'];
-  final _services = <String>['styling consultation'];
+  final _products = <String>[];
+  final _services = <String>[];
 
   bool _creatorMode = true;
   bool _saving = false;
   final RazorpayCheckoutService _razorpay = RazorpayCheckoutService();
-
-  @override
-  void initState() {
-    super.initState();
-    final name = widget.user?.fullName ?? widget.user?.username;
-    _storeNameController.text = name == null || name.trim().isEmpty
-        ? 'My B-Smart Store'
-        : "$name's Store";
-    _storeDescriptionController.text =
-        'Curated products and services from my B-Smart store.';
-  }
 
   @override
   void dispose() {
@@ -225,7 +215,7 @@ class _StoreRoleSetupScreenState extends State<StoreRoleSetupScreen> {
                       children: [
                         _Input(
                           label: 'Business type',
-                          hint: 'Fashion, Home Services, Education...',
+                          hint: 'Enter your business type',
                           controller: _businessTypeController,
                         ),
                         const SizedBox(height: 12),
@@ -332,11 +322,28 @@ class _StoreRoleSetupScreenState extends State<StoreRoleSetupScreen> {
       return;
     }
 
+    final api = Phase2StoreApi();
+    setState(() => _saving = true);
+    final existingSubscription = await _activeSubscription(api);
+    if (!mounted) return;
+    if (existingSubscription != null) {
+      await _enterCreatorModeWithExistingSubscription(
+        api: api,
+        userId: userId,
+        businessType: businessType,
+        storeName: storeName,
+        description: description,
+        products: _products,
+        services: _services,
+      );
+      return;
+    }
+    setState(() => _saving = false);
+
     final startTrial = await _chooseSubscriptionStart();
     if (startTrial == null || !mounted) return;
     setState(() => _saving = true);
     try {
-      final api = Phase2StoreApi();
       final subscription =
           await api.createAccountSubscription(startTrial: startTrial);
       final raw = subscription['razorpay'];
@@ -388,6 +395,26 @@ class _StoreRoleSetupScreenState extends State<StoreRoleSetupScreen> {
           ));
         },
       );
+    } on ApiException catch (e) {
+      // `/listing-subscriptions/account` uses 409 when this account already
+      // owns a live plan, even if the account lookup was stale or unavailable.
+      if (e.statusCode == 409) {
+        await _enterCreatorModeWithExistingSubscription(
+          api: api,
+          userId: userId,
+          businessType: businessType,
+          storeName: storeName,
+          description: description,
+          products: _products,
+          services: _services,
+        );
+        return;
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Store setup failed: ${e.message}')),
+      );
+      setState(() => _saving = false);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -397,25 +424,239 @@ class _StoreRoleSetupScreenState extends State<StoreRoleSetupScreen> {
     }
   }
 
+  /// Existing active plans are owned by the account, not by this setup form.
+  /// A user returning to creator mode should not be sent through Razorpay again.
+  Future<Map<String, dynamic>?> _activeSubscription(Phase2StoreApi api) async {
+    try {
+      final subscription = await api.myAccountSubscription();
+      if (subscription == null) return null;
+      const inactiveStatuses = {'cancelled', 'canceled', 'expired', 'failed'};
+      final status = subscription['status']?.toString().trim().toLowerCase();
+      // The API can report a newly authorised Razorpay plan as `created`,
+      // `authenticated`, or `active`. All non-terminal plans should enter the
+      // store instead of attempting to create a duplicate subscription.
+      return status != null &&
+              status.isNotEmpty &&
+              !inactiveStatuses.contains(status)
+          ? subscription
+          : null;
+    } catch (_) {
+      // If the account lookup is unavailable, retain the normal setup path.
+      return null;
+    }
+  }
+
+  Future<void> _enterCreatorModeWithExistingSubscription({
+    required Phase2StoreApi api,
+    required String userId,
+    required String businessType,
+    required String storeName,
+    required String description,
+    required List<String> products,
+    required List<String> services,
+  }) async {
+    setState(() => _saving = true);
+    try {
+      await api.switchUserRole(
+        userId: userId,
+        body: {
+          'role': 'influencer',
+          'business_type': businessType,
+          'store_name': storeName,
+          'store_description': description,
+          'products_type': products,
+          'service_type': services,
+        },
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Creator mode is already active.')),
+      );
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not enable creator mode: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   Future<bool?> _chooseSubscriptionStart() => showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Activate your store'),
-          content: const Text(
-              'A Razorpay mandate is required. Choose when your ₹99/month subscription starts.'),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel')),
-            TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('7-day free trial')),
-            FilledButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Subscribe now')),
-          ],
+        builder: (context) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 22),
+          child: Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 28,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: BStoreColors.primarySoft,
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: const Icon(LucideIcons.store,
+                          color: BStoreColors.primary, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Activate your store',
+                        style: TextStyle(
+                          color: BStoreColors.textPrimary,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(LucideIcons.x, size: 20),
+                      color: BStoreColors.textMuted,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Start selling with your creator store',
+                  style: TextStyle(
+                    color: BStoreColors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'A secure Razorpay mandate keeps your ₹99/month subscription active. Choose how you would like to begin.',
+                  style: TextStyle(
+                    color: BStoreColors.textMuted,
+                    fontSize: 12.5,
+                    height: 1.4,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                _SubscriptionChoice(
+                  icon: LucideIcons.sparkles,
+                  title: 'Try free for 7 days',
+                  subtitle: 'Your first payment starts after the trial',
+                  highlighted: true,
+                  onTap: () => Navigator.pop(context, true),
+                ),
+                const SizedBox(height: 10),
+                _SubscriptionChoice(
+                  icon: LucideIcons.creditCard,
+                  title: 'Subscribe now',
+                  subtitle: '₹99/month · cancel anytime',
+                  onTap: () => Navigator.pop(context, false),
+                ),
+                const SizedBox(height: 12),
+                Center(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Not now'),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       );
+}
+
+class _SubscriptionChoice extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool highlighted;
+  final VoidCallback onTap;
+
+  const _SubscriptionChoice({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.highlighted = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = highlighted ? BStoreColors.primary : BStoreColors.textPrimary;
+    return Material(
+      color: highlighted ? BStoreColors.primarySoft : Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: highlighted ? BStoreColors.primary : BStoreColors.border,
+              width: highlighted ? 1.4 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: highlighted
+                      ? BStoreColors.primary
+                      : BStoreColors.background,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon,
+                    size: 18,
+                    color: highlighted ? Colors.white : BStoreColors.textMuted),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: TextStyle(
+                            color: color,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 3),
+                    Text(subtitle,
+                        style: const TextStyle(
+                            color: BStoreColors.textMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              Icon(LucideIcons.chevronRight, color: color, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _Header extends StatelessWidget {
