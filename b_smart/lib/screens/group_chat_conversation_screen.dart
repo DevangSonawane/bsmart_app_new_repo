@@ -17,6 +17,7 @@ import '../api/users_api.dart';
 import '../api/posts_api.dart';
 import '../api/reels_api.dart';
 import '../services/chat_socket_service.dart';
+import '../services/group_call_controller.dart';
 import '../services/chat_unread_service.dart';
 import '../services/ads_service.dart';
 import '../services/chat_media_auto_save_service.dart';
@@ -103,6 +104,18 @@ class _GroupChatConversationScreenState
   static const int _pageLimit = 20;
 
   bool _isGroupConversation() => true;
+
+  /// Starts a group call (or joins the one already live in this group).
+  void _startGroupCall(String callType) {
+    final convId = _effectiveConversationId();
+    if (convId.isEmpty) return;
+    GroupCallController.instance.start(
+      conversationId: convId,
+      callType: callType,
+      title: _groupName(),
+      avatar: _groupAvatar(),
+    );
+  }
 
   String _effectiveConversationId() {
     final fromState = (_conversation?['_id'] ??
@@ -1669,6 +1682,16 @@ class _GroupChatConversationScreenState
                 ],
               ),
               actions: [
+                IconButton(
+                  tooltip: 'Group voice call',
+                  onPressed: () => _startGroupCall('voice'),
+                  icon: const Icon(LucideIcons.phone),
+                ),
+                IconButton(
+                  tooltip: 'Group video call',
+                  onPressed: () => _startGroupCall('video'),
+                  icon: const Icon(LucideIcons.video),
+                ),
                 IconButton(
                   onPressed: () {
                     Navigator.of(context).push(

@@ -12,6 +12,7 @@ import '../services/chat_unread_service.dart';
 import '../theme/design_tokens.dart';
 import '../utils/app_error_handler.dart';
 import '../utils/current_user.dart';
+import '../widgets/call_history_view.dart';
 import '../widgets/safe_network_image.dart';
 import 'chat_conversation_screen.dart';
 import 'group_chat_conversation_screen.dart';
@@ -28,7 +29,7 @@ class MessagingScreen extends StatefulWidget {
 
 class _MessagingScreenState extends State<MessagingScreen>
     with WidgetsBindingObserver {
-  int _selectedFilter = 0; // 0=Primary, 1=Unread, 2=Community, 3=Requests
+  int _selectedFilter = 0; // 0=Primary, 1=Unread, 2=Community, 3=Requests, 4=Calls
 
   final _chatApi = ChatApi();
   final _supabase = SupabaseService();
@@ -507,7 +508,9 @@ class _MessagingScreenState extends State<MessagingScreen>
           ),
           const Divider(height: 1),
           Expanded(
-            child: _loading
+            child: _selectedFilter == 4
+                ? const CallHistoryView()
+                : _loading
                 ? const Center(
                     child: CircularProgressIndicator(
                       color: DesignTokens.instaPink,
@@ -874,7 +877,7 @@ class _MessagingScreenState extends State<MessagingScreen>
   }
 
   Widget _buildFilterToggles(BuildContext context) {
-    const labels = ['Primary', 'Unread', 'Community', 'Requests'];
+    const labels = ['Primary', 'Unread', 'Community', 'Requests', 'Calls'];
     final theme = Theme.of(context);
     final track = theme.cardColor;
 

@@ -11,6 +11,7 @@ import '../models/notification_model.dart';
 import '../utils/current_user.dart';
 import 'notification_service.dart';
 import 'call_controller.dart';
+import 'group_call_controller.dart';
 
 class PushService {
   static final PushService _instance = PushService._internal();
@@ -241,7 +242,15 @@ class PushService {
   }
 
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
-    if (message.data['type']?.toString() == 'incoming_call') {
+    final pushType = message.data['type']?.toString();
+    if (pushType == 'incoming_group_call' ||
+        (pushType == 'incoming_call' && message.data['groupCallId'] != null)) {
+      await GroupCallController.instance.receiveIncomingPush(
+        Map<String, dynamic>.from(message.data),
+      );
+      return;
+    }
+    if (pushType == 'incoming_call') {
       await CallController.instance.receiveIncomingPush(
         Map<String, dynamic>.from(message.data),
       );

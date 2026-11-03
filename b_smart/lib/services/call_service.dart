@@ -27,14 +27,16 @@ class CallService {
   Future<Map<String, dynamic>> detail(String callId) async =>
       _map(await _client.get('/calls/$callId'));
 
+  /// [tracks] is one `{mid, kind}` entry per local transceiver — one for a
+  /// voice call, two (audio + video) for a video call.
   Future<Map<String, dynamic>> publish({
     required String callId,
     required String sdpOffer,
-    required String mid,
+    required List<Map<String, String>> tracks,
   }) async =>
       _map(await _client.post('/calls/$callId/webrtc/publish', body: {
         'sdpOffer': sdpOffer,
-        'mid': mid,
+        'tracks': tracks,
       }));
 
   Future<Map<String, dynamic>> pull(String callId) async =>
@@ -69,7 +71,18 @@ class CallService {
   void trackPublished(String callId) =>
       _socket.emitCall('call:track-published', {'callId': callId});
 
-  static Map<String, dynamic> _map(dynamic data) => data is Map
+  /// Turns a live 1:1 call into a group call with [userIds] invited. Both
+  /// original parties then receive `call:escalated`.
+  void escalateToGroup(String callId, List<String> userIds,
+          void Function(Map<String, dynamic>) onAck) =>
+      _socket.emitCall(
+          'call:escalate-to-group', {'callId': callId, 'userIds': userIds},
+          ack: (data) => onAck(_map(data)));
+
+  static Map<String, dynamic> _map(dynamic data) {
+    if (data is List && data.isNotEmpty) data = data.first;
+    return data is Map
       ? data.map((key, value) => MapEntry(key.toString(), value))
       : <String, dynamic>{};
+  }
 }

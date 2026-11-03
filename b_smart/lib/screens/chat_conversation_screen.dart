@@ -1626,11 +1626,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             ),
           if (_showCallButtons)
             IconButton(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Video calling is not available yet.')),
-                );
-              },
+              onPressed: otherId.isEmpty ? null : () => CallController.instance.start(peer: CallPeer(id: otherId, name: otherName, avatar: _otherProfile?['avatar_url']?.toString()), callType: 'video'),
               icon: const Icon(LucideIcons.video),
             ),
           IconButton(
