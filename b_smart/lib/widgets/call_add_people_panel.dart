@@ -1,10 +1,7 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/follows_api.dart';
-import '../api/users_api.dart';
 import '../utils/current_user.dart';
 import 'safe_network_image.dart';
 
@@ -30,9 +27,7 @@ class _CallAddPeoplePanelState extends State<CallAddPeoplePanel> {
   final _search = TextEditingController();
   final _selected = <String, Map<String, dynamic>>{};
   List<Map<String, dynamic>> _suggested = const [];
-  List<Map<String, dynamic>> _results = const [];
   bool _loading = true;
-  Timer? _debounce;
   String? _selfId;
 
   @override
@@ -44,19 +39,27 @@ class _CallAddPeoplePanelState extends State<CallAddPeoplePanel> {
 
   @override
   void dispose() {
-    _debounce?.cancel();
     _search.dispose();
     super.dispose();
   }
 
+  /// Mirrors the web AddCallPeopleModal: the people you follow, from the paged
+  /// endpoint (`{ users: [...], total }`), filtered client-side as you type.
   Future<void> _loadSuggested() async {
     try {
       _selfId = await CurrentUser.id;
       final id = _selfId;
-      final list = id == null ? <Map<String, dynamic>>[] : await FollowsApi().getFollowing(id);
+      final users = <Map<String, dynamic>>[];
+      if (id != null && id.isNotEmpty) {
+        final page = await FollowsApi().getFollowingPage(id, limit: 100);
+        final raw = page['users'];
+        if (raw is List) {
+          users.addAll(raw.whereType<Map>().map((u) => _unwrap(Map<String, dynamic>.from(u))));
+        }
+      }
       if (!mounted) return;
       setState(() {
-        _suggested = list.map(_unwrap).toList();
+        _suggested = users;
         _loading = false;
       });
     } catch (_) {
@@ -64,27 +67,7 @@ class _CallAddPeoplePanelState extends State<CallAddPeoplePanel> {
     }
   }
 
-  void _onQuery() {
-    _debounce?.cancel();
-    final q = _search.text.trim();
-    if (q.length < 2) {
-      setState(() => _results = const []);
-      return;
-    }
-    _debounce = Timer(const Duration(milliseconds: 350), () async {
-      setState(() => _loading = true);
-      try {
-        final list = await UsersApi().search(q);
-        if (!mounted || _search.text.trim() != q) return;
-        setState(() {
-          _results = list;
-          _loading = false;
-        });
-      } catch (_) {
-        if (mounted) setState(() => _loading = false);
-      }
-    });
-  }
+  void _onQuery() => setState(() {});
 
   static Map<String, dynamic> _unwrap(Map<String, dynamic> m) {
     for (final key in const ['user', 'following', 'following_id']) {
@@ -103,10 +86,12 @@ class _CallAddPeoplePanelState extends State<CallAddPeoplePanel> {
 
   @override
   Widget build(BuildContext context) {
-    final source = _search.text.trim().length >= 2 ? _results : _suggested;
-    final users = source.where((u) {
+    final query = _search.text.trim().toLowerCase();
+    final users = _suggested.where((u) {
       final id = _id(u);
-      return id.isNotEmpty && id != _selfId && !widget.excludeIds.contains(id);
+      if (id.isEmpty || id == _selfId || widget.excludeIds.contains(id)) return false;
+      if (query.isEmpty) return true;
+      return _name(u).toLowerCase().contains(query) || (u['username']?.toString().toLowerCase().contains(query) ?? false);
     }).toList();
     final theme = Theme.of(context);
     return Material(
@@ -126,7 +111,7 @@ class _CallAddPeoplePanelState extends State<CallAddPeoplePanel> {
             child: TextField(
               controller: _search,
               decoration: InputDecoration(
-                hintText: 'Search',
+                hintText: 'Search people you follow…',
                 prefixIcon: const Icon(LucideIcons.search, size: 18),
                 isDense: true,
                 filled: true,
@@ -156,7 +141,7 @@ class _CallAddPeoplePanelState extends State<CallAddPeoplePanel> {
             child: _loading && users.isEmpty
                 ? const Center(child: CircularProgressIndicator())
                 : users.isEmpty
-                    ? const Center(child: Text('No people found'))
+                    ? const Center(child: Text('No one else to add.'))
                     : ListView.builder(
                         itemCount: users.length,
                         itemBuilder: (_, i) {
