@@ -53,7 +53,7 @@ class _StoreProfilePageState extends State<StoreProfilePage> {
     return selfId ?? _selfId;
   }
 
-  void _openEditor(StoreProfile profile) {
+  void _openEditor(StoreProfile? profile) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => StoreProfileEditPage(initial: profile),
@@ -67,8 +67,9 @@ class _StoreProfilePageState extends State<StoreProfilePage> {
     return Theme(
       data: BStoreTheme.data(context),
       child: Scaffold(
-        backgroundColor: BStoreColors.background,
+        backgroundColor: Colors.white,
         body: SafeArea(
+          bottom: false,
           child: ListenableBuilder(
             listenable: StoreProfileState.instance,
             builder: (context, _) {
@@ -76,70 +77,70 @@ class _StoreProfilePageState extends State<StoreProfilePage> {
               final profile = state.profileFor(ownerId);
               final isSelf =
                   state.isSelf(ownerId) || (_isSelf && _selfId != null);
-              return CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(
-                  parent: BouncingScrollPhysics(),
-                ),
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        8,
-                        MediaQuery.of(context).padding.top + 6,
-                        12,
-                        0,
+              return Column(
+                children: [
+                  _StorefrontTopBar(
+                    title: 'Storefront',
+                    onBack: () => Navigator.of(context).maybePop(),
+                    trailing: isSelf
+                        ? _TopBarTextAction(
+                            label: 'Edit',
+                            onPressed: () => _openEditor(profile),
+                          )
+                        : null,
+                  ),
+                  Expanded(
+                    child: Container(
+                      width: double.infinity,
+                      decoration: const BoxDecoration(
+                        color: BStoreColors.background,
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(20),
+                        ),
                       ),
-                      child: Row(
-                        children: [
-                          IconButton(
-                            onPressed: () => Navigator.of(context).maybePop(),
-                            icon: const Icon(LucideIcons.arrowLeft, size: 24),
-                            color: BStoreColors.textPrimary,
-                          ),
-                          const Expanded(
-                            child: Text(
-                              'Store profile',
-                              style: BStoreTypography.screenTitle,
+                      clipBehavior: Clip.antiAlias,
+                      child: CustomScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
+                        ),
+                        slivers: [
+                          if (state.isLoading(ownerId))
+                            const SliverToBoxAdapter(child: _ProfileSkeleton())
+                          else if (state.hasError(ownerId))
+                            SliverToBoxAdapter(
+                              child: _ProfileNotice(
+                                title: "Couldn't load store profile",
+                                body: state.errorMessage(ownerId) ??
+                                    'Please try again.',
+                                actionLabel: 'Retry',
+                                onAction: () =>
+                                    state.load(ownerId!, force: true),
+                              ),
+                            )
+                          else
+                            SliverToBoxAdapter(
+                              child: _ProfileBody(
+                                profile: profile,
+                                isSelf: isSelf,
+                              ),
+                            ),
+                          if (isSelf)
+                            const SliverToBoxAdapter(
+                              child: Padding(
+                                padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                                child: StoreSubscriptionCard(),
+                              ),
+                            ),
+                          SliverToBoxAdapter(
+                            child: SizedBox(
+                              height:
+                                  MediaQuery.viewPaddingOf(context).bottom + 28,
                             ),
                           ),
-                          if (isSelf && profile != null)
-                            TextButton(
-                              onPressed: () => _openEditor(profile),
-                              child: const Text('Edit'),
-                            ),
                         ],
                       ),
                     ),
                   ),
-                  if (state.isLoading(ownerId))
-                    const SliverToBoxAdapter(child: _ProfileSkeleton())
-                  else if (state.hasError(ownerId))
-                    SliverToBoxAdapter(
-                      child: _ProfileNotice(
-                        title: "Couldn't load store profile",
-                        body:
-                            state.errorMessage(ownerId) ?? 'Please try again.',
-                        actionLabel: 'Retry',
-                        onAction: () => state.load(ownerId!, force: true),
-                      ),
-                    )
-                  else
-                    SliverToBoxAdapter(
-                      child: _ProfileBody(
-                        profile: profile,
-                        isSelf: isSelf,
-                        onEdit:
-                            profile == null ? null : () => _openEditor(profile),
-                      ),
-                    ),
-                  if (isSelf)
-                    const SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                        child: StoreSubscriptionCard(),
-                      ),
-                    ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 28)),
                 ],
               );
             },
@@ -150,15 +151,87 @@ class _StoreProfilePageState extends State<StoreProfilePage> {
   }
 }
 
+/// White title bar that sits above the rounded storefront panel.
+class _StorefrontTopBar extends StatelessWidget {
+  final String title;
+  final VoidCallback onBack;
+  final Widget? trailing;
+
+  const _StorefrontTopBar({
+    required this.title,
+    required this.onBack,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 6, 12, 10),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: onBack,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            icon: const Icon(
+              LucideIcons.chevronLeft,
+              size: 26,
+              color: BStoreColors.textPrimary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: BStoreColors.textPrimary,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.2,
+              ),
+            ),
+          ),
+          if (trailing != null) trailing!,
+        ],
+      ),
+    );
+  }
+}
+
+class _TopBarTextAction extends StatelessWidget {
+  final String label;
+  final VoidCallback onPressed;
+
+  const _TopBarTextAction({required this.label, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: BStoreColors.primary,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        textStyle: const TextStyle(
+          fontSize: 13.5,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      child: Text(label),
+    );
+  }
+}
+
 class _ProfileBody extends StatelessWidget {
   final StoreProfile? profile;
   final bool isSelf;
-  final VoidCallback? onEdit;
 
   const _ProfileBody({
     required this.profile,
     required this.isSelf,
-    this.onEdit,
   });
 
   @override
@@ -168,264 +241,29 @@ class _ProfileBody extends StatelessWidget {
       return _ProfileNotice(
         title: isSelf ? 'Set up your store' : 'No store details yet',
         body: isSelf
-            ? 'Add a store type, the areas you serve and your languages so '
-                'customers know what you offer.'
+            ? 'Tap Edit in the top right to add a store type, the areas you '
+                'serve and your languages so customers know what you offer.'
             : 'This seller has not added a store profile yet.',
-        actionLabel: isSelf ? 'Add details' : null,
-        onAction: isSelf
-            ? () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const StoreProfileEditPage(),
-                  ),
-                )
-            : null,
       );
     }
 
-    final badges = profile.trustBadges;
+    final hasDetails = profile.storeType.isNotEmpty ||
+        profile.serviceAreas.isNotEmpty ||
+        profile.languages.isNotEmpty ||
+        profile.trustBadges.isNotEmpty ||
+        profile.memberSince.isNotEmpty;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF087C80), Color(0xFF166A77)],
-              ),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: BStoreColors.primary.withValues(alpha: 0.22),
-                  blurRadius: 24,
-                  offset: const Offset(0, 12),
-                ),
-              ],
-            ),
-            child: Stack(
-              children: [
-                Positioned(
-                  right: -28,
-                  top: -40,
-                  child: Container(
-                    width: 132,
-                    height: 132,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.09),
-                    ),
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 52,
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.16),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.35),
-                            ),
-                          ),
-                          child: const Icon(
-                            LucideIcons.store,
-                            color: Colors.white,
-                            size: 25,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                profile.storeName.isEmpty
-                                    ? 'Store'
-                                    : profile.storeName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 21,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              if (profile.storeType.isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  profile.storeType,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.78),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (profile.about.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      Text(
-                        profile.about,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.9),
-                          fontSize: 13,
-                          height: 1.4,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                    if (badges.isNotEmpty) ...[
-                      const SizedBox(height: 14),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 9, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(LucideIcons.badgeCheck,
-                                size: 14, color: Colors.white),
-                            SizedBox(width: 5),
-                            Text(
-                              'Trusted store',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _StatTile(
-                  label: 'Products',
-                  value: '${profile.productCount}',
-                  icon: LucideIcons.package,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _StatTile(
-                  label: 'Services',
-                  value: '${profile.serviceCount}',
-                  icon: LucideIcons.briefcaseBusiness,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _StatTile(
-                  label: 'Followers',
-                  value: '${profile.followersCount}',
-                  icon: LucideIcons.users,
-                ),
-              ),
-            ],
-          ),
-          if (badges.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _ProfileInfoSection(
-              icon: LucideIcons.badgeCheck,
-              title: 'Trust badges',
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final badge in badges) _TrustBadge(label: badge),
-                ],
-              ),
-            ),
-          ],
-          if (profile.serviceAreas.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _ProfileInfoSection(
-              icon: LucideIcons.mapPin,
-              title: 'Service areas',
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final area in profile.serviceAreas)
-                    _TagChip(icon: LucideIcons.mapPin, label: area),
-                ],
-              ),
-            ),
-          ],
-          if (profile.languages.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _ProfileInfoSection(
-              icon: LucideIcons.languages,
-              title: 'Languages',
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final language in profile.languages)
-                    _TagChip(icon: LucideIcons.languages, label: language),
-                ],
-              ),
-            ),
-          ],
-          if (profile.memberSince.isNotEmpty) ...[
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                const Icon(
-                  LucideIcons.calendarDays,
-                  color: BStoreColors.textMuted,
-                  size: 15,
-                ),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    'Member since ${profile.memberSince}',
-                    style: const TextStyle(
-                      color: BStoreColors.textMuted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-          if (isSelf && onEdit != null) ...[
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: onEdit,
-                icon: const Icon(LucideIcons.pencil, size: 16),
-                label: const Text('Edit store profile'),
-                style: BStoreButtons.outlined(),
-              ),
-            ),
+          _StorefrontHeader(profile: profile),
+          const SizedBox(height: 24),
+          _StoreStatsGrid(profile: profile),
+          if (hasDetails) ...[
+            const SizedBox(height: 24),
+            _StoreDetailsCard(profile: profile),
           ],
         ],
       ),
@@ -433,32 +271,257 @@ class _ProfileBody extends StatelessWidget {
   }
 }
 
-class _StatTile extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
+/// Centered avatar + name + tagline, mirroring the Trumarkz account header.
+class _StorefrontHeader extends StatelessWidget {
+  final StoreProfile profile;
 
-  const _StatTile({
-    required this.label,
-    required this.value,
+  const _StorefrontHeader({required this.profile});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasBadges = profile.trustBadges.isNotEmpty;
+    final name =
+        profile.storeName.trim().isEmpty ? 'Store' : profile.storeName.trim();
+
+    return Column(
+      children: [
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              width: 76,
+              height: 76,
+              decoration: const BoxDecoration(
+                color: BStoreColors.primarySoft,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: const Icon(
+                LucideIcons.store,
+                size: 34,
+                color: BStoreColors.primary,
+              ),
+            ),
+            if (hasBadges)
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.16),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    LucideIcons.badgeCheck,
+                    size: 15,
+                    color: BStoreColors.primary,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text(
+          name,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: BStoreColors.textPrimary,
+            fontSize: 21,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
+            height: 1.25,
+          ),
+        ),
+        if (profile.storeType.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: BStoreColors.primarySoft,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              profile.storeType.toUpperCase(),
+              style: const TextStyle(
+                color: BStoreColors.primary,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+        ],
+        if (profile.about.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: Text(
+              profile.about,
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: BStoreColors.textSecondary,
+                fontSize: 13,
+                height: 1.45,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+        if (hasBadges) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: BStoreColors.primarySoft,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  LucideIcons.badgeCheck,
+                  size: 14,
+                  color: BStoreColors.primary,
+                ),
+                SizedBox(width: 5),
+                Text(
+                  'Trusted store',
+                  style: TextStyle(
+                    color: BStoreColors.primary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Two-by-two action grid (products, services, followers, following).
+class _StoreStatsGrid extends StatelessWidget {
+  final StoreProfile profile;
+
+  const _StoreStatsGrid({required this.profile});
+
+  @override
+  Widget build(BuildContext context) {
+    final cards = <Widget>[
+      _StoreStatCard(
+        icon: LucideIcons.package,
+        value: '${profile.productCount}',
+        label: 'Products',
+      ),
+      _StoreStatCard(
+        icon: LucideIcons.briefcaseBusiness,
+        value: '${profile.serviceCount}',
+        label: 'Services',
+      ),
+      _StoreStatCard(
+        icon: LucideIcons.users,
+        value: '${profile.followersCount}',
+        label: 'Followers',
+      ),
+      _StoreStatCard(
+        icon: LucideIcons.userPlus,
+        value: '${profile.followingCount}',
+        label: 'Following',
+      ),
+    ];
+
+    return Column(
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: cards[0]),
+            const SizedBox(width: 12),
+            Expanded(child: cards[1]),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: cards[2]),
+            const SizedBox(width: 12),
+            Expanded(child: cards[3]),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _StoreStatCard extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+
+  const _StoreStatCard({
     required this.icon,
+    required this.value,
+    required this.label,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 10),
-      decoration: BStoreDecorations.card(radius: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFF1F5F9), width: 1.5),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 12,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: BStoreColors.primary, size: 18),
-          const SizedBox(height: 7),
+          Container(
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(
+              color: BStoreColors.primarySoft,
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: Icon(icon, size: 19, color: BStoreColors.primary),
+          ),
+          const SizedBox(height: 14),
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: BStoreColors.textPrimary,
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              height: 1.1,
+              letterSpacing: -0.3,
             ),
           ),
           const SizedBox(height: 2),
@@ -468,8 +531,9 @@ class _StatTile extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: BStoreColors.textMuted,
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
             ),
           ),
         ],
@@ -478,77 +542,183 @@ class _StatTile extends StatelessWidget {
   }
 }
 
-class _ProfileInfoSection extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final Widget child;
+/// "Store details" card: one row per profile attribute.
+class _StoreDetailsCard extends StatelessWidget {
+  final StoreProfile profile;
 
-  const _ProfileInfoSection({
+  const _StoreDetailsCard({required this.profile});
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+
+    void add(Widget row) {
+      if (rows.isNotEmpty) {
+        rows.add(
+          const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
+        );
+      }
+      rows.add(row);
+    }
+
+    if (profile.storeType.isNotEmpty) {
+      add(
+        _StoreDetailRow(
+          icon: LucideIcons.store,
+          label: 'Store type',
+          value: profile.storeType,
+        ),
+      );
+    }
+    if (profile.serviceAreas.isNotEmpty) {
+      add(
+        _StoreDetailRow(
+          icon: LucideIcons.mapPin,
+          label: 'Service areas',
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final area in profile.serviceAreas)
+                _ProfileChip(icon: LucideIcons.mapPin, label: area),
+            ],
+          ),
+        ),
+      );
+    }
+    if (profile.languages.isNotEmpty) {
+      add(
+        _StoreDetailRow(
+          icon: LucideIcons.languages,
+          label: 'Languages',
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final language in profile.languages)
+                _ProfileChip(icon: LucideIcons.languages, label: language),
+            ],
+          ),
+        ),
+      );
+    }
+    if (profile.trustBadges.isNotEmpty) {
+      add(
+        _StoreDetailRow(
+          icon: LucideIcons.shieldCheck,
+          label: 'Trust badges',
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final badge in profile.trustBadges)
+                _ProfileChip(icon: LucideIcons.badgeCheck, label: badge),
+            ],
+          ),
+        ),
+      );
+    }
+    if (profile.memberSince.isNotEmpty) {
+      add(
+        _StoreDetailRow(
+          icon: LucideIcons.calendarDays,
+          label: 'Member since',
+          value: profile.memberSince,
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 2, bottom: 12),
+          child: Text(
+            'Store details',
+            style: TextStyle(
+              color: BStoreColors.textMuted,
+              fontSize: 14.5,
+              fontWeight: FontWeight.w700,
+              height: 1.3,
+            ),
+          ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFF1F5F9)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0D000000),
+                blurRadius: 2,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Column(children: rows),
+        ),
+      ],
+    );
+  }
+}
+
+class _StoreDetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String? value;
+  final Widget? child;
+
+  const _StoreDetailRow({
     required this.icon,
-    required this.title,
-    required this.child,
+    required this.label,
+    this.value,
+    this.child,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BStoreDecorations.card(radius: 16),
-      child: Column(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: BStoreColors.primarySoft,
-                  borderRadius: BorderRadius.circular(9),
+          Container(
+            width: 34,
+            height: 34,
+            decoration: const BoxDecoration(
+              color: BStoreColors.primarySoft,
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: Icon(icon, size: 17, color: BStoreColors.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: BStoreColors.textMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
+                  ),
                 ),
-                child: Icon(icon, size: 15, color: BStoreColors.primary),
-              ),
-              const SizedBox(width: 9),
-              Text(title, style: BStoreTypography.sectionTitle),
-            ],
-          ),
-          const SizedBox(height: 12),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-class _TrustBadge extends StatelessWidget {
-  final String label;
-
-  const _TrustBadge({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: BStoreColors.accentPurpleSoft,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            LucideIcons.badgeCheck,
-            color: BStoreColors.accentPurple,
-            size: 14,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              color: BStoreColors.accentPurple,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w800,
+                const SizedBox(height: 4),
+                child ??
+                    Text(
+                      value ?? '',
+                      style: const TextStyle(
+                        color: BStoreColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
+                      ),
+                    ),
+              ],
             ),
           ),
         ],
@@ -557,16 +727,16 @@ class _TrustBadge extends StatelessWidget {
   }
 }
 
-class _TagChip extends StatelessWidget {
+class _ProfileChip extends StatelessWidget {
   final IconData icon;
   final String label;
 
-  const _TagChip({required this.icon, required this.label});
+  const _ProfileChip({required this.icon, required this.label});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
         color: BStoreColors.primarySoft,
         borderRadius: BorderRadius.circular(999),
@@ -574,14 +744,14 @@ class _TagChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: BStoreColors.primary, size: 13),
-          const SizedBox(width: 6),
+          Icon(icon, size: 12, color: BStoreColors.primary),
+          const SizedBox(width: 4),
           Text(
             label,
             style: const TextStyle(
               color: BStoreColors.primary,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -595,27 +765,51 @@ class _ProfileSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Widget bar({required double width, required double height}) {
+      return Container(
+        width: width,
+        height: height,
+        decoration: BStoreDecorations.card(radius: 6),
+      );
+    }
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 26, 16, 0),
       child: Column(
         children: [
           Container(
-            height: 120,
-            decoration: BStoreDecorations.card(radius: 16),
+            width: 76,
+            height: 76,
+            decoration: const BoxDecoration(
+              color: BStoreColors.primarySoft,
+              shape: BoxShape.circle,
+            ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              for (var i = 0; i < 3; i++) ...[
-                Expanded(
-                  child: Container(
-                    height: 76,
-                    decoration: BStoreDecorations.card(radius: 12),
+          const SizedBox(height: 16),
+          bar(width: 150, height: 18),
+          const SizedBox(height: 10),
+          bar(width: 90, height: 12),
+          const SizedBox(height: 26),
+          for (var row = 0; row < 2; row++) ...[
+            Row(
+              children: [
+                for (var i = 0; i < 2; i++) ...[
+                  Expanded(
+                    child: Container(
+                      height: 118,
+                      decoration: BStoreDecorations.card(radius: 20),
+                    ),
                   ),
-                ),
-                if (i != 2) const SizedBox(width: 10),
+                  if (i == 0) const SizedBox(width: 12),
+                ],
               ],
-            ],
+            ),
+            if (row == 0) const SizedBox(height: 12),
+          ],
+          const SizedBox(height: 24),
+          Container(
+            height: 170,
+            decoration: BStoreDecorations.card(radius: 16),
           ),
         ],
       ),
@@ -639,7 +833,7 @@ class _ProfileNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(18, 26, 18, 22),
@@ -756,90 +950,153 @@ class _StoreProfileEditPageState extends State<StoreProfileEditPage> {
     return Theme(
       data: BStoreTheme.data(context),
       child: Scaffold(
-        backgroundColor: BStoreColors.background,
+        backgroundColor: Colors.white,
         body: SafeArea(
-          child: ListView(
-            physics: const BouncingScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(
-              16,
-              MediaQuery.of(context).padding.top + 6,
-              16,
-              MediaQuery.of(context).padding.bottom + 24,
-            ),
+          bottom: false,
+          child: Column(
             children: [
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    icon: const Icon(LucideIcons.arrowLeft, size: 24),
-                    color: BStoreColors.textPrimary,
-                  ),
-                  const Expanded(
-                    child: Text(
-                      'Edit store profile',
-                      style: BStoreTypography.screenTitle,
+              _StorefrontTopBar(
+                title: 'Edit storefront',
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+              Expanded(
+                child: Container(
+                  width: double.infinity,
+                  decoration: const BoxDecoration(
+                    color: BStoreColors.background,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(20),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              _LabeledField(
-                controller: _storeType,
-                label: 'Store type',
-                hint: 'e.g. Personal Store',
-              ),
-              const SizedBox(height: 18),
-              _ListEditor(
-                title: 'Service areas',
-                hint: 'Add an area, then press enter',
-                values: _serviceAreas,
-                suggestions: const ['Mumbai', 'Delhi', 'Online', 'Remote'],
-                onChanged: (v) => setState(() => _serviceAreas = v),
-              ),
-              const SizedBox(height: 18),
-              _ListEditor(
-                title: 'Languages',
-                hint: 'Add a language, then press enter',
-                values: _languages,
-                suggestions: const ['English', 'Hindi', 'Marathi', 'Tamil'],
-                onChanged: (v) => setState(() => _languages = v),
-              ),
-              const SizedBox(height: 18),
-              _ListEditor(
-                title: 'Trust badges',
-                hint: 'Add a badge, then press enter',
-                values: _trustBadges,
-                suggestions: const [
-                  'Professional',
-                  'Trusted',
-                  'Reliable',
-                  'Verified',
-                ],
-                onChanged: (v) => setState(() => _trustBadges = v),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: FilledButton(
-                  onPressed: _saving ? null : _save,
-                  style: BStoreButtons.filled(radius: 10),
-                  child: _saving
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text(
-                          'Save changes',
-                          style: TextStyle(
-                            fontSize: 15.5,
-                            fontWeight: FontWeight.w900,
-                          ),
+                  clipBehavior: Clip.antiAlias,
+                  child: ListView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      20,
+                      16,
+                      MediaQuery.viewPaddingOf(context).bottom + 24,
+                    ),
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x0D000000),
+                              blurRadius: 2,
+                              offset: Offset(0, 1),
+                            ),
+                          ],
                         ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              'Update what customers see on your storefront. '
+                              'Only the fields you change are saved.',
+                              style: TextStyle(
+                                color: BStoreColors.textMuted,
+                                fontSize: 12.5,
+                                height: 1.45,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            _LabeledField(
+                              controller: _storeType,
+                              label: 'Store type',
+                              hint: 'e.g. Personal Store',
+                              icon: LucideIcons.store,
+                              enabled: !_saving,
+                            ),
+                            const SizedBox(height: 22),
+                            _ListEditor(
+                              title: 'Service areas',
+                              hint: 'Add an area, then press enter',
+                              icon: LucideIcons.mapPin,
+                              values: _serviceAreas,
+                              suggestions: const [
+                                'Mumbai',
+                                'Delhi',
+                                'Online',
+                                'Remote',
+                              ],
+                              enabled: !_saving,
+                              onChanged: (v) =>
+                                  setState(() => _serviceAreas = v),
+                            ),
+                            const SizedBox(height: 22),
+                            _ListEditor(
+                              title: 'Languages',
+                              hint: 'Add a language, then press enter',
+                              icon: LucideIcons.languages,
+                              values: _languages,
+                              suggestions: const [
+                                'English',
+                                'Hindi',
+                                'Marathi',
+                                'Tamil',
+                              ],
+                              enabled: !_saving,
+                              onChanged: (v) => setState(() => _languages = v),
+                            ),
+                            const SizedBox(height: 22),
+                            _ListEditor(
+                              title: 'Trust badges',
+                              hint: 'Add a badge, then press enter',
+                              icon: LucideIcons.shieldCheck,
+                              values: _trustBadges,
+                              suggestions: const [
+                                'Professional',
+                                'Trusted',
+                                'Reliable',
+                                'Verified',
+                              ],
+                              enabled: !_saving,
+                              onChanged: (v) =>
+                                  setState(() => _trustBadges = v),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        height: 52,
+                        child: FilledButton(
+                          onPressed: _saving ? null : _save,
+                          style: BStoreButtons.filled(radius: 14),
+                          child: _saving
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(LucideIcons.check, size: 18),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Save changes',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -850,49 +1107,26 @@ class _StoreProfileEditPageState extends State<StoreProfileEditPage> {
   }
 }
 
-class _LabeledField extends StatelessWidget {
-  final TextEditingController controller;
+class _FieldLabel extends StatelessWidget {
+  final IconData icon;
   final String label;
-  final String hint;
 
-  const _LabeledField({
-    required this.controller,
-    required this.label,
-    this.hint = '',
-  });
+  const _FieldLabel({required this.icon, required this.label});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
       children: [
-        Text(label, style: BStoreTypography.sectionTitle),
-        const SizedBox(height: 8),
-        TextField(
-          controller: controller,
-          style: const TextStyle(
-            color: BStoreColors.textPrimary,
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: const TextStyle(color: BStoreColors.textMuted),
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: BStoreColors.border),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: BStoreColors.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: BStoreColors.primary),
+        Icon(icon, size: 14, color: BStoreColors.textMuted),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: BStoreColors.textSecondary,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              height: 1.3,
             ),
           ),
         ),
@@ -901,20 +1135,92 @@ class _LabeledField extends StatelessWidget {
   }
 }
 
+class _LabeledField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final String hint;
+  final IconData icon;
+  final bool enabled;
+
+  const _LabeledField({
+    required this.controller,
+    required this.label,
+    required this.icon,
+    this.hint = '',
+    this.enabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _FieldLabel(icon: icon, label: label),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          enabled: enabled,
+          style: const TextStyle(
+            color: BStoreColors.textPrimary,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+          decoration: _fieldDecoration(hint),
+        ),
+      ],
+    );
+  }
+}
+
+InputDecoration _fieldDecoration(String hint) {
+  return InputDecoration(
+    hintText: hint,
+    hintStyle: const TextStyle(
+      color: BStoreColors.textMuted,
+      fontSize: 13.5,
+      fontWeight: FontWeight.w500,
+    ),
+    filled: true,
+    fillColor: const Color(0xFFF8FAFC),
+    isDense: true,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+    ),
+    disabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: Color(0xFFEDF1F5)),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: BStoreColors.primary, width: 1.5),
+    ),
+  );
+}
+
 /// Chip-style editor for a list of short strings (areas, languages, badges).
 class _ListEditor extends StatefulWidget {
   final String title;
   final String hint;
+  final IconData icon;
   final List<String> values;
   final List<String> suggestions;
   final ValueChanged<List<String>> onChanged;
+  final bool enabled;
 
   const _ListEditor({
     required this.title,
     required this.hint,
+    required this.icon,
     required this.values,
     required this.onChanged,
     this.suggestions = const [],
+    this.enabled = true,
   });
 
   @override
@@ -937,6 +1243,7 @@ class _ListEditorState extends State<_ListEditor> {
   }
 
   void _add([String? raw]) {
+    if (!widget.enabled) return;
     final value = (raw ?? _controller.text).trim();
     if (value.isEmpty) return;
     if (!widget.values.any((v) => v.toLowerCase() == value.toLowerCase())) {
@@ -950,55 +1257,44 @@ class _ListEditorState extends State<_ListEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(widget.title, style: BStoreTypography.sectionTitle),
+        _FieldLabel(icon: widget.icon, label: widget.title),
         const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _controller,
-                textInputAction: TextInputAction.done,
-                onSubmitted: _add,
-                style: const TextStyle(
-                  color: BStoreColors.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-                decoration: InputDecoration(
-                  hintText: widget.hint,
-                  hintStyle: const TextStyle(color: BStoreColors.textMuted),
-                  filled: true,
-                  fillColor: Colors.white,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: BStoreColors.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: BStoreColors.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: BStoreColors.primary),
-                  ),
-                ),
+        TextField(
+          controller: _controller,
+          enabled: widget.enabled,
+          textInputAction: TextInputAction.done,
+          onSubmitted: _add,
+          style: const TextStyle(
+            color: BStoreColors.textPrimary,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+          decoration: _fieldDecoration(widget.hint),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: widget.enabled ? _add : null,
+            icon: const Icon(LucideIcons.plus, size: 16),
+            label: const Text('Add'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: BStoreColors.primary,
+              side: const BorderSide(color: BStoreColors.primary),
+              minimumSize: const Size(0, 38),
+              padding: const EdgeInsets.symmetric(horizontal: 13),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
               ),
             ),
-            const SizedBox(width: 8),
-            SizedBox(
-              height: 44,
-              child: FilledButton(
-                onPressed: _add,
-                style: BStoreButtons.filled(radius: 10),
-                child: const Icon(LucideIcons.plus, size: 18),
-              ),
-            ),
-          ],
+          ),
         ),
         if (widget.suggestions.isNotEmpty) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Wrap(
             spacing: 7,
             runSpacing: 7,
@@ -1007,16 +1303,16 @@ class _ListEditorState extends State<_ListEditor> {
                 if (!widget.values
                     .any((v) => v.toLowerCase() == suggestion.toLowerCase()))
                   GestureDetector(
-                    onTap: () => _add(suggestion),
+                    onTap: widget.enabled ? () => _add(suggestion) : null,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
-                        vertical: 5,
+                        vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: BStoreColors.backgroundAlt,
+                        color: const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: BStoreColors.border),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -1068,9 +1364,13 @@ class _ListEditorState extends State<_ListEditor> {
                       ),
                       const SizedBox(width: 3),
                       GestureDetector(
-                        onTap: () => widget.onChanged(
-                          widget.values.where((v) => v != value).toList(),
-                        ),
+                        onTap: widget.enabled
+                            ? () => widget.onChanged(
+                                  widget.values
+                                      .where((v) => v != value)
+                                      .toList(),
+                                )
+                            : null,
                         child: const Icon(
                           LucideIcons.x,
                           color: BStoreColors.primary,

@@ -289,7 +289,7 @@ class _VisitorServiceDetailPageState extends State<VisitorServiceDetailPage> {
     final similar = _similarServices(item);
     final hasOwner = (widget.ownerUserId?.trim().isNotEmpty == true);
     return Scaffold(
-      backgroundColor: const Color(0xFFFFFEFC),
+      backgroundColor: const Color(0xFFFAFAF8),
       body: SafeArea(
         top: false,
         child: Column(
@@ -446,7 +446,7 @@ class _ServiceGalleryState extends State<_ServiceGallery> {
   Widget build(BuildContext context) {
     final images = widget.images.isEmpty ? const [''] : widget.images;
     return SizedBox(
-      height: 304,
+      height: 332,
       width: double.infinity,
       child: Stack(
         children: [
@@ -454,12 +454,16 @@ class _ServiceGalleryState extends State<_ServiceGallery> {
             controller: _controller,
             itemCount: images.length,
             onPageChanged: (i) => setState(() => _index = i),
-            itemBuilder: (_, i) => StoreItemImage(
-              imageUrl: images[i],
-              icon: LucideIcons.briefcaseBusiness,
-              width: double.infinity,
-              height: 304,
-              debugLabel: 'store-service-detail',
+            itemBuilder: (_, i) => ClipRRect(
+              borderRadius:
+                  const BorderRadius.vertical(bottom: Radius.circular(24)),
+              child: StoreItemImage(
+                imageUrl: images[i],
+                icon: LucideIcons.briefcaseBusiness,
+                width: double.infinity,
+                height: 332,
+                debugLabel: 'store-service-detail',
+              ),
             ),
           ),
           Positioned(
@@ -605,31 +609,22 @@ class _ServiceTitleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
-      decoration: storeSoftCardDecoration(radius: 16),
+      padding: const EdgeInsets.fromLTRB(2, 2, 2, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Flexible(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1ECFA),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    category.toUpperCase(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF684AC8),
-                      fontSize: 11,
-                      letterSpacing: 0.4,
-                      fontWeight: FontWeight.w900,
-                    ),
+                child: Text(
+                  category.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF667085),
+                    fontSize: 10.5,
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
@@ -640,7 +635,7 @@ class _ServiceTitleCard extends StatelessWidget {
             title,
             style: const TextStyle(
               color: Color(0xFF060D35),
-              fontSize: 22,
+              fontSize: 26,
               height: 1.16,
               fontWeight: FontWeight.w900,
             ),
@@ -657,34 +652,39 @@ class _ServiceTitleCard extends StatelessWidget {
               ),
             ),
           ],
-          const SizedBox(height: 14),
-          Text(
-            priceLabel,
-            style: const TextStyle(
-              color: Color(0xFF060D35),
-              fontSize: 25,
-              height: 1,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            duration.trim().isEmpty ? 'Service booking' : duration,
-            style: const TextStyle(
-              color: Color(0xFF55607A),
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 14),
           Row(
             children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      priceLabel,
+                      style: const TextStyle(
+                        color: Color(0xFF060D35),
+                        fontSize: 23,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      duration.trim().isEmpty ? 'Service booking' : duration,
+                      style: const TextStyle(
+                        color: Color(0xFF667085),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               if (ratingValue != null)
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF388E3C),
+                    color: const Color(0xFF101828),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Row(
@@ -721,21 +721,21 @@ class _ServiceTitleCard extends StatelessWidget {
                     ),
                   ),
                 ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  reviewsCount > 0
-                      ? '$reviewsCount review${reviewsCount == 1 ? '' : 's'}'
-                      : 'No reviews yet',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF55607A),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+              if (reviewsCount > 0) ...[
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    '$reviewsCount review${reviewsCount == 1 ? '' : 's'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF55607A),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ],
@@ -753,7 +753,11 @@ class _SubservicesCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: storeSoftCardDecoration(radius: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E4E8)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -885,13 +889,9 @@ class _ServiceHighlightsCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFEAF7F6), Color(0xFFDDF0EE)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF078D92), width: 1.2),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E4E8)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -902,11 +902,11 @@ class _ServiceHighlightsCard extends StatelessWidget {
                 width: 38,
                 height: 38,
                 decoration: const BoxDecoration(
-                  color: Color(0xFF078D92),
+                  color: Color(0xFFF1F3F5),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(LucideIcons.packageCheck,
-                    color: Colors.white, size: 19),
+                    color: Color(0xFF344054), size: 19),
               ),
               const SizedBox(width: 11),
               const Expanded(
@@ -919,22 +919,6 @@ class _ServiceHighlightsCard extends StatelessWidget {
                   ),
                 ),
               ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF078D92),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  '${highlights.length}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -942,8 +926,8 @@ class _ServiceHighlightsCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
+                color: const Color(0xFFFAFAFA),
+                borderRadius: BorderRadius.circular(10),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -952,7 +936,7 @@ class _ServiceHighlightsCard extends StatelessWidget {
                     width: 22,
                     height: 22,
                     decoration: const BoxDecoration(
-                      color: Color(0xFF078D92),
+                      color: Color(0xFF101828),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(LucideIcons.check,
@@ -998,7 +982,11 @@ class _ServiceDetailsAccordion extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: storeSoftCardDecoration(radius: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E4E8)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1163,7 +1151,11 @@ class _ProviderCard extends StatelessWidget {
         : (isLoading ? 'Loading provider...' : 'Store owner');
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: storeSoftCardDecoration(radius: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E4E8)),
+      ),
       child: Row(
         children: [
           _ProviderAvatar(
@@ -1331,12 +1323,9 @@ class _ServiceReviewsSummary extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF078D92), Color(0xFF056B70)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E4E8)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1344,12 +1333,12 @@ class _ServiceReviewsSummary extends StatelessWidget {
           const Row(
             children: [
               Icon(LucideIcons.messageSquareHeart,
-                  color: Colors.white, size: 18),
+                  color: Color(0xFF344054), size: 18),
               SizedBox(width: 9),
               Text(
                 'Customer ratings',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: Color(0xFF101828),
                   fontSize: 15,
                   fontWeight: FontWeight.w900,
                 ),
@@ -1365,7 +1354,7 @@ class _ServiceReviewsSummary extends StatelessWidget {
                     ? ratingValue!.toStringAsFixed(1)
                     : (ratingLabel.isEmpty ? 'New' : ratingLabel),
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: Color(0xFF101828),
                   fontSize: 44,
                   height: 1,
                   fontWeight: FontWeight.w900,
@@ -1377,7 +1366,7 @@ class _ServiceReviewsSummary extends StatelessWidget {
                 child: Text(
                   '/ 5',
                   style: TextStyle(
-                    color: Colors.white70,
+                    color: Color(0xFF667085),
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
@@ -1396,8 +1385,8 @@ class _ServiceReviewsSummary extends StatelessWidget {
                             LucideIcons.star,
                             size: 15,
                             color: i < full
-                                ? Colors.white
-                                : Colors.white.withValues(alpha: 0.35),
+                                ? const Color(0xFFF59E0B)
+                                : const Color(0xFFD0D5DD),
                           ),
                         ),
                     ],
@@ -1407,8 +1396,8 @@ class _ServiceReviewsSummary extends StatelessWidget {
                     reviewsCount > 0
                         ? '$reviewsCount verified review${reviewsCount == 1 ? '' : 's'}'
                         : 'No reviews yet',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.85),
+                    style: const TextStyle(
+                      color: Color(0xFF667085),
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
                     ),

@@ -262,17 +262,6 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
 
     return SliverList.list(
       children: [
-        const _VisitorStoreTopBar(),
-        FutureBuilder<_VisitorStoreOwner?>(
-          future: _ownerFuture,
-          builder: (context, snapshot) {
-            return _SellerHeroCard(
-              owner: snapshot.data,
-              isLoading: snapshot.connectionState != ConnectionState.done,
-              ownerUserId: widget.ownerUserId,
-            );
-          },
-        ),
         Builder(
           builder: (context) {
             final profile =
@@ -283,6 +272,7 @@ class _VisitorStoreHomePageState extends State<VisitorStoreHomePage> {
                 : (_sellerName?.isNotEmpty == true ? _sellerName : 'Store');
             final storeType = profile?.storeType.trim() ?? '';
             return SwiggyMarketplaceHeader(
+              topStatusPadding: true,
               userName: headerName,
               userSubtitle: storeType.isNotEmpty ? storeType : null,
               onUserTap: () => Navigator.of(context).push(
