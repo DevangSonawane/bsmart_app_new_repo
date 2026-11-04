@@ -109,11 +109,16 @@ class _BottomNavState extends State<BottomNav> {
     required IconData icon,
     required bool isActive,
   }) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final color = isActive
-        ? DesignTokens.instaPink
-        : (isDark ? Colors.white : Colors.black);
+    // Use Lucide's thinner glyph set without changing the icon dimensions.
+    final color = isActive ? DesignTokens.instaPink : Colors.black;
+    final displayIcon = isActive
+        ? icon
+        : IconData(
+            icon.codePoint,
+            fontFamily: 'Lucide300',
+            fontPackage: 'lucide_icons_flutter',
+            matchTextDirection: icon.matchTextDirection,
+          );
     final child = InkWell(
       onTap: () => widget.onTap(index),
       borderRadius: BorderRadius.circular(12),
@@ -124,7 +129,7 @@ class _BottomNavState extends State<BottomNav> {
           height: _navIconBoxSize,
           child: Center(
             child: Icon(
-              icon,
+              displayIcon,
               size: 30,
               color: color,
             ),

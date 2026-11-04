@@ -873,19 +873,42 @@ class _StoreItemsGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         const gap = 10.0;
-        final width = constraints.maxWidth.isFinite
-            ? constraints.maxWidth
-            : MediaQuery.sizeOf(context).width - 20;
-        final columnWidth = ((width - gap) / 2).clamp(120.0, 260.0);
-        return GridView.count(
-          padding: EdgeInsets.zero,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          crossAxisSpacing: gap,
-          mainAxisSpacing: 12,
-          childAspectRatio: columnWidth / MarketplaceListingCard.gridHeight,
-          children: children,
+        const verticalGap = 12.0;
+        const rightColumnOffset = 38.0;
+        final leftItems = <Widget>[];
+        final rightItems = <Widget>[];
+        for (var index = 0; index < children.length; index++) {
+          (index.isEven ? leftItems : rightItems).add(children[index]);
+        }
+
+        Widget listingColumn(List<Widget> items, {double topPadding = 0}) {
+          return Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(top: topPadding),
+              child: Column(
+                children: [
+                  for (var index = 0; index < items.length; index++) ...[
+                    SizedBox(
+                      height: MarketplaceListingCard.gridHeight,
+                      width: double.infinity,
+                      child: items[index],
+                    ),
+                    if (index < items.length - 1)
+                      const SizedBox(height: verticalGap),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            listingColumn(leftItems),
+            const SizedBox(width: gap),
+            listingColumn(rightItems, topPadding: rightColumnOffset),
+          ],
         );
       },
     );

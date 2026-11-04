@@ -2261,8 +2261,16 @@ class _StoreFooterIconButtonState extends State<_StoreFooterIconButton> {
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        widget.selected ? BStoreColors.primary : BStoreColors.textSecondary;
+    // Use Lucide's thinner glyph set without changing the icon dimensions.
+    final color = widget.selected ? BStoreColors.primary : Colors.black;
+    final icon = widget.selected
+        ? widget.item.icon
+        : IconData(
+            widget.item.icon.codePoint,
+            fontFamily: 'Lucide300',
+            fontPackage: 'lucide_icons_flutter',
+            matchTextDirection: widget.item.icon.matchTextDirection,
+          );
 
     if (widget.isCenterAdd) {
       return Transform.translate(
@@ -2314,7 +2322,7 @@ class _StoreFooterIconButtonState extends State<_StoreFooterIconButton> {
           width: 34,
           height: 34,
           child: Center(
-            child: Icon(widget.item.icon, color: color, size: 30),
+            child: Icon(icon, color: color, size: 30),
           ),
         ),
       ),
