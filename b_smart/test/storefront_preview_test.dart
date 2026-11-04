@@ -1,10 +1,8 @@
-import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
-import 'package:b_smart/config/api_config.dart';
 import 'package:b_smart/models/store_profile.dart';
 import 'package:b_smart/screens/store/store_profile_page.dart';
+import 'package:b_smart/screens/store/store_profile_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -41,34 +39,8 @@ void main() {
   });
 
   testWidgets('storefront profile preview', (tester) async {
-    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    server.listen((request) async {
-      request.response.headers.contentType = ContentType.json;
-      request.response.write(
-        jsonEncode({
-          'store': {
-            'store_name': 'Meera Design Studio',
-            'store_type': 'Personal Store',
-            'about': 'Hand-painted home decor, custom murals and styling for '
-                'small spaces across Mumbai.',
-            'service_areas': ['Mumbai', 'Thane', 'Navi Mumbai', 'Online'],
-            'languages': ['English', 'Hindi', 'Marathi'],
-            'trust_badges': ['Verified', 'Top rated', 'Fast delivery'],
-            'followers_count': 1284,
-            'following_count': 37,
-            'product_count': 24,
-            'service_count': 6,
-            'member_since': 'Mar 2024',
-          },
-        }),
-      );
-      await request.response.close();
-    });
-    ApiConfig.init(baseUrl: 'http://127.0.0.1:${server.port}');
-
-    final messenger =
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-    messenger.setMockMethodCallHandler(
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
       const MethodChannel('dev.fluttercommunity.plus/connectivity'),
       (call) async => <String>['wifi'],
     );
@@ -77,17 +49,27 @@ void main() {
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
 
+    // Seed the cache so the page renders the loaded state, not a spinner.
+    StoreProfileState.instance.debugSeed(
+      'seller-1',
+      _profile,
+      asSelf: true,
+    );
+
     await tester.pumpWidget(
       const MaterialApp(home: StoreProfilePage(ownerUserId: 'seller-1')),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Meera Design Studio'), findsOneWidget);
+    expect(find.text('Edit'), findsOneWidget);
+    expect(find.text('Products'), findsOneWidget);
 
     await expectLater(
       find.byType(StoreProfilePage),
       matchesGoldenFile('goldens/storefront_profile.png'),
     );
-
-    await server.close(force: true);
   });
 
   testWidgets('storefront edit preview', (tester) async {
@@ -98,7 +80,8 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(home: StoreProfileEditPage(initial: _profile)),
     );
-    await tester.pumpAndSettle();
+    // Text fields blink their caret forever, so settle is not an option here.
+    await tester.pump(const Duration(milliseconds: 400));
 
     await expectLater(
       find.byType(StoreProfileEditPage),

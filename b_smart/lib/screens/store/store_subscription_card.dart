@@ -35,6 +35,9 @@ class _StoreSubscriptionCardState extends State<StoreSubscriptionCard> {
   Future<void> _load() async {
     try {
       _subscription = await _api.myAccountSubscription();
+    } catch (_) {
+      // Offline or signed out: fall back to the upsell card below.
+      _subscription = null;
     } finally {
       if (mounted) setState(() => _loading = false);
     }

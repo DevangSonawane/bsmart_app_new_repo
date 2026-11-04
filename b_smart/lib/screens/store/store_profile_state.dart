@@ -167,6 +167,19 @@ class StoreProfileState extends ChangeNotifier {
     );
   }
 
+  /// Seeds the cache so widget/golden tests can render a loaded profile
+  /// without hitting the network.
+  @visibleForTesting
+  void debugSeed(String userId, StoreProfile profile, {bool asSelf = false}) {
+    final id = userId.trim();
+    if (id.isEmpty) return;
+    _profiles[id] = profile;
+    _errors.remove(id);
+    _loading.remove(id);
+    if (asSelf) _selfId = id;
+    notifyListeners();
+  }
+
   /// Marks the signed-in user so `isSelf` works before the first update.
   void setSelfId(String? id) {
     final trimmed = id?.trim();
