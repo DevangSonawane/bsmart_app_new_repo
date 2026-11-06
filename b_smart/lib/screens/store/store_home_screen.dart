@@ -2261,16 +2261,10 @@ class _StoreFooterIconButtonState extends State<_StoreFooterIconButton> {
 
   @override
   Widget build(BuildContext context) {
-    // Use Lucide's thinner glyph set without changing the icon dimensions.
     final color = widget.selected ? BStoreColors.primary : Colors.black;
-    final icon = widget.selected
-        ? widget.item.icon
-        : IconData(
-            widget.item.icon.codePoint,
-            fontFamily: 'Lucide300',
-            fontPackage: 'lucide_icons_flutter',
-            matchTextDirection: widget.item.icon.matchTextDirection,
-          );
+    // IconData must remain compile-time constant for Flutter to tree-shake
+    // the icon font in release builds.
+    final icon = widget.item.icon;
 
     if (widget.isCenterAdd) {
       return Transform.translate(

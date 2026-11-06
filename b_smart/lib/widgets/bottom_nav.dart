@@ -109,16 +109,10 @@ class _BottomNavState extends State<BottomNav> {
     required IconData icon,
     required bool isActive,
   }) {
-    // Use Lucide's thinner glyph set without changing the icon dimensions.
     final color = isActive ? DesignTokens.instaPink : Colors.black;
-    final displayIcon = isActive
-        ? icon
-        : IconData(
-            icon.codePoint,
-            fontFamily: 'Lucide300',
-            fontPackage: 'lucide_icons_flutter',
-            matchTextDirection: icon.matchTextDirection,
-          );
+    // IconData must remain compile-time constant for Flutter to tree-shake
+    // the icon font in release builds.
+    final displayIcon = icon;
     final child = InkWell(
       onTap: () => widget.onTap(index),
       borderRadius: BorderRadius.circular(12),
