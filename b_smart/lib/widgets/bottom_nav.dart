@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:showcaseview/showcaseview.dart';
+
 import '../theme/design_tokens.dart';
 import '../services/home_onboarding_service.dart';
 import 'showcase_tooltip_actions.dart';
@@ -109,7 +110,15 @@ class _BottomNavState extends State<BottomNav> {
     required IconData icon,
     required bool isActive,
   }) {
-    final color = isActive ? DesignTokens.instaPink : Colors.black;
+    // The custom navigation bar does not inherit BottomNavigationBarThemeData,
+    // so provide its inactive color explicitly. Black icons disappear against
+    // the dark scaffold/background.
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final color = isActive
+        ? DesignTokens.instaPink
+        : (isDark
+              ? Theme.of(context).colorScheme.onSurfaceVariant
+              : Colors.black);
     // IconData must remain compile-time constant for Flutter to tree-shake
     // the icon font in release builds.
     final displayIcon = icon;
@@ -121,13 +130,7 @@ class _BottomNavState extends State<BottomNav> {
         child: SizedBox(
           width: _navIconBoxSize,
           height: _navIconBoxSize,
-          child: Center(
-            child: Icon(
-              displayIcon,
-              size: 30,
-              color: color,
-            ),
-          ),
+          child: Center(child: Icon(displayIcon, size: 30, color: color)),
         ),
       ),
     );
@@ -163,11 +166,7 @@ class _BottomNavState extends State<BottomNav> {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                Color(0xFFF09433),
-                Color(0xFFDC2743),
-                Color(0xFFBC1888),
-              ],
+              colors: [Color(0xFFF09433), Color(0xFFDC2743), Color(0xFFBC1888)],
             ),
             boxShadow: [
               BoxShadow(
@@ -290,14 +289,7 @@ class _BottomNavShapePainter extends CustomPainter {
     final path = Path()
       ..moveTo(0, 0)
       ..lineTo(notchLeft - shoulderWidth, 0)
-      ..cubicTo(
-        notchLeft + 2,
-        0,
-        centerX - 28,
-        notchDepth,
-        centerX,
-        notchDepth,
-      )
+      ..cubicTo(notchLeft + 2, 0, centerX - 28, notchDepth, centerX, notchDepth)
       ..cubicTo(
         centerX + 28,
         notchDepth,

@@ -1223,28 +1223,24 @@ class _StoreScreenState extends State<StoreScreen> {
 
   Widget _buildSection(_StoreNavSection section) {
     return switch (section) {
-      _StoreNavSection.home => widget.isSelfStore
-          ? const StoreRoleGateSliver(
-              child: VisitorMarketplaceHomePage(
-                  showTopBar: false, showSellerHero: false),
-            )
-          : VisitorMarketplaceHomePage(
-              ownerUserId: widget.ownerUserId,
-              showTopBar: false,
-              showSellerHero: false,
-            ),
+      // Marketplace browsing and checkout are available to every member.
+      // Restrict only seller-management sections below, rather than placing
+      // the creator gate around the marketplace when it is opened from the
+      // user's own store/dashboard route.
+      _StoreNavSection.home => VisitorMarketplaceHomePage(
+          ownerUserId: widget.isSelfStore ? null : widget.ownerUserId,
+          showTopBar: false,
+          showSellerHero: false,
+        ),
       _StoreNavSection.myStore => const StoreRoleGateSliver(
           child: SelfStoreDashboardPage(showHeader: false)),
       _StoreNavSection.add => const _StoreAddManagePage(),
       _StoreNavSection.orders => const StoreRoleGateSliver(
           child: SelfStoreOrdersPage(showHeader: false)),
-      _StoreNavSection.cart => widget.isSelfStore
-          ? const StoreRoleGateSliver(
-              child: VisitorStoreCartPage(showHeader: false))
-          : VisitorStoreCartPage(
-              ownerUserId: widget.ownerUserId,
-              showHeader: false,
-            ),
+      _StoreNavSection.cart => VisitorStoreCartPage(
+          ownerUserId: widget.isSelfStore ? null : widget.ownerUserId,
+          showHeader: false,
+        ),
       _StoreNavSection.profile =>
         _ProfileSection(isSelfStore: widget.isSelfStore),
     };
