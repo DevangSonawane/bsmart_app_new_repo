@@ -854,7 +854,7 @@ enum _ShareTargetType { user, conversation }
 class _FooterAction extends StatelessWidget {
   final String label;
   final IconData? icon;
-  final IconData? faIcon;
+  final FaIconData? faIcon;
   final Color? color;
   final VoidCallback onTap;
 
