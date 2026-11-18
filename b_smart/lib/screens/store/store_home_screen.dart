@@ -10,6 +10,7 @@ import 'self_store_dashboard_page.dart';
 import 'self_store_orders_page.dart';
 import 'self_store_products_page.dart';
 import 'self_store_services_manage_page.dart';
+import 'service_date_overrides.dart';
 import 'shared/store_money.dart';
 import 'shared/store_shared_widgets.dart';
 import 'store_bcoins_page.dart';
@@ -115,6 +116,18 @@ class _StoreAddManagePageState extends State<_StoreAddManagePage> {
     );
   }
 
+  Future<void> _blockDatesFor(Map<String, dynamic> service) async {
+    if (await showBlockDatesForService(context, service) && mounted) {
+      _reloadLists();
+    }
+  }
+
+  Future<void> _bulkBlockDates(List<Map<String, dynamic>> services) async {
+    if (await showBulkBlockDates(context, services) && mounted) {
+      _reloadLists();
+    }
+  }
+
   void _viewAllServices() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -190,6 +203,8 @@ class _StoreAddManagePageState extends State<_StoreAddManagePage> {
           onViewAll: _viewAllServices,
           itemsFuture: _servicesFuture,
           onRetry: _reloadLists,
+          onBlockDates: _blockDatesFor,
+          onBulkBlockDates: _bulkBlockDates,
         ),
       ],
     );
@@ -666,6 +681,10 @@ class _StoreAddManageSection extends StatelessWidget {
   final Future<List<Map<String, dynamic>>> itemsFuture;
   final VoidCallback onRetry;
 
+  /// Services only: per-row "Block dates" and the bulk action.
+  final ValueChanged<Map<String, dynamic>>? onBlockDates;
+  final ValueChanged<List<Map<String, dynamic>>>? onBulkBlockDates;
+
   const _StoreAddManageSection({
     super.key,
     required this.title,
@@ -675,6 +694,8 @@ class _StoreAddManageSection extends StatelessWidget {
     required this.onViewAll,
     required this.itemsFuture,
     required this.onRetry,
+    this.onBlockDates,
+    this.onBulkBlockDates,
   });
 
   static const _previewCount = 3;
@@ -870,6 +891,9 @@ class _StoreAddManageSection extends StatelessWidget {
                         priceLabel:
                             formatCompactStoreMoney(_priceOf(preview[i])),
                         onTap: onViewAll,
+                        onBlockDates: onBlockDates == null
+                            ? null
+                            : () => onBlockDates!(preview[i]),
                       ),
                       if (i != preview.length - 1)
                         const Divider(
@@ -893,6 +917,31 @@ class _StoreAddManageSection extends StatelessWidget {
                           ),
                         ),
                       ),
+                    if (onBulkBlockDates != null) ...[
+                      const Divider(height: 1, color: BStoreColors.divider),
+                      InkWell(
+                        onTap: () => onBulkBlockDates!(items),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 11),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(LucideIcons.calendarX,
+                                  size: 15, color: BStoreColors.primary),
+                              SizedBox(width: 6),
+                              Text(
+                                'Block dates',
+                                style: TextStyle(
+                                  color: BStoreColors.primary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               );
@@ -908,11 +957,13 @@ class _ManageRow extends StatelessWidget {
   final Map<String, dynamic> item;
   final String priceLabel;
   final VoidCallback onTap;
+  final VoidCallback? onBlockDates;
 
   const _ManageRow({
     required this.item,
     required this.priceLabel,
     required this.onTap,
+    this.onBlockDates,
   });
 
   @override
@@ -987,11 +1038,37 @@ class _ManageRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            const Icon(
-              LucideIcons.chevronRight,
-              color: BStoreColors.textMuted,
-              size: 18,
-            ),
+            if (onBlockDates != null)
+              PopupMenuButton<String>(
+                tooltip: 'More',
+                icon: const Icon(
+                  LucideIcons.ellipsisVertical,
+                  color: BStoreColors.textMuted,
+                  size: 18,
+                ),
+                color: Colors.white,
+                onSelected: (value) {
+                  if (value == 'block') onBlockDates!();
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'block',
+                    child: Row(
+                      children: [
+                        Icon(LucideIcons.calendarX, size: 16),
+                        SizedBox(width: 10),
+                        Text('Block dates'),
+                      ],
+                    ),
+                  ),
+                ],
+              )
+            else
+              const Icon(
+                LucideIcons.chevronRight,
+                color: BStoreColors.textMuted,
+                size: 18,
+              ),
           ],
         ),
       ),

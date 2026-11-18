@@ -10,6 +10,7 @@ import '../../api/phase2_store_api.dart';
 import '../../api/upload_api.dart';
 import '../../widgets/safe_network_image.dart';
 import 'publish/store_publish_ui.dart';
+import 'service_date_overrides.dart';
 import 'store_theme.dart';
 import 'shared/store_shared_widgets.dart';
 
@@ -100,6 +101,7 @@ class _SelfStoreServicesManageScreenState
     for (var i = 0; i < _days.length; i++)
       _AvailDay(_days[i], [if (i < 5) _Slot('09:00', '17:00')]),
   ];
+  final List<ServiceDateOverride> _dateOverrides = [];
   final List<XFile> _pendingImages = [];
   final List<UploadedImage> _coverImages = [];
 
@@ -116,10 +118,16 @@ class _SelfStoreServicesManageScreenState
     ),
     PublishStep(
       label: 'Availability',
-      subtitle: 'Hours, areas & publish',
+      subtitle: 'Hours & areas',
       icon: LucideIcons.calendarDays,
     ),
+    PublishStep(
+      label: 'Time off',
+      subtitle: 'Special dates & publish',
+      icon: LucideIcons.calendarX,
+    ),
   ];
+  static const _totalSteps = 4;
 
   @override
   void dispose() {
@@ -193,21 +201,24 @@ class _SelfStoreServicesManageScreenState
                         ? _detailsStep()
                         : _step == 2
                             ? _pricingStep()
-                            : _availabilityStep(),
+                            : _step == 3
+                                ? _availabilityStep()
+                                : _specialDatesStep(),
                   ),
                 ),
               ),
               PublishFooter(
                 step: _step,
-                totalSteps: 3,
+                totalSteps: _totalSteps,
                 onPrimary: () {
-                  if (_step < 3) {
+                  if (_step < _totalSteps) {
                     setState(() => _step = _step + 1);
                   } else {
                     _saveService(draft: false);
                   }
                 },
-                primaryLabel: _step < 3 ? 'Continue' : 'Publish service',
+                primaryLabel:
+                    _step < _totalSteps ? 'Continue' : 'Publish service',
                 onBack:
                     _step == 1 ? null : () => setState(() => _step = _step - 1),
                 busy: _publishing,
@@ -547,7 +558,7 @@ class _SelfStoreServicesManageScreenState
   List<Widget> _availabilityStep() {
     return [
       const PublishStepIntro(
-        title: 'Availability & publish',
+        title: 'Availability',
         subtitle: 'Tell customers where, when and how you deliver.',
       ),
       const SizedBox(height: 16),
@@ -638,6 +649,29 @@ class _SelfStoreServicesManageScreenState
         children: [
           _EditableAvailabilityPanel(
             days: _availability,
+            onChanged: () => setState(() {}),
+          ),
+        ],
+      ),
+    ];
+  }
+
+  List<Widget> _specialDatesStep() {
+    return [
+      const PublishStepIntro(
+        title: 'Special dates & time off',
+        subtitle:
+            'Block specific dates or set different hours for them. Your weekly schedule stays as is.',
+      ),
+      const SizedBox(height: 16),
+      PublishSectionCard(
+        title: 'Blocked dates & hours',
+        subtitle: 'Optional · holidays, leave, fully booked days',
+        icon: LucideIcons.calendarX,
+        accent: PublishStyle.purple,
+        children: [
+          DateOverridesEditor(
+            overrides: _dateOverrides,
             onChanged: () => setState(() {}),
           ),
         ],
@@ -960,6 +994,7 @@ class _SelfStoreServicesManageScreenState
                   {'start': s.start, 'end': s.end},
             ],
         },
+        'date_overrides': dateOverridesToApi(_dateOverrides),
         'visible_to_customers': _visible,
         'status': draft ? 'draft' : 'active',
       });

@@ -16,6 +16,7 @@ import 'store_models.dart';
 import 'store_saved_address_page.dart';
 import 'service_cart_page.dart';
 import 'service_cart_state.dart';
+import 'service_date_overrides.dart';
 
 class VisitorServiceBookingFlowPage extends StatefulWidget {
   final String? ownerUserId;
@@ -94,11 +95,21 @@ class _VisitorServiceBookingFlowPageState
 
   Future<void> _pickDate() async {
     final today = _dateOnly(DateTime.now());
+    final lastDate = today.add(const Duration(days: 180));
+    bool selectable(DateTime d) => !_isDateUnavailable(_dateOnly(d));
+    // showDatePicker asserts that initialDate is selectable.
+    DateTime? initial = selectable(_selectedDate) ? _selectedDate : null;
+    for (var d = today;
+        initial == null && !d.isAfter(lastDate);
+        d = DateTime(d.year, d.month, d.day + 1)) {
+      if (selectable(d)) initial = d;
+    }
     final picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate,
+      initialDate: initial ?? _selectedDate,
       firstDate: today,
-      lastDate: today.add(const Duration(days: 180)),
+      lastDate: lastDate,
+      selectableDayPredicate: initial == null ? null : selectable,
       helpText: 'Select availability',
       builder: (context, child) {
         return Theme(
@@ -137,7 +148,19 @@ class _VisitorServiceBookingFlowPageState
   bool get _hasAvailabilityData =>
       widget.item.raw['weekly_availability'] is Map;
 
+  /// A `date_overrides` entry for [date], which fully replaces the weekly
+  /// pattern for that one date (empty slots = whole date blocked).
+  ServiceDateOverride? _overrideFor(DateTime date) =>
+      findServiceDateOverride(widget.item.raw, date);
+
   List<(int, int)> _windowsFor(DateTime date) {
+    final override = _overrideFor(date);
+    if (override != null) {
+      return [
+        for (final s in override.slots)
+          (parseServiceHm(s.start)!, parseServiceHm(s.end)!),
+      ];
+    }
     final raw = widget.item.raw['weekly_availability'];
     if (raw is! Map) return const [];
     final day = raw[_weekdayKeys[date.weekday - 1]];
@@ -177,7 +200,7 @@ class _VisitorServiceBookingFlowPageState
   /// Hourly start slots inside the day's windows. Null = no availability
   /// data on the service (legacy fixed grids apply).
   List<String>? _slotLabelsFor(DateTime date) {
-    if (!_hasAvailabilityData) return null;
+    if (!_hasAvailabilityData && _overrideFor(date) == null) return null;
     final slots = <String>[];
     for (final (start, end) in _windowsFor(date)) {
       var cursor = start;
@@ -189,9 +212,25 @@ class _VisitorServiceBookingFlowPageState
     return slots;
   }
 
-  bool get _selectedDayUnavailable {
-    final slots = _slotLabelsFor(_selectedDate);
+  bool _isDateUnavailable(DateTime date) {
+    final slots = _slotLabelsFor(date);
     return slots != null && slots.isEmpty;
+  }
+
+  bool get _selectedDayUnavailable => _isDateUnavailable(_selectedDate);
+
+  /// Why the selected date is closed, e.g. "On Leave"; null for a plain
+  /// weekly day off.
+  String? get _selectedDayReason {
+    if (!_selectedDayUnavailable) return null;
+    return _overrideFor(_selectedDate)?.reasonText;
+  }
+
+  String get _unavailableMessage {
+    final reason = _selectedDayReason;
+    return reason == null
+        ? 'Provider is unavailable on this day. Please pick another date.'
+        : 'Provider is unavailable on this day ($reason). Please pick another date.';
   }
 
   List<String> get _morningSlots {
@@ -229,10 +268,7 @@ class _VisitorServiceBookingFlowPageState
     if (_step == 0) {
       if (_selectedDayUnavailable) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content:
-                Text('Provider is unavailable on this day. Pick another date.'),
-          ),
+          SnackBar(content: Text(_unavailableMessage)),
         );
         return;
       }
@@ -621,6 +657,8 @@ class _VisitorServiceBookingFlowPageState
                                   morningTimes: _morningSlots,
                                   afternoonTimes: _afternoonSlots,
                                   dayUnavailable: _selectedDayUnavailable,
+                                  unavailableMessage: _unavailableMessage,
+                                  isDateUnavailable: _isDateUnavailable,
                                   serviceAddress: _address?.summaryLine ??
                                       'Add a service address',
                                   onDateSelected: (date) {
@@ -830,6 +868,8 @@ class _SelectAvailabilityStep extends StatelessWidget {
   final List<String> morningTimes;
   final List<String> afternoonTimes;
   final bool dayUnavailable;
+  final String unavailableMessage;
+  final bool Function(DateTime date) isDateUnavailable;
   final String serviceAddress;
   final ValueChanged<DateTime> onDateSelected;
   final VoidCallback onCalendarTap;
@@ -846,6 +886,8 @@ class _SelectAvailabilityStep extends StatelessWidget {
     required this.morningTimes,
     required this.afternoonTimes,
     required this.dayUnavailable,
+    required this.unavailableMessage,
+    required this.isDateUnavailable,
     required this.serviceAddress,
     required this.onDateSelected,
     required this.onCalendarTap,
@@ -870,6 +912,7 @@ class _SelectAvailabilityStep extends StatelessWidget {
                   child: _DateChip(
                     date: dates[i],
                     selected: dates[i].isSameDay(selectedDate),
+                    unavailable: isDateUnavailable(dates[i].value),
                     onTap: () => onDateSelected(dates[i].value),
                   ),
                 ),
@@ -932,9 +975,9 @@ class _SelectAvailabilityStep extends StatelessWidget {
               color: const Color(0xFFFDECEA),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Text(
-              'Provider is unavailable on this day. Please pick another date.',
-              style: TextStyle(
+            child: Text(
+              unavailableMessage,
+              style: const TextStyle(
                 color: Color(0xFFB3261E),
                 fontSize: 12.5,
                 fontWeight: FontWeight.w700,
@@ -1059,16 +1102,70 @@ class _SectionLabel extends StatelessWidget {
 class _DateChip extends StatelessWidget {
   final _BookingDate date;
   final bool selected;
+  final bool unavailable;
   final VoidCallback onTap;
 
   const _DateChip({
     required this.date,
     required this.selected,
     required this.onTap,
+    this.unavailable = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (unavailable && !selected) {
+      return Tooltip(
+        message: 'Unavailable on ${date.heading}',
+        triggerMode: TooltipTriggerMode.tap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF3F4F6),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE2E6EA), width: 1.2),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                date.day,
+                style: const TextStyle(
+                  color: Color(0xFF9AA1B2),
+                  fontSize: 10,
+                  height: 1.05,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                date.date,
+                style: const TextStyle(
+                  color: Color(0xFF9AA1B2),
+                  fontSize: 16,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                  decoration: TextDecoration.lineThrough,
+                ),
+              ),
+              const SizedBox(height: 3),
+              const FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  'Unavailable',
+                  style: TextStyle(
+                    color: Color(0xFFB3261E),
+                    fontSize: 8.5,
+                    height: 1.05,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return InkWell(
       onTap: selected ? null : onTap,
       borderRadius: BorderRadius.circular(14),
