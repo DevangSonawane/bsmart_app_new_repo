@@ -359,6 +359,19 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     }
 
     out.sort((a, b) => (b.createdAt ?? 0).compareTo(a.createdAt ?? 0));
+    // The chat list only adds a date separator *between* days, and the very
+    // first slot is taken by the profile header — so add the oldest day's
+    // separator ourselves, right under the profile header.
+    final oldest = out.isEmpty ? null : out.last.createdAt;
+    if (oldest != null && oldest > 0) {
+      out.add(
+        types.SystemMessage(
+          id: _firstDayHeaderId,
+          createdAt: null,
+          text: _dayHeaderLabel(DateTime.fromMillisecondsSinceEpoch(oldest)),
+        ),
+      );
+    }
     out.add(
       types.SystemMessage(
         id: _headerSystemMessageId(),
@@ -448,6 +461,119 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
         fontWeight: FontWeight.w700,
         height: 1.0,
         color: color,
+      ),
+    );
+  }
+
+  static const _firstDayHeaderId = '__first_day_header__';
+
+  String _dayHeaderLabel(DateTime dt) {
+    final local = dt.toLocal();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(local.year, local.month, local.day);
+    final diff = today.difference(day).inDays;
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Yesterday';
+    return DateFormat('d MMM yyyy').format(local);
+  }
+
+  Widget _dayHeader(BuildContext context, String label) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            color: cs.onSurface.withValues(alpha: 0.07),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              color: cs.onSurface.withValues(alpha: 0.6),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Quoted message shown at the top of a reply bubble.
+  Widget? _replyQuote(Map<String, dynamic>? raw, {required bool mine}) {
+    if (raw == null) return null;
+    final replied = _repliedMessageFor(raw);
+    if (replied == null) return null;
+    final cs = Theme.of(context).colorScheme;
+    final fg = mine ? Colors.white : cs.onSurface;
+    final repliedMedia = _mediaUrlFor(replied);
+    final isImage = repliedMedia.isNotEmpty &&
+        !_isAudioMessage(replied) &&
+        !_looksLikeAudioUrl(repliedMedia) &&
+        !_looksLikeDocumentUrl(repliedMedia);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(6, 6, 6, 0),
+      padding: const EdgeInsets.fromLTRB(10, 7, 8, 7),
+      decoration: BoxDecoration(
+        color: mine
+            ? Colors.white.withValues(alpha: 0.16)
+            : cs.onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border(
+          left: BorderSide(
+            color: mine ? Colors.white.withValues(alpha: 0.85) : cs.primary,
+            width: 3,
+          ),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _senderLabelForMessage(replied),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                    color: fg.withValues(alpha: 0.95),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _previewForMessage(replied),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.25,
+                    color: fg.withValues(alpha: 0.75),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (isImage) ...[
+            const SizedBox(width: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SafeNetworkImage(
+                url: UrlHelper.normalizeUrl(repliedMedia),
+                width: 38,
+                height: 38,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1432,6 +1558,11 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       }
       if (toSend.isEmpty) return;
 
+      // Text typed in the composer goes out with the first image, so a
+      // photo and its message arrive together (Instagram-style).
+      final caption = _inputController.text.trim();
+      final captionTarget = toSend.first;
+
       final createdMessages = await Future.wait(
         toSend.map((item) async {
           final url = _extractUploadedMediaUrl(item);
@@ -1439,7 +1570,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
           final created = await _chatApi.sendMessage(
             conversationId: convId,
             payload: {
-              'text': '',
+              'text': identical(item, captionTarget) ? caption : '',
               'mediaUrl': url,
               'mediaType': type,
               'replyTo':
@@ -1451,6 +1582,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       );
 
       if (!mounted) return;
+      if (caption.isNotEmpty) _inputController.clear();
       setState(() => _messages = [..._messages, ...createdMessages]);
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
@@ -1690,6 +1822,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                             isAttachmentUploading: _sending || _uploadingMedia,
                             isLastPage: !_hasMore,
                             customBottomWidget: const SizedBox.shrink(),
+                            // One separator per calendar day (a gap of 24h+
+                            // always means a new day, so nothing in-day repeats).
+                            dateHeaderThreshold:
+                                const Duration(hours: 24).inMilliseconds,
+                            customDateHeaderText: _dayHeaderLabel,
+                            dateHeaderBuilder: (header) =>
+                                _dayHeader(context, header.text),
                             messageWidthRatio: 0.62,
                             onMessageDoubleTap: (context, message) {
                               final raw = _rawMessageById(message.id);
@@ -1757,9 +1896,36 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                                 message.id,
                                 context: context,
                               );
+                              // Time under the last bubble of each group;
+                              // the day itself is shown by the date separator.
+                              final timeLabel = nextMessageInGroup
+                                  ? null
+                                  : _timeLabelFor(message);
+                              final quote = _replyQuote(raw, mine: mine);
 
                               Widget footer = const SizedBox.shrink();
-                              if (reactionLabel != null || seenLabel != null) {
+                              if (timeLabel != null &&
+                                  timeLabel.isNotEmpty &&
+                                  reactionLabel == null &&
+                                  seenLabel == null) {
+                                footer = Padding(
+                                  padding: EdgeInsets.only(
+                                    top: 3,
+                                    left: mine ? 0 : 6,
+                                    right: mine ? 14 : 0,
+                                  ),
+                                  child: Text(
+                                    timeLabel,
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: cs.onSurface
+                                          .withValues(alpha: 0.45),
+                                    ),
+                                  ),
+                                );
+                              } else if (reactionLabel != null ||
+                                  seenLabel != null) {
                                 footer = Padding(
                                   padding: const EdgeInsets.only(
                                     top: 2,
@@ -1771,6 +1937,19 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                                         ? CrossAxisAlignment.end
                                         : CrossAxisAlignment.start,
                                     children: [
+                                      if (timeLabel != null &&
+                                          timeLabel.isNotEmpty)
+                                        Text(
+                                          timeLabel,
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withValues(alpha: 0.45),
+                                          ),
+                                        ),
                                       if (seenLabel != null)
                                         Text(
                                           seenLabel,
@@ -1869,7 +2048,16 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                                             data: IconThemeData(
                                               color: textColor,
                                             ),
-                                            child: child,
+                                            child: quote == null
+                                                ? child
+                                                : Column(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [quote, child],
+                                                  ),
                                           ),
                                         ),
                                       ),
@@ -1892,7 +2080,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                                 },
                                 child: ImageMessageContent(
                                   urls: [UrlHelper.normalizeUrl(image.uri)],
-                                  caption: '',
+                                  caption: (_rawMessageById(image.id)?['text'] ??
+                                          '')
+                                      .toString(),
                                   isOutgoing: image.author.id ==
                                       (_currentUserId ?? '').trim(),
                                 ),
@@ -1934,6 +2124,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                                     ),
                                   ),
                                 );
+                              }
+                              if (message.id == _firstDayHeaderId) {
+                                return _dayHeader(context, message.text);
                               }
                               final cs = Theme.of(context).colorScheme;
                               return Padding(
@@ -2244,10 +2437,12 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             ),
           ),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Container(
               width: 40,
               height: 40,
+              margin: const EdgeInsets.only(bottom: 1),
               decoration: const BoxDecoration(
                 shape: BoxShape.circle,
                 color: Color(0xFF3B82F6),
@@ -2266,28 +2461,31 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             const SizedBox(width: 4),
             Expanded(
               child: Container(
-                height: 42,
+                constraints: const BoxConstraints(minHeight: 42),
                 clipBehavior: Clip.antiAlias,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+                padding: const EdgeInsets.only(left: 12, right: 8),
                 decoration: BoxDecoration(
                   color: bg,
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(22),
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Expanded(
-                      child: SizedBox(
-                        height: 40,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        // Grows with the text (Enter = new line) up to 5
+                        // lines, then scrolls — like Instagram's composer.
                         child: TextField(
                           controller: _inputController,
                           focusNode: _inputFocusNode,
                           enabled: !messagingBlocked,
-                          expands: true,
                           keyboardType: TextInputType.multiline,
                           textInputAction: TextInputAction.newline,
-                          maxLines: null,
-                          textAlignVertical: TextAlignVertical.center,
-                          style: TextStyle(color: cs.onSurface),
+                          textCapitalization: TextCapitalization.sentences,
+                          minLines: 1,
+                          maxLines: 5,
+                          style: TextStyle(color: cs.onSurface, height: 1.3),
                           cursorColor: cs.primary,
                           decoration: InputDecoration(
                             isDense: true,
@@ -2314,8 +2512,18 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                         child: FadeTransition(opacity: animation, child: child),
                       ),
                       child: canSend
-                          ? const SizedBox(
-                              key: ValueKey('composer-accessories-hidden'),
+                          ? IconButton(
+                              key: const ValueKey('composer-accessories-hidden'),
+                              tooltip: 'Add photo with this message',
+                              onPressed: (_uploadingMedia || messagingBlocked)
+                                  ? null
+                                  : () => _pickAndSendImages(fromCamera: false),
+                              icon: Icon(LucideIcons.image,
+                                  size: 20, color: muted),
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                  minWidth: 32, minHeight: 40),
                             )
                           : Row(
                               key: const ValueKey('composer-accessories'),

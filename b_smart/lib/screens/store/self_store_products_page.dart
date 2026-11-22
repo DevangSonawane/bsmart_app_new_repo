@@ -967,6 +967,7 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
   String _returnPolicy = '7 Days Replacement';
   String _warranty = 'None';
   bool _trackInventory = true;
+  bool _hasVariants = false;
   bool _useStoreDelivery = true;
   bool _useStoreReturnPolicy = true;
 
@@ -1349,11 +1350,43 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
         icon: LucideIcons.palette,
         accent: PublishStyle.purple,
         children: [
-          _VariantsEditor(
-            variants: _variants,
-            swatches: _swatches,
-            onChanged: () => setState(() {}),
+          InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () => setState(() => _hasVariants = !_hasVariants),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: Checkbox(
+                    value: _hasVariants,
+                    activeColor: PublishStyle.teal,
+                    onChanged: (v) =>
+                        setState(() => _hasVariants = v ?? false),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'This product has variants',
+                    style: TextStyle(
+                      color: PublishStyle.ink,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
+          if (_hasVariants) ...[
+            const SizedBox(height: 10),
+            _VariantsEditor(
+              variants: _variants,
+              swatches: _swatches,
+              onChanged: () => setState(() {}),
+            ),
+          ],
         ],
       ),
     ];
@@ -1701,7 +1734,7 @@ class _StoreAddProductFlowScreenState extends State<StoreAddProductFlowScreen> {
         'seller_sku': _skuController.text.trim(),
         'track_inventory': _trackInventory,
         'status': _apiStatus(status),
-        'variants': _variants
+        'variants': (_hasVariants ? _variants : const <_ProductVariant>[])
             .where((v) =>
                 v.color.trim().isNotEmpty ||
                 v.sizeController.text.trim().isNotEmpty ||

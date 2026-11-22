@@ -79,6 +79,12 @@ class _WalletScreenState extends State<WalletScreen>
           _totalSpentMonth = _parseMaybeInt(decoded['totalSpentMonth']) ?? 0;
           _isLoading = false;
         });
+        // Cache doesn't hold transactions; load them so the 30-day chart,
+        // transaction count and history are populated.
+        _walletService.getTransactions().then((txs) {
+          if (!mounted) return;
+          setState(() => _transactions = txs);
+        }).catchError((_) {});
         return;
       } on Exception catch (_) {
         await _pageCache.invalidate('wallet', currentUserId);
@@ -184,10 +190,9 @@ class _WalletScreenState extends State<WalletScreen>
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final scaffoldBg =
-        isDark ? const Color(0xFF0A0A0A) : theme.scaffoldBackgroundColor;
-    final appBarBg = isDark
-        ? const Color(0xE60A0A0A)
-        : theme.scaffoldBackgroundColor.withValues(alpha: 0.9);
+        isDark ? const Color(0xFF0A0A0A) : const Color(0xFFFAFAF8);
+    final appBarBg =
+        isDark ? const Color(0xE60A0A0A) : const Color(0xE6FAFAF8);
     final titleColor = isDark ? Colors.white : const Color(0xFF0A0A0A);
     return Scaffold(
       backgroundColor: scaffoldBg,
@@ -202,32 +207,38 @@ class _WalletScreenState extends State<WalletScreen>
                 SliverAppBar(
                   pinned: true,
                   backgroundColor: appBarBg,
+                  surfaceTintColor: Colors.transparent,
                   elevation: 0,
+                  toolbarHeight: 68,
+                  leadingWidth: 68,
+                  titleSpacing: 6,
                   leading: Padding(
-                    padding: const EdgeInsets.only(left: 12),
-                    child: _HeaderIconButton(
-                      icon: LucideIcons.arrowLeft,
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      isLoading: false,
+                    padding: const EdgeInsets.only(left: 14),
+                    child: Center(
+                      child: _HeaderIconButton(
+                        icon: LucideIcons.arrowLeft,
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        isLoading: false,
+                      ),
                     ),
                   ),
                   title: Row(
                     children: [
                       const Icon(LucideIcons.wallet,
-                          size: 18, color: Color(0xFFFB923C)),
-                      const SizedBox(width: 8),
+                          size: 22, color: Color(0xFFF97316)),
+                      const SizedBox(width: 10),
                       Text(
                         'Vault',
                         style: GoogleFonts.montserrat(
                             fontWeight: FontWeight.w800,
-                            fontSize: 16,
+                            fontSize: 21,
                             color: titleColor),
                       ),
                     ],
                   ),
                   actions: [
                     Padding(
-                      padding: const EdgeInsets.only(right: 12),
+                      padding: const EdgeInsets.only(right: 14),
                       child: _HeaderIconButton(
                         icon: LucideIcons.refreshCw,
                         onPressed: _loadWallet,
@@ -251,14 +262,21 @@ class _WalletScreenState extends State<WalletScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _buildBalanceCard(),
-                          const SizedBox(height: 12),
-                          if (_errorMessage != null) _buildErrorBanner(),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 16),
+                          if (_errorMessage != null) ...[
+                            _buildErrorBanner(),
+                            const SizedBox(height: 12),
+                          ],
+                          const SizedBox(height: 8),
                           _buildRedeemGiftCardsCard(),
                           const SizedBox(height: 12),
                           _buildRedemptionRequestCard(),
                           const SizedBox(height: 12),
                           _AccordionItem(
+                            leading: const _CircleIcon(
+                              color: Color(0xFF16A34A),
+                              icon: Icons.schedule_rounded,
+                            ),
                             title: 'Transaction History',
                             badge: _transactions.isEmpty
                                 ? null
@@ -274,6 +292,8 @@ class _WalletScreenState extends State<WalletScreen>
                           ),
                           const SizedBox(height: 12),
                           _AccordionItem(
+                            leading: const Icon(Icons.person_rounded,
+                                size: 32, color: Color(0xFF6D4AFF)),
                             title: 'Account Details',
                             isOpen: _openSection == _WalletSection.account,
                             onToggle: () => setState(() {
@@ -286,6 +306,10 @@ class _WalletScreenState extends State<WalletScreen>
                           ),
                           const SizedBox(height: 12),
                           _AccordionItem(
+                            leading: const _CircleIcon(
+                              color: Color(0xFF64748B),
+                              icon: Icons.question_mark_rounded,
+                            ),
                             title: 'Help',
                             isOpen: _openSection == _WalletSection.help,
                             onToggle: () => setState(() {
@@ -356,203 +380,267 @@ class _WalletScreenState extends State<WalletScreen>
     return '$d · $h:$m $ampm';
   }
 
+  /// bCoins per Rs 1. Uses a backend value when the wallet payload has one,
+  /// otherwise the same 50:1 rate the gift-card screen uses.
+  int get _coinsPerRupee {
+    final data = _walletData;
+    if (data != null) {
+      final summary = data['summary'] is Map ? data['summary'] as Map : const {};
+      for (final key in const [
+        'coins_per_rupee',
+        'coinsPerRupee',
+        'conversion_rate',
+        'conversionRate',
+        'coin_rate',
+        'rate',
+      ]) {
+        final v = _parseMaybeInt(data[key]) ?? _parseMaybeInt(summary[key]);
+        if (v != null && v > 0) return v;
+      }
+    }
+    return 50;
+  }
+
+  /// Coins received per day for the last 30 days (oldest first).
+  List<int> _last30DaysReceived() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final buckets = List<int>.filled(30, 0);
+    for (final t in _transactions) {
+      if (t.amount <= 0) continue;
+      final ts = t.timestamp.toLocal();
+      final diff = today.difference(DateTime(ts.year, ts.month, ts.day)).inDays;
+      if (diff >= 0 && diff < 30) buckets[29 - diff] += t.amount;
+    }
+    return buckets;
+  }
+
   Widget _buildBalanceCard() {
     final totalEarned = _isLifeTime ? _totalEarnedLifetime : _totalEarnedMonth;
     final totalSpent = _isLifeTime ? _totalSpentLifetime : _totalSpentMonth;
     final totalTx = _transactions.length;
+    final daily = _last30DaysReceived();
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(30),
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFF97316), Color(0xFFEA580C), Color(0xFFC2410C)],
-          stops: [0.0, 0.4, 1.0],
+          colors: [Color(0xFFFF7A1A), Color(0xFFEA580C), Color(0xFFC2410C)],
+          stops: [0.0, 0.55, 1.0],
         ),
         boxShadow: const [
           BoxShadow(
-              color: Color(0x73F97316), blurRadius: 40, offset: Offset(0, 18)),
+              color: Color(0x33F97316),
+              blurRadius: 28,
+              spreadRadius: -6,
+              offset: Offset(0, 12)),
         ],
       ),
       child: Stack(
         children: [
+          // Soft glassy blob on the right side.
           Positioned(
-            top: -32,
-            right: -32,
+            top: 36,
+            bottom: 36,
+            right: -70,
             child: Container(
-              width: 160,
-              height: 160,
+              width: 290,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.09),
+                borderRadius: BorderRadius.circular(160),
               ),
             ),
           ),
-          Positioned(
-            bottom: -40,
-            left: -24,
-            child: Container(
-              width: 128,
-              height: 128,
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.18),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 14,
-                        height: 14,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.35),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.3)),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Container(
-                        width: 14,
-                        height: 14,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.2)),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Available Balance',
-                        style: GoogleFonts.montserrat(
-                          color: Colors.white.withValues(alpha: 0.75),
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  Text(
-                    _isLifeTime ? 'Lifetime' : _monthName(DateTime.now().month),
-                    style: GoogleFonts.montserrat(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  SizedBox(
-                    width: 36,
-                    height: 20,
-                    child: FittedBox(
-                      fit: BoxFit.fill,
-                      child: Switch(
-                        value: _isLifeTime,
-                        onChanged: (v) => setState(() => _isLifeTime = v),
-                        activeThumbColor: Colors.white,
-                        activeTrackColor: Colors.white.withValues(alpha: 0.3),
-                        inactiveThumbColor: Colors.white,
-                        inactiveTrackColor:
-                            Colors.black.withValues(alpha: 0.25),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              if (_isLoading && _walletData == null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Row(
                   children: [
-                    const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor:
-                            AlwaysStoppedAnimation<Color>(Colors.white70),
+                    _dot(0.45),
+                    const SizedBox(width: 6),
+                    _dot(0.45),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Available Balance',
+                      style: GoogleFonts.montserrat(
+                        color: Colors.white.withValues(alpha: 0.92),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => setState(() => _isLifeTime = !_isLifeTime),
+                      child: Text(
+                        _isLifeTime
+                            ? 'Lifetime'
+                            : _monthName(DateTime.now().month),
+                        style: GoogleFonts.montserrat(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 10),
-                    Text(
-                      'Loading…',
-                      style: GoogleFonts.montserrat(
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontWeight: FontWeight.w600),
+                    _VaultToggle(
+                      value: _isLifeTime,
+                      onChanged: (v) => setState(() => _isLifeTime = v),
                     ),
                   ],
-                )
-              else
+                ),
+                const SizedBox(height: 14),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
-                      _formatCoins(_coinBalance),
-                      style: GoogleFonts.montserrat(
-                        color: Colors.white,
-                        fontSize: 46,
-                        fontWeight: FontWeight.w800,
-                        height: 1.0,
-                      ),
+                    Expanded(
+                      child: _isLoading && _walletData == null
+                          ? Row(
+                              children: [
+                                const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white70),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  'Loading…',
+                                  style: GoogleFonts.montserrat(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.7),
+                                      fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            )
+                          : FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    _formatCoins(_coinBalance),
+                                    style: GoogleFonts.montserrat(
+                                      color: Colors.white,
+                                      fontSize: 54,
+                                      fontWeight: FontWeight.w800,
+                                      height: 1.0,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 6),
+                                    child: Text(
+                                      'bCoins',
+                                      style: GoogleFonts.montserrat(
+                                          color: Colors.white,
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.w700),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 12),
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Text(
-                        'bCoins',
-                        style: GoogleFonts.montserrat(
-                            color: Colors.white.withValues(alpha: 0.85),
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700),
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Today's Rate",
+                            style: GoogleFonts.montserrat(
+                              color: Colors.white.withValues(alpha: 0.9),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Rs 1 = $_coinsPerRupee bCoins',
+                            style: GoogleFonts.montserrat(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  _StatPill(
-                      label: 'Total Earned',
-                      value: '+${_formatCoins(totalEarned)}',
-                      color: const Color(0xFF34D399)),
-                  const SizedBox(width: 14),
-                  Container(
-                      width: 1,
-                      height: 34,
-                      color: Colors.white.withValues(alpha: 0.25)),
-                  const SizedBox(width: 14),
-                  _StatPill(
-                      label: 'Total Spent',
-                      value: '-${_formatCoins(totalSpent)}',
-                      color: const Color(0xFFFB7185)),
-                  const SizedBox(width: 14),
-                  Container(
-                      width: 1,
-                      height: 34,
-                      color: Colors.white.withValues(alpha: 0.25)),
-                  const SizedBox(width: 14),
-                  _StatPill(
-                      label: 'Transactions',
-                      value: '$totalTx',
-                      color: Colors.white),
-                ],
-              ),
-            ],
+                const SizedBox(height: 14),
+                Text(
+                  'Last 30 Days Received',
+                  style: GoogleFonts.montserrat(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _ReceivedBars(values: daily),
+                Container(
+                  height: 3,
+                  margin: const EdgeInsets.only(top: 2),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(2),
+                    color: const Color(0xFFFF8A3D).withValues(alpha: 0.8),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                IntrinsicHeight(
+                  child: Row(
+                    children: [
+                      _StatPill(
+                          label: 'Total Earned',
+                          value: '+${_formatCoins(totalEarned)}',
+                          color: const Color(0xFF4ADE80)),
+                      _statDivider(),
+                      _StatPill(
+                          label: 'Total Spent',
+                          value: '-${_formatCoins(totalSpent)}',
+                          color: const Color(0xFFF472B6)),
+                      _statDivider(),
+                      _StatPill(
+                          label: 'Transactions',
+                          value: '$totalTx',
+                          color: Colors.white),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
+  Widget _dot(double alpha) => Container(
+        width: 15,
+        height: 15,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFD1B0).withValues(alpha: alpha + 0.3),
+          shape: BoxShape.circle,
+        ),
+      );
+
+  Widget _statDivider() => Container(
+        width: 1.2,
+        margin: const EdgeInsets.symmetric(horizontal: 14),
+        color: Colors.white.withValues(alpha: 0.3),
+      );
   Widget _buildErrorBanner() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1328,96 +1416,189 @@ class _WalletScreenState extends State<WalletScreen>
   }
 
   Widget _buildRedeemGiftCardsCard() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardBg =
-        isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF7F7FA);
-    final border = isDark
-        ? Colors.white.withValues(alpha: 0.06)
-        : Colors.black.withValues(alpha: 0.06);
-    final titleColor = isDark ? Colors.white : const Color(0xFF0A0A0A);
-    final subColor = isDark
-        ? Colors.white.withValues(alpha: 0.5)
-        : Colors.black.withValues(alpha: 0.5);
-    return InkWell(
+    return _VaultNavTile(
+      leading: const Icon(Icons.card_giftcard_rounded,
+          size: 32, color: Color(0xFFEF4444)),
+      title: 'Redeem Gift Cards',
       onTap: () => Navigator.of(context).pushNamed('/wallet/redeem-gift-cards'),
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: border),
-          color: cardBg,
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Redeem Gift Cards',
-                    style: GoogleFonts.montserrat(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                      color: titleColor,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Icon(LucideIcons.chevronRight, color: subColor, size: 18),
-          ],
-        ),
-      ),
     );
   }
 
   Widget _buildRedemptionRequestCard() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardBg =
-        isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF7F7FA);
-    final border = isDark
-        ? Colors.white.withValues(alpha: 0.06)
-        : Colors.black.withValues(alpha: 0.06);
-    final titleColor = isDark ? Colors.white : const Color(0xFF0A0A0A);
-    final subColor = isDark
-        ? Colors.white.withValues(alpha: 0.5)
-        : Colors.black.withValues(alpha: 0.5);
-    return InkWell(
+    return _VaultNavTile(
+      leading: Transform.rotate(
+        angle: -0.3,
+        child: const Icon(Icons.confirmation_number_rounded,
+            size: 32, color: Color(0xFF2563EB)),
+      ),
+      title: 'Redemption Request',
       onTap: () =>
           Navigator.of(context).pushNamed('/wallet/redemption-requests'),
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: border),
-          color: cardBg,
+    );
+  }
+}
+
+/// Shared look for the vault menu rows (nav tiles + accordion headers).
+class _VaultTileStyle {
+  final Color bg;
+  final Color border;
+  final Color title;
+  final Color chevron;
+
+  const _VaultTileStyle(this.bg, this.border, this.title, this.chevron);
+
+  factory _VaultTileStyle.of(BuildContext context, {bool open = false}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return isDark
+        ? _VaultTileStyle(
+            open ? const Color(0xFF141414) : const Color(0xFF0F0F0F),
+            Colors.white.withValues(alpha: open ? 0.10 : 0.07),
+            Colors.white,
+            Colors.white.withValues(alpha: 0.5),
+          )
+        : _VaultTileStyle(
+            open ? Colors.white : const Color(0xFFF4F6FB),
+            const Color(0xFFE3E7EF),
+            const Color(0xFF0A0A0A),
+            const Color(0xFF4B5563),
+          );
+  }
+}
+
+TextStyle _vaultTileTitle(Color color) => GoogleFonts.montserrat(
+    fontWeight: FontWeight.w700, fontSize: 16.5, color: color);
+
+class _VaultNavTile extends StatelessWidget {
+  final Widget leading;
+  final String title;
+  final VoidCallback onTap;
+
+  const _VaultNavTile(
+      {required this.leading, required this.title, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = _VaultTileStyle.of(context);
+    return Material(
+      color: s.bg,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+        side: BorderSide(color: s.border, width: 1.2),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          child: Row(
+            children: [
+              SizedBox(width: 34, child: Center(child: leading)),
+              const SizedBox(width: 18),
+              Expanded(child: Text(title, style: _vaultTileTitle(s.title))),
+              Icon(LucideIcons.chevronRight, color: s.chevron, size: 20),
+            ],
+          ),
         ),
-        child: Row(
-          children: [
+      ),
+    );
+  }
+}
+
+class _CircleIcon extends StatelessWidget {
+  final Color color;
+  final IconData icon;
+
+  const _CircleIcon({required this.color, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      child: Icon(icon, size: 19, color: Colors.white),
+    );
+  }
+}
+
+/// Pill toggle styled like the mockup: translucent track, white knob.
+class _VaultToggle extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _VaultToggle({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => onChanged(!value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 48,
+        height: 28,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          color: value
+              ? const Color(0xFFFFB27A).withValues(alpha: 0.9)
+              : Colors.black.withValues(alpha: 0.2),
+        ),
+        child: AnimatedAlign(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            width: 22,
+            height: 22,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                    color: Color(0x33000000),
+                    blurRadius: 4,
+                    offset: Offset(0, 1)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 30 white bars showing coins received per day.
+class _ReceivedBars extends StatelessWidget {
+  final List<int> values;
+
+  const _ReceivedBars({required this.values});
+
+  @override
+  Widget build(BuildContext context) {
+    const maxH = 64.0;
+    const minH = 10.0;
+    final peak = values.fold<int>(0, math.max);
+    return SizedBox(
+      height: maxH,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          for (final v in values)
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Redemption Request',
-                    style: GoogleFonts.montserrat(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                      color: titleColor,
-                    ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 1.6),
+                child: Container(
+                  height: peak == 0 ? minH : minH + (v / peak) * (maxH - minH),
+                  decoration: BoxDecoration(
+                    color: Colors.white
+                        .withValues(alpha: v > 0 ? 0.95 : 0.45),
+                    borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(3), bottom: Radius.circular(1)),
                   ),
-                ],
+                ),
               ),
             ),
-            const SizedBox(width: 12),
-            Icon(LucideIcons.chevronRight, color: subColor, size: 18),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -1436,22 +1617,22 @@ class _HeaderIconButton extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark
         ? Colors.white.withValues(alpha: 0.06)
-        : Colors.black.withValues(alpha: 0.05);
+        : const Color(0xFFEFEFEF);
     final iconColor = isDark
-        ? Colors.white.withValues(alpha: 0.8)
-        : Colors.black.withValues(alpha: 0.75);
+        ? Colors.white.withValues(alpha: 0.85)
+        : const Color(0xFF1F1F1F);
     final progressColor = isDark
         ? Colors.white.withValues(alpha: 0.6)
         : Colors.black.withValues(alpha: 0.55);
     return SizedBox(
-      width: 40,
-      height: 40,
+      width: 50,
+      height: 50,
       child: Material(
         color: bg,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         child: InkWell(
           onTap: onPressed,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           child: Center(
             child: isLoading
                 ? SizedBox(
@@ -1462,7 +1643,7 @@ class _HeaderIconButton extends StatelessWidget {
                       valueColor: AlwaysStoppedAnimation<Color>(progressColor),
                     ),
                   )
-                : Icon(icon, size: 16, color: iconColor),
+                : Icon(icon, size: 22, color: iconColor),
           ),
         ),
       ),
@@ -1476,8 +1657,10 @@ class _AccordionItem extends StatelessWidget {
   final VoidCallback onToggle;
   final Widget child;
   final int? badge;
+  final Widget? leading;
 
   const _AccordionItem({
+    this.leading,
     required this.title,
     required this.isOpen,
     required this.onToggle,
@@ -1488,66 +1671,68 @@ class _AccordionItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final border = isDark
-        ? Colors.white.withValues(alpha: isOpen ? 0.10 : 0.06)
-        : Colors.black.withValues(alpha: isOpen ? 0.10 : 0.06);
-    final bg = isDark
-        ? (isOpen ? const Color(0xFF141414) : const Color(0xFF0F0F0F))
-        : (isOpen ? Colors.white : const Color(0xFFF7F7FA));
-    final titleColor = isDark ? Colors.white : const Color(0xFF0A0A0A);
-    final chevronColor = isDark
-        ? Colors.white.withValues(alpha: 0.4)
-        : Colors.black.withValues(alpha: 0.35);
+    final s = _VaultTileStyle.of(context, open: isOpen);
     final divider = isDark
         ? Colors.white.withValues(alpha: 0.06)
         : Colors.black.withValues(alpha: 0.06);
     return Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: border),
-        color: bg,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: s.border, width: 1.2),
+        color: s.bg,
       ),
       child: Column(
         children: [
           InkWell(
             onTap: onToggle,
-            borderRadius: BorderRadius.circular(20),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
               child: Row(
                 children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.montserrat(
-                        fontWeight: FontWeight.w800,
-                        color: titleColor,
-                        fontSize: 14),
-                  ),
+                  if (leading != null) ...[
+                    SizedBox(width: 34, child: Center(child: leading)),
+                    const SizedBox(width: 18),
+                  ],
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            title,
+                            overflow: TextOverflow.ellipsis,
+                            style: _vaultTileTitle(s.title),
+                          ),
+                        ),
                   if (badge != null && badge! > 0) ...[
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 10),
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 3),
+                      constraints:
+                          const BoxConstraints(minWidth: 26, minHeight: 26),
+                      padding: const EdgeInsets.symmetric(horizontal: 7),
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(999),
-                        color: const Color(0x33F97316),
-                        border: Border.all(color: const Color(0x55F97316)),
+                        color: const Color(0xFFFFE0CC),
                       ),
                       child: Text(
                         badge.toString(),
                         style: GoogleFonts.montserrat(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 10,
-                            color: const Color(0xFFFB923C)),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                            color: const Color(0xFFEA580C)),
                       ),
                     ),
                   ],
-                  const Spacer(),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   AnimatedRotation(
                     turns: isOpen ? 0.5 : 0.0,
                     duration: const Duration(milliseconds: 250),
                     child: Icon(LucideIcons.chevronDown,
-                        size: 18, color: chevronColor),
+                        size: 20, color: s.chevron),
                   ),
                 ],
               ),
@@ -1587,21 +1772,28 @@ class _StatPill extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label.toUpperCase(),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.montserrat(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.2,
-              color: Colors.white.withValues(alpha: 0.45),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              label.toUpperCase(),
+              maxLines: 1,
+              style: GoogleFonts.montserrat(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1.4,
+                color: Colors.white.withValues(alpha: 0.75),
+              ),
             ),
           ),
-          const SizedBox(height: 2),
-          Text(value,
-              style: GoogleFonts.montserrat(
-                  fontSize: 18, fontWeight: FontWeight.w900, color: color)),
+          const SizedBox(height: 6),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(value,
+                style: GoogleFonts.montserrat(
+                    fontSize: 24, fontWeight: FontWeight.w800, color: color)),
+          ),
         ],
       ),
     );

@@ -103,13 +103,15 @@ class _ImageMessageContentState extends State<ImageMessageContent> {
     final colors = theme.colors;
     final fg = widget.isOutgoing ? colors.outgoingText : colors.incomingText;
     final w = MediaQuery.sizeOf(context).width;
-    final maxW = w * 0.72;
+    // Slightly smaller than before (was 72%) for a cleaner thread.
+    final maxW = w * 0.58;
     final frames = widget.urls
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
         .toList();
     final hasMultiple = frames.length > 1;
-    final ratio = _ratioForIndex(_index).clamp(0.5, 2.2);
+    // Tall photos are capped so a single image never fills the screen.
+    final ratio = _ratioForIndex(_index).clamp(0.75, 2.2);
 
     Widget imageFrame(String url) {
       return ClipRRect(
@@ -191,14 +193,18 @@ class _ImageMessageContentState extends State<ImageMessageContent> {
             child: imageBody,
           ),
         ),
-        if (widget.caption.trim().isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(
-            widget.caption.trim(),
-            style: theme.typography.message.copyWith(color: fg),
-            textScaler: MediaQuery.textScalerOf(context),
+        if (widget.caption.trim().isNotEmpty)
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxW),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              child: Text(
+                widget.caption.trim(),
+                style: theme.typography.message.copyWith(color: fg),
+                textScaler: MediaQuery.textScalerOf(context),
+              ),
+            ),
           ),
-        ],
       ],
     );
   }

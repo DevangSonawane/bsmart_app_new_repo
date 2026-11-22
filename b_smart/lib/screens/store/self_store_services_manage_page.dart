@@ -47,7 +47,9 @@ class _SelfStoreServicesManageScreenState
     'Per hour',
     'Per session',
   ];
+  static const _noDuration = 'Not specified';
   static const _durations = [
+    _noDuration,
     '30 minutes',
     '1 hour',
     '2 hours',
@@ -510,8 +512,7 @@ class _SelfStoreServicesManageScreenState
                 const SizedBox(width: 12),
                 Expanded(
                   child: PublishSelectField<String>(
-                    label: 'Duration',
-                    required: true,
+                    label: 'Duration (optional)',
                     value: _duration,
                     items: _durations,
                     onChanged: (value) =>
@@ -734,7 +735,7 @@ class _SelfStoreServicesManageScreenState
               const SizedBox(width: 4),
               Flexible(
                 child: Text(
-                  '$_duration · ${_method == 'At my location' ? 'At my place' : _method}',
+                  '${_duration == _noDuration ? '' : '$_duration · '}${_method == 'At my location' ? 'At my place' : _method}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -815,12 +816,17 @@ class _SelfStoreServicesManageScreenState
       if (name.isEmpty &&
           hoursRaw.isEmpty &&
           priceRaw.isEmpty &&
-          sqftRaw.isEmpty) {
+          sqftRaw.isEmpty &&
+          s.descriptionController.text.trim().isEmpty) {
         continue;
+      }
+      if (s.descriptionController.text.trim().length > 200) {
+        return 'Subservice description can be at most 200 characters.';
       }
       if (name.isEmpty) return 'Enter a name for each subservice.';
       final hours = double.tryParse(hoursRaw);
-      if (hoursRaw.isNotEmpty && (hours == null || hours <= 0)) {
+      // Hours is optional: blank or 0 are both fine.
+      if (hoursRaw.isNotEmpty && (hours == null || hours < 0)) {
         return 'Enter a valid number of hours, or leave it blank.';
       }
       final sqft = double.tryParse(sqftRaw);
@@ -961,7 +967,7 @@ class _SelfStoreServicesManageScreenState
             .toList(),
         'price': double.tryParse(_priceController.text.trim()) ?? 0,
         'rate_type': _rateTypeFor(_rateType),
-        'duration': _duration,
+        'duration': _duration == _noDuration ? '' : _duration,
         'has_variants': _hasVariants,
         'allow_multiple': !_hasVariants && _allowMultiple,
         'subservices': _subservices
@@ -969,13 +975,16 @@ class _SelfStoreServicesManageScreenState
                 s.nameController.text.trim().isNotEmpty ||
                 s.hoursController.text.trim().isNotEmpty ||
                 s.sqftController.text.trim().isNotEmpty ||
-                s.priceController.text.trim().isNotEmpty)
+                s.priceController.text.trim().isNotEmpty ||
+                s.descriptionController.text.trim().isNotEmpty)
             .map((s) => {
                   'name': s.nameController.text.trim(),
                   'hours': double.tryParse(s.hoursController.text.trim()) ?? 0,
                   'price': double.tryParse(s.priceController.text.trim()) ?? 0,
                   'allow_multiple': s.allowMultiple,
                   'sqft': double.tryParse(s.sqftController.text.trim()) ?? 0,
+                  if (s.descriptionController.text.trim().isNotEmpty)
+                    'description': s.descriptionController.text.trim(),
                   if (s.uploadedImage != null)
                     'image': {'fileName': s.uploadedImage!.fileName},
                 })
@@ -1539,6 +1548,7 @@ class _ServiceSubservice {
   final TextEditingController sqftController = TextEditingController();
   final TextEditingController hoursController = TextEditingController();
   final TextEditingController priceController = TextEditingController();
+  final TextEditingController descriptionController = TextEditingController();
   bool allowMultiple = false;
   XFile? pendingImage;
   UploadedImage? uploadedImage;
@@ -1548,6 +1558,7 @@ class _ServiceSubservice {
     sqftController.dispose();
     hoursController.dispose();
     priceController.dispose();
+    descriptionController.dispose();
   }
 }
 
@@ -1654,20 +1665,33 @@ class _SubservicesEditorState extends State<_SubservicesEditor> {
                     ),
                   ],
                 ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Allow multiple quantity',
-                      style:
-                          TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                  value: widget.subservices[i].allowMultiple,
-                  activeThumbColor: Colors.white,
-                  activeTrackColor: const Color(0xFF078D92),
-                  inactiveThumbColor: Colors.white,
-                  inactiveTrackColor: const Color(0xFFD5DEE4),
-                  onChanged: (value) {
-                    setState(() => widget.subservices[i].allowMultiple = value);
-                    widget.onChanged();
-                  },
+                const SizedBox(height: 8),
+                PublishField(
+                  label: 'Description (optional)',
+                  hint: 'What this option includes…',
+                  controller: widget.subservices[i].descriptionController,
+                  maxLength: 200,
+                  minLines: 2,
+                  maxLines: 3,
+                ),
+                Material(
+                  type: MaterialType.transparency,
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Allow multiple quantity',
+                        style: TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w700)),
+                    value: widget.subservices[i].allowMultiple,
+                    activeThumbColor: Colors.white,
+                    activeTrackColor: const Color(0xFF078D92),
+                    inactiveThumbColor: Colors.white,
+                    inactiveTrackColor: const Color(0xFFD5DEE4),
+                    onChanged: (value) {
+                      setState(
+                          () => widget.subservices[i].allowMultiple = value);
+                      widget.onChanged();
+                    },
+                  ),
                 ),
                 _SubservicePhotoControl(
                   pending: widget.subservices[i].pendingImage,

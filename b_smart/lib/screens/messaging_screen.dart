@@ -420,6 +420,17 @@ class _MessagingScreenState extends State<MessagingScreen>
     await _loadNormal();
   }
 
+  /// Switching tabs keeps the current list on screen and refreshes it in
+  /// the background; the spinner only shows when that tab has no data yet.
+  Future<void> _refreshForTab(int index) async {
+    if (index == 4) return; // Calls tab manages its own data.
+    if (index == 3) {
+      await _loadRequests(showLoading: _requestConversations.isEmpty);
+      return;
+    }
+    await _loadNormal(showLoading: _normalConversations.isEmpty);
+  }
+
   Future<void> _refreshAll() async {
     if (_selectedFilter == 3) {
       await Future.wait([
@@ -900,7 +911,7 @@ class _MessagingScreenState extends State<MessagingScreen>
                         onTap: () {
                           if (_selectedFilter == index) return;
                           setState(() => _selectedFilter = index);
-                          _loadCurrent();
+                          _refreshForTab(index);
                         },
                         borderRadius: BorderRadius.circular(999),
                         child: AnimatedContainer(
