@@ -63,3 +63,9 @@ class RemovePost {
   final String postId;
   RemovePost(this.postId);
 }
+
+class UpdatePostPinned {
+  final String postId;
+  final DateTime? pinnedAt;
+  UpdatePostPinned(this.postId, this.pinnedAt);
+}

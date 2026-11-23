@@ -12,6 +12,7 @@ import '../utils/location_utils.dart';
 import '../utils/timezone_service.dart';
 import 'dynamic_media_widget.dart';
 import 'safe_network_image.dart';
+import 'pinned_badge.dart';
 import '../screens/external_link_screen.dart';
 
 /// Instagram-style post card with jank-free media rendering.
@@ -1297,6 +1298,10 @@ class _PostCardState extends State<PostCard> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      if (post.isPinned && !post.isAd) ...[
+                        const SizedBox(width: 6),
+                        PinnedBadge(color: secondaryText, size: 12),
+                      ],
                     ],
                   ),
                   if (subtitleName.isNotEmpty ||

@@ -8,6 +8,7 @@ import 'package:video_thumbnail/video_thumbnail.dart';
 import '../models/feed_post_model.dart';
 import '../api/api_client.dart';
 import 'safe_network_image.dart';
+import 'pinned_badge.dart';
 import '../utils/url_helper.dart';
 
 class PostsGrid extends StatefulWidget {
@@ -147,6 +148,12 @@ class _PostsGridState extends State<PostsGrid> {
                         color: Colors.white,
                         size: 16,
                       ),
+                    ),
+                  if (p.isPinned)
+                    const Positioned(
+                      top: 6,
+                      left: 6,
+                      child: PinnedBadge(overlay: true, size: 12),
                     ),
                 ],
               ),

@@ -987,6 +987,8 @@ class FeedService {
             isAd: isAdItem,
             isTweet: isTweetItem,
             promotedProducts: promoteProducts,
+            pinnedAt: FeedPost.parsePinnedAt(item),
+            isPinned: FeedPost.parseIsPinned(item),
             commentsDisabled: item['turn_off_commenting'] ??
                 item['comments_disabled'] ??
                 item['commentsDisabled'] ??

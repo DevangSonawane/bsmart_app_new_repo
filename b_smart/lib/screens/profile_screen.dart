@@ -11,6 +11,7 @@ import 'package:video_thumbnail/video_thumbnail.dart';
 import '../services/reels_service.dart';
 import '../models/reel_model.dart';
 import '../services/supabase_service.dart';
+import '../services/post_pin_service.dart';
 import '../widgets/profile_header.dart';
 import '../widgets/safe_network_image.dart';
 import '../widgets/post_detail_modal.dart';
@@ -164,6 +165,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   ];
   bool _avatarUploading = false;
   StreamSubscription<AppState>? _storeSub;
+  StreamSubscription<PostPinEvent>? _pinSub;
   bool _showFollowSuggestions = false;
   bool _followSuggestionsLoading = false;
   List<SuggestionUser> _followSuggestions = const <SuggestionUser>[];
@@ -196,7 +198,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       _syncLocalListsWithFeedState();
     });
+    _pinSub = PostPinService().changes.listen(_onPostPinChanged);
     _load();
+  }
+
+  void _onPostPinChanged(PostPinEvent e) {
+    if (!mounted) return;
+    FeedPost apply(FeedPost p) => p.id != e.postId
+        ? p
+        : (e.pinnedAt == null
+            ? p.copyWith(clearPinnedAt: true)
+            : p.copyWith(pinnedAt: e.pinnedAt, isPinned: true));
+    if (!_posts.any((p) => p.id == e.postId)) return;
+    setState(() {
+      _posts = _posts.map(apply).toList();
+    });
   }
 
   void _applyBannersForInterests(List<String> interests) {
@@ -248,6 +264,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void dispose() {
     _storeSub?.cancel();
+    _pinSub?.cancel();
     super.dispose();
   }
 
@@ -1228,7 +1245,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         a.views == b.views &&
         a.isLiked == b.isLiked &&
         a.isSaved == b.isSaved &&
-        a.isFollowed == b.isFollowed;
+        a.isFollowed == b.isFollowed &&
+        a.isPinned == b.isPinned &&
+        a.pinnedAt == b.pinnedAt;
     bool sameReel(Reel a, Reel b) =>
         a.likes == b.likes &&
         a.comments == b.comments &&
@@ -1689,6 +1708,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           isTweet: isTweetType,
           adCompanyId: map['ad_company_id']?.toString(),
           adCompanyName: map['ad_company_name']?.toString(),
+          pinnedAt: FeedPost.parsePinnedAt(map),
+          isPinned: FeedPost.parseIsPinned(map),
         );
       }).toList();
     }
@@ -3177,13 +3198,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           return false;
         }
 
-        final postsForGrid = _posts.where((p) {
+        final postsForGrid = FeedPost.sortPinnedFirst(_posts.where((p) {
           final ok = !p.isTweet &&
               p.mediaType != PostMediaType.reel &&
               !p.isAd &&
               hasRenderableGridMedia(p);
           return ok;
-        }).toList();
+        }).toList());
 
         final reelsForGrid = _userReels
             .map((r) {

@@ -17,6 +17,7 @@ import '../services/feed_service.dart';
 import '../services/notification_service.dart';
 import '../services/media_playback_registry.dart';
 import '../services/supabase_service.dart';
+import '../services/post_pin_service.dart';
 import '../services/ui_surface_memory_service.dart';
 import '../services/wallet_service.dart';
 import '../services/video_pool.dart';
@@ -2707,7 +2708,23 @@ class _HomeDashboardState extends State<HomeDashboard>
                 final isOwner =
                     snapshot.data != null && snapshot.data == post.userId;
                 if (!isOwner) return const SizedBox.shrink();
-                return ListTile(
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                if (PostPinService.canPin(post))
+                  ListTile(
+                    leading: Icon(
+                      post.isPinned ? LucideIcons.pinOff : LucideIcons.pin,
+                    ),
+                    title: Text(
+                      post.isPinned ? 'Unpin from Moments' : 'Pin to Moments',
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      PostPinService().toggle(context, post);
+                    },
+                  ),
+                ListTile(
                   leading: const Icon(Icons.delete_outline, color: Colors.red),
                   title: Text(
                     post.isTweet ? 'Delete Buzz' : 'Delete Moment',
@@ -2894,6 +2911,8 @@ class _HomeDashboardState extends State<HomeDashboard>
                       },
                     );
                   },
+                ),
+                  ],
                 );
               },
             ),

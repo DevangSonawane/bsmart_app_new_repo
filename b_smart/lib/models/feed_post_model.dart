@@ -56,6 +56,16 @@ class FeedPost {
   final bool hideLikesCount;
   final List<Map<String, dynamic>> promotedProducts;
 
+  /// When the author pinned this post to the top of their profile
+  /// (`pinned_at` from the API). `null` when not pinned.
+  final DateTime? pinnedAt;
+
+  /// Convenience flag mirroring the API's `is_pinned`.
+  final bool isPinned;
+
+  /// Max pinned posts per user (enforced server-side; mirrored for UX).
+  static const int maxPinnedPosts = 3;
+
   FeedPost({
     required this.id,
     required this.userId,
@@ -102,7 +112,47 @@ class FeedPost {
     this.peopleTags,
     this.hideLikesCount = false,
     this.promotedProducts = const <Map<String, dynamic>>[],
-  });
+    this.pinnedAt,
+    bool? isPinned,
+  }) : isPinned = isPinned ?? (pinnedAt != null);
+
+  /// Reads `pinned_at` / `pinnedAt` from a raw API post map.
+  static DateTime? parsePinnedAt(Map<dynamic, dynamic> json) {
+    final raw = json['pinned_at'] ?? json['pinnedAt'];
+    if (raw == null) return null;
+    if (raw is DateTime) return raw;
+    final s = raw.toString().trim();
+    if (s.isEmpty || s == 'null') return null;
+    return DateTime.tryParse(s);
+  }
+
+  /// Reads `is_pinned` / `isPinned` (falling back to `pinned_at`).
+  static bool parseIsPinned(Map<dynamic, dynamic> json) {
+    final raw = json['is_pinned'] ?? json['isPinned'];
+    if (raw is bool) return raw;
+    if (raw is num) return raw != 0;
+    if (raw is String) {
+      final v = raw.trim().toLowerCase();
+      if (v == 'true' || v == '1') return true;
+      if (v == 'false' || v == '0') return false;
+    }
+    return parsePinnedAt(json) != null;
+  }
+
+  /// Pinned posts first (most recently pinned first), then the rest in
+  /// their original order. Used for the owner's profile grid.
+  static List<FeedPost> sortPinnedFirst(List<FeedPost> posts) {
+    final pinned = posts.where((p) => p.isPinned).toList()
+      ..sort((a, b) {
+        final ap = a.pinnedAt, bp = b.pinnedAt;
+        if (ap == null && bp == null) return 0;
+        if (ap == null) return 1;
+        if (bp == null) return -1;
+        return bp.compareTo(ap);
+      });
+    if (pinned.isEmpty) return posts;
+    return [...pinned, ...posts.where((p) => !p.isPinned)];
+  }
 
   factory FeedPost.fromJson(Map<String, dynamic> json) {
     String? extractId(dynamic value) {
@@ -459,6 +509,8 @@ class FeedPost {
               .map((e) => Map<String, dynamic>.from(e))
               .toList() ??
           const <Map<String, dynamic>>[],
+      pinnedAt: parsePinnedAt(json),
+      isPinned: parseIsPinned(json),
     );
   }
 
@@ -520,6 +572,9 @@ class FeedPost {
     List<Map<String, dynamic>>? peopleTags,
     bool? hideLikesCount,
     List<Map<String, dynamic>>? promotedProducts,
+    DateTime? pinnedAt,
+    bool? isPinned,
+    bool clearPinnedAt = false,
   }) {
     return FeedPost(
       id: id ?? this.id,
@@ -566,6 +621,8 @@ class FeedPost {
       peopleTags: peopleTags ?? this.peopleTags,
       hideLikesCount: hideLikesCount ?? this.hideLikesCount,
       promotedProducts: promotedProducts ?? this.promotedProducts,
+      pinnedAt: clearPinnedAt ? null : (pinnedAt ?? this.pinnedAt),
+      isPinned: isPinned ?? (clearPinnedAt ? false : this.isPinned),
     );
   }
 
@@ -618,6 +675,8 @@ class FeedPost {
       'peopleTags': peopleTags,
       'hideLikesCount': hideLikesCount,
       'promotedProducts': promotedProducts,
+      'pinned_at': pinnedAt?.toIso8601String(),
+      'is_pinned': isPinned,
     };
   }
 }

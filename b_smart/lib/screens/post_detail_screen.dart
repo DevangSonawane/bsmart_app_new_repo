@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:video_player/video_player.dart';
 import '../services/supabase_service.dart';
+import '../services/post_pin_service.dart';
 import '../services/comment_sync_service.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
@@ -364,6 +365,50 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     super.dispose();
   }
 
+  bool get _canPinCurrentPost {
+    final post = _post;
+    if (post == null || _isTweet) return false;
+    final type = (post['type'] ?? post['item_type'] ?? 'post')
+        .toString()
+        .toLowerCase()
+        .trim();
+    return type.isEmpty || type == 'post';
+  }
+
+  bool get _isCurrentPostPinned =>
+      _post != null && FeedPost.parseIsPinned(_post!);
+
+  Future<void> _togglePinCurrentPost() async {
+    final wantPinned = !_isCurrentPostPinned;
+    final messenger = ScaffoldMessenger.of(context);
+    final store = StoreProvider.of<AppState>(context, listen: false);
+    try {
+      final pinnedAt =
+          await PostPinService().setPinned(widget.postId, wantPinned);
+      store.dispatch(UpdatePostPinned(widget.postId, pinnedAt));
+      if (!mounted) return;
+      setState(() {
+        _post = {
+          ...?_post,
+          'is_pinned': pinnedAt != null,
+          'pinned_at': pinnedAt?.toIso8601String(),
+        };
+      });
+      messenger.showSnackBar(SnackBar(
+        content: Text(pinnedAt != null
+            ? 'Pinned to your profile'
+            : 'Unpinned from your profile'),
+      ));
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(
+        content:
+            Text(wantPinned ? 'Could not pin post' : 'Could not unpin post'),
+      ));
+    }
+  }
+
   Future<void> _load() async {
     final initial = widget.initialPost;
     Map<String, dynamic>? eagerPost = _post;
@@ -385,6 +430,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         'is_saved_by_me': initial.isSaved,
         'is_followed_by_me': initial.isFollowed,
         'item_type': initial.isTweet ? 'tweet' : 'post',
+        'is_pinned': initial.isPinned,
+        'pinned_at': initial.pinnedAt?.toIso8601String(),
       };
       eagerUser = {
         'id': initial.userId,
@@ -1799,6 +1846,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                           );
                                         },
                                       ),
+                                      if (isOwner && _canPinCurrentPost)
+                                        ListTile(
+                                          leading: Icon(_isCurrentPostPinned
+                                              ? LucideIcons.pinOff
+                                              : LucideIcons.pin),
+                                          title: Text(_isCurrentPostPinned
+                                              ? 'Unpin from Moments'
+                                              : 'Pin to Moments'),
+                                          onTap: () {
+                                            Navigator.pop(ctx);
+                                            _togglePinCurrentPost();
+                                          },
+                                        ),
                                       if (isOwner)
                                         ListTile(
                                           leading: const Icon(

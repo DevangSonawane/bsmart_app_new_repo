@@ -14,6 +14,7 @@ final feedReducer = combineReducers<FeedState>([
   TypedReducer<FeedState, UpdateUserFollowed>(_updateUserFollowed).call,
   TypedReducer<FeedState, UpdatePostCommentsCount>(_updatePostCommentsCount).call,
   TypedReducer<FeedState, RemovePost>(_removePost).call,
+  TypedReducer<FeedState, UpdatePostPinned>(_updatePostPinned).call,
   TypedReducer<FeedState, AppendFeedPosts>(_appendPosts).call,
   TypedReducer<FeedState, PrependFeedPost>(_prependPost).call,
 ]);
@@ -138,5 +139,17 @@ FeedState _updatePostCommentsCount(FeedState state, UpdatePostCommentsCount acti
 
 FeedState _removePost(FeedState state, RemovePost action) {
   final next = state.posts.where((p) => p.id != action.postId).toList();
+  return state.copyWith(posts: next);
+}
+
+FeedState _updatePostPinned(FeedState state, UpdatePostPinned action) {
+  final idx = state.posts.indexWhere((p) => p.id == action.postId);
+  if (idx == -1) return state;
+  final prev = state.posts[idx];
+  final updated = action.pinnedAt == null
+      ? prev.copyWith(clearPinnedAt: true)
+      : prev.copyWith(pinnedAt: action.pinnedAt, isPinned: true);
+  final next = List<FeedPost>.from(state.posts);
+  next[idx] = updated;
   return state.copyWith(posts: next);
 }

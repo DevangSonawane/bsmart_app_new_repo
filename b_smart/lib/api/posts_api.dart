@@ -11,6 +11,8 @@ import '../config/api_config.dart';
 ///   POST   /posts/:id/like   – Like a post (protected)
 ///   POST   /posts/:id/unlike – Unlike a post (protected)
 ///   GET    /posts/:id/likes  – Get users who liked a post (protected)
+///   PATCH  /posts/:id/pin    – Pin own post to profile, max 3 (protected)
+///   PATCH  /posts/:id/unpin  – Unpin own post (protected)
 class PostsApi {
   static final PostsApi _instance = PostsApi._internal();
   factory PostsApi() => _instance;
@@ -153,5 +155,21 @@ class PostsApi {
   Future<Map<String, dynamic>> getLikes(String postId) async {
     final res = await _client.get('$_basePath/posts/$postId/likes');
     return res as Map<String, dynamic>;
+  }
+
+  /// Pin one of the current user's own posts to the top of their profile.
+  ///
+  /// Server allows at most 3 pinned posts; a 4th returns `400` with
+  /// `{ message: "You can only pin up to 3 posts — unpin one first" }`.
+  /// Non-owners get `403`. Returns the full updated post object.
+  Future<Map<String, dynamic>> pinPost(String postId) async {
+    final res = await _client.patch('$_basePath/posts/$postId/pin');
+    return res is Map ? Map<String, dynamic>.from(res) : <String, dynamic>{};
+  }
+
+  /// Unpin one of the current user's own posts. Returns the updated post.
+  Future<Map<String, dynamic>> unpinPost(String postId) async {
+    final res = await _client.patch('$_basePath/posts/$postId/unpin');
+    return res is Map ? Map<String, dynamic>.from(res) : <String, dynamic>{};
   }
 }
