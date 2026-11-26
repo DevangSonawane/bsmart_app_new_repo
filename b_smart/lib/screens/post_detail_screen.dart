@@ -9,6 +9,7 @@ import '../services/post_pin_service.dart';
 import '../services/comment_sync_service.dart';
 import '../theme/design_tokens.dart';
 import '../utils/current_user.dart';
+import 'insights/post_insights_screen.dart';
 import '../utils/id_extractor.dart';
 import '../api/api_exceptions.dart';
 import '../config/api_config.dart';
@@ -1846,6 +1847,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                           );
                                         },
                                       ),
+                                      if (isOwner && !_isTweet)
+                                        ListTile(
+                                          leading: const Icon(
+                                              LucideIcons.chartNoAxesColumn),
+                                          title: const Text('View insights'),
+                                          onTap: () {
+                                            Navigator.pop(ctx);
+                                            PostInsightsScreen.open(
+                                              context,
+                                              postId: widget.postId,
+                                            );
+                                          },
+                                        ),
                                       if (isOwner && _canPinCurrentPost)
                                         ListTile(
                                           leading: Icon(_isCurrentPostPinned

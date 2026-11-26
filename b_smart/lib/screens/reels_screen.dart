@@ -19,6 +19,7 @@ import '../services/reels_service.dart';
 import '../services/supabase_service.dart';
 import '../services/ui_surface_memory_service.dart';
 import '../utils/current_user.dart';
+import 'insights/post_insights_screen.dart';
 import '../utils/url_helper.dart';
 import '../preferences/content_preferences_scope.dart';
 import '../preferences/storage_preferences_scope.dart';
@@ -1099,6 +1100,54 @@ class _ReelsScreenState extends State<ReelsScreen>
     );
   }
 
+  Future<void> _onReelMorePressed() async {
+    if (_reels.isEmpty) return;
+    final reel = _reels[_currentIndex];
+    final isOwn =
+        _currentUserId != null && reel.userId.trim() == _currentUserId;
+    if (!isOwn) return _reportCurrentReel();
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF121212),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(LucideIcons.chartNoAxesColumn,
+                  color: Colors.white),
+              title: const Text('View insights',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                PostInsightsScreen.open(
+                  context,
+                  postId: reel.id,
+                  isPromoted: reel.isSponsored,
+                  thumbnailUrl: reel.thumbnailUrl,
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _reportCurrentReel() async {
     if (_reels.isEmpty) return;
     final reelId = _reels[_currentIndex].id.trim();
@@ -1335,7 +1384,7 @@ class _ReelsScreenState extends State<ReelsScreen>
                             color: Colors.white,
                             size: 22,
                           ),
-                          onPressed: _reportCurrentReel,
+                          onPressed: _onReelMorePressed,
                         ),
                       ],
                     ),

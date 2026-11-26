@@ -50,6 +50,7 @@ import 'story_viewer_screen.dart';
 import 'own_story_viewer_screen.dart';
 import 'create_upload_screen.dart';
 import '../utils/current_user.dart';
+import 'insights/post_insights_screen.dart';
 import '../utils/id_extractor.dart';
 import '../utils/share_links.dart';
 import '../api/auth_api.dart';
@@ -2711,6 +2712,19 @@ class _HomeDashboardState extends State<HomeDashboard>
                 return Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                if (!post.isTweet && !post.isAd)
+                  ListTile(
+                    leading: const Icon(LucideIcons.chartNoAxesColumn),
+                    title: const Text('View insights'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      PostInsightsScreen.open(
+                        context,
+                        postId: post.id,
+                        thumbnailUrl: post.thumbnailUrl,
+                      );
+                    },
+                  ),
                 if (PostPinService.canPin(post))
                   ListTile(
                     leading: Icon(

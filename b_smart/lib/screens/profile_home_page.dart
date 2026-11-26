@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'insights/account_insights_screen.dart';
+import 'insights/post_insights_screen.dart';
 
 import '../models/feed_post_model.dart';
 import '../utils/url_helper.dart';
@@ -398,6 +400,29 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
                             }
                           },
                         ),
+                        if (widget.isMe) ...[
+                          const SizedBox(height: 8),
+                          _quickActionRow(
+                            context: dialogContext,
+                            icon: LucideIcons.chartNoAxesColumn,
+                            iconColor: _goldSoft,
+                            title: 'Insights',
+                            onTap: () {
+                              Navigator.of(dialogContext).pop();
+                              if (!buttonContext.mounted) return;
+                              final ownerUserId = _profileOwnerUserId();
+                              if (ownerUserId == null ||
+                                  ownerUserId.trim().isEmpty) {
+                                return;
+                              }
+                              AccountInsightsScreen.open(
+                                buttonContext,
+                                userId: ownerUserId.trim(),
+                                username: username,
+                              );
+                            },
+                          ),
+                        ],
                         if (!widget.isMe) ...[
                           const SizedBox(height: 8),
                           _quickActionRow(
@@ -1149,6 +1174,23 @@ class _ProfileHomePageState extends State<ProfileHomePage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                ListTile(
+                  leading: const Icon(LucideIcons.chartNoAxesColumn,
+                      color: Colors.white),
+                  title: const Text(
+                    'View insights',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    PostInsightsScreen.open(
+                      context,
+                      postId: post.id,
+                      isPromoted: true,
+                      thumbnailUrl: post.thumbnailUrl,
+                    );
+                  },
+                ),
                 ListTile(
                   leading: const Icon(Icons.delete_outline, color: Colors.red),
                   title: const Text(
