@@ -31,8 +31,8 @@ String formatStoreAmount(
   int? decimals,
   String prefix = '',
 }) {
-  final places = decimals ??
-      (amount == amount.roundToDouble() && amount.isFinite ? 0 : 2);
+  final places =
+      decimals ?? (amount == amount.roundToDouble() && amount.isFinite ? 0 : 2);
   final fixed = amount.toStringAsFixed(places);
   final negative = fixed.startsWith('-');
   final body = negative ? fixed.substring(1) : fixed;

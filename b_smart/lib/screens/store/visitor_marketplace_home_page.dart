@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api/api_client.dart';
@@ -10,12 +11,17 @@ import '../../services/supabase_service.dart';
 import '../../utils/current_user.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/safe_network_image.dart';
+import 'shared/marketplace_figma_home.dart';
 import 'shared/marketplace_listing_card.dart';
+import 'shared/marketplace_people_section.dart';
 import 'shared/marketplace_swiggy_header.dart';
 import 'shared/store_shared_widgets.dart';
+import 'store_address_book.dart';
+import 'store_bcoins_page.dart';
 import 'store_models.dart';
 import 'store_profile_page.dart';
 import 'store_profile_state.dart';
+import 'store_saved_address_page.dart';
 import 'store_wishlist.dart';
 
 class VisitorMarketplaceHomePage extends StatefulWidget {
@@ -47,6 +53,17 @@ class _VisitorMarketplaceHomePageState
   String? _currentUserName;
   final PageCacheService _pageCache = PageCacheService();
 
+  // Figma marketplace home state (used when no specific store is open).
+  final TextEditingController _searchController = TextEditingController();
+  MkHomeTab _homeTab = MkHomeTab.all;
+  int _categoryIndex = 0;
+  int _summerAudience = 0;
+  MkListingTab _listingTab = MkListingTab.newlyArrived;
+  MkCreatorFilter _creatorFilter = MkCreatorFilter.all;
+  MkCreatorCategory? _creatorCategory;
+
+  bool get _isMarketplace => (widget.ownerUserId?.trim() ?? '').isEmpty;
+
   @override
   void initState() {
     super.initState();
@@ -54,15 +71,26 @@ class _VisitorMarketplaceHomePageState
     _trackHeaderNames();
     StoreMockState.instance.addListener(_handleStoreChanged);
     StoreProfileState.instance.addListener(_handleStoreChanged);
+    StoreAddressBook.instance.addListener(_handleStoreChanged);
+    mkRecentlyViewed.addListener(_handleStoreChanged);
     unawaited(StoreMockState.instance.ensureMarketplace());
     unawaited(StoreMockState.instance.ensureCart());
     unawaited(StoreProfileState.instance.ensureLoaded(widget.ownerUserId));
+    unawaited(StoreAddressBook.instance.ensureLoaded());
+    if (_isMarketplace) {
+      MkFollowing.ids.addListener(_handleStoreChanged);
+      unawaited(MkFollowing.load());
+    }
   }
 
   @override
   void dispose() {
     StoreMockState.instance.removeListener(_handleStoreChanged);
     StoreProfileState.instance.removeListener(_handleStoreChanged);
+    StoreAddressBook.instance.removeListener(_handleStoreChanged);
+    mkRecentlyViewed.removeListener(_handleStoreChanged);
+    MkFollowing.ids.removeListener(_handleStoreChanged);
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -77,7 +105,18 @@ class _VisitorMarketplaceHomePageState
   }
 
   void _handleStoreChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // Shared stores (address book, catalog) can notify while another page is
+    // mid-build, e.g. a storefront pushed on top calling ensureLoaded() in
+    // initState. Rebuilding then throws, so wait for the frame to finish.
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+      return;
+    }
+    setState(() {});
   }
 
   void _trackHeaderNames() {
@@ -243,8 +282,328 @@ class _VisitorMarketplaceHomePageState
     return null;
   }
 
+  List<MkListingTab> get _listingTabs => _homeTab == MkHomeTab.people
+      ? const [
+          MkListingTab.newlyArrived,
+          MkListingTab.nearbyServices,
+          MkListingTab.under499,
+        ]
+      : const [
+          MkListingTab.newlyArrived,
+          MkListingTab.under499,
+          MkListingTab.recentlyBrowsed,
+        ];
+
+  void _selectHomeTab(MkHomeTab tab) {
+    setState(() {
+      _homeTab = tab;
+      if (!_listingTabs.contains(_listingTab)) {
+        _listingTab = MkListingTab.newlyArrived;
+      }
+      _selectedFilter = switch (tab) {
+        MkHomeTab.products => _VisitorStoreFilter.products,
+        MkHomeTab.services => _VisitorStoreFilter.services,
+        MkHomeTab.all || MkHomeTab.people => _VisitorStoreFilter.all,
+      };
+      _selectedCategory = null;
+    });
+  }
+
+  void _selectTopCategory(int index, List<String> catalogCategories) {
+    final label = mkCategories[index].label.toLowerCase();
+    String? match;
+    for (final c in catalogCategories) {
+      final lower = c.toLowerCase();
+      if (lower == label || lower.contains(label) || label.contains(lower)) {
+        match = c;
+        break;
+      }
+    }
+    setState(() {
+      _categoryIndex = index;
+      _selectedCategory = match;
+    });
+  }
+
+  List<StoreMockCatalogItem> _figmaListing() {
+    final store = StoreMockState.instance;
+    Iterable<StoreMockCatalogItem> items = switch (_selectedFilter) {
+      _VisitorStoreFilter.all => [...store.products, ...store.services],
+      _VisitorStoreFilter.products => store.products,
+      _VisitorStoreFilter.services => store.services,
+    };
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      items = items.where((item) =>
+          item.title.toLowerCase().contains(q) ||
+          item.category.toLowerCase().contains(q) ||
+          item.description.toLowerCase().contains(q));
+    }
+    final category = _selectedCategory?.trim().toLowerCase() ?? '';
+    if (category.isNotEmpty) {
+      items =
+          items.where((item) => item.category.trim().toLowerCase() == category);
+    }
+    switch (_listingTab) {
+      case MkListingTab.newlyArrived:
+        final list = items.toList();
+        DateTime created(StoreMockCatalogItem i) =>
+            DateTime.tryParse(
+                '${i.raw['created_at'] ?? i.raw['createdAt'] ?? ''}') ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        list.sort((a, b) => created(b).compareTo(created(a)));
+        return list;
+      case MkListingTab.under499:
+        return items.where((i) => i.price > 0 && i.price <= 499).toList();
+      case MkListingTab.nearbyServices:
+        // Listings carry no coordinates, so "nearby" means the service
+        // mentions the city of the selected delivery address.
+        final city =
+            StoreAddressBook.instance.selected?.city.trim().toLowerCase() ?? '';
+        if (city.isEmpty) return const [];
+        return items
+            .where((i) =>
+                i.type == StoreMockItemType.service &&
+                _mentionsCity(i.raw, city))
+            .toList();
+      case MkListingTab.recentlyBrowsed:
+        final byId = {for (final i in items) i.id: i};
+        return [
+          for (final id in mkRecentlyViewed.value)
+            if (byId[id] != null) byId[id]!,
+        ];
+    }
+  }
+
+  static bool _mentionsCity(Map<String, dynamic> raw, String city) {
+    for (final key in const [
+      'city',
+      'location',
+      'service_area',
+      'serviceArea',
+      'address',
+      'service_location',
+      'areas',
+    ]) {
+      final v = raw[key];
+      if (v != null && v.toString().toLowerCase().contains(city)) return true;
+    }
+    return false;
+  }
+
+  List<Widget> _peopleSections(BuildContext context) {
+    final store = StoreMockState.instance;
+    final creators = mkCreatorsFromCatalog(store.products, store.services);
+    final following = MkFollowing.ids.value;
+    final favorites = following.isEmpty
+        ? const <MkCreator>[]
+        : creators.where((c) => following.contains(c.id)).toList();
+    final favoritesShown = favorites.isNotEmpty ? favorites : creators;
+    var popular = creators.where((c) => switch (_creatorFilter) {
+          MkCreatorFilter.all => true,
+          MkCreatorFilter.products => c.productCount > 0,
+          MkCreatorFilter.services => c.serviceCount > 0,
+        });
+    final cat = _creatorCategory;
+    if (cat != null) popular = popular.where(cat.matches);
+    final popularList = popular.toList();
+
+    void openList(String title, List<MkCreator> list) =>
+        Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => MkCreatorListPage(title: title, creators: list),
+        ));
+
+    return [
+      if (creators.isEmpty && store.catalogLoading)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 24),
+          child: Center(child: CircularProgressIndicator()),
+        )
+      else if (creators.isNotEmpty) ...[
+        MkFavoriteCreators(
+          // Until the user follows a creator, suggest the most active ones.
+          creators: favoritesShown.take(10).toList(),
+          onSeeAll: () => openList(
+              favorites.isNotEmpty ? 'Your Favorite Creators' : 'Creators',
+              favoritesShown),
+        ),
+        const SizedBox(height: 33),
+      ],
+      MkCreatorsByCategory(
+        selected: cat,
+        onTap: (c) => setState(() =>
+            _creatorCategory = _creatorCategory?.title == c.title ? null : c),
+        onSeeAll: () => openList('All Creators', creators),
+      ),
+      const SizedBox(height: 32),
+      MkPopularCreators(
+        creators: popularList.take(3).toList(),
+        filter: _creatorFilter,
+        onFilter: (f) => setState(() => _creatorFilter = f),
+        category: cat,
+        onClearCategory: () => setState(() => _creatorCategory = null),
+        onSeeAll: () => openList(
+            cat == null ? 'Popular Creators' : '${cat.title} Creators',
+            popularList),
+      ),
+      const SizedBox(height: 32),
+      MkPostServicesBanner(
+        onSeeBenefits: () => Navigator.of(context).pushNamed('/store/setup'),
+      ),
+      const SizedBox(height: 32),
+    ];
+  }
+
+  Widget _buildFigmaHome(BuildContext context) {
+    final store = StoreMockState.instance;
+    final searching = _searchQuery.trim().isNotEmpty;
+    final showPromos = _homeTab == MkHomeTab.all && !searching;
+    final showPeople = _homeTab == MkHomeTab.people && !searching;
+    final catalogCategories = _headerCategories();
+    final listing = _figmaListing();
+    final emptyBody = switch (_listingTab) {
+      _ when searching => 'No listings match "${_searchQuery.trim()}".',
+      MkListingTab.under499 => 'Nothing under ₹499 here yet.',
+      MkListingTab.nearbyServices => StoreAddressBook.instance.selected == null
+          ? 'Add a delivery address to see services near you.'
+          : 'No services listed in ${StoreAddressBook.instance.selected!.city} yet.',
+      MkListingTab.recentlyBrowsed => 'Listings you open will show up here.',
+      MkListingTab.newlyArrived =>
+        'Products and services published by creators will appear here.',
+    };
+
+    return SliverList.list(
+      children: [
+        MkGreetingHeader(
+          userName: _currentUserName,
+          location: StoreAddressBook.instance.selected?.summaryLine,
+          topStatusPadding: !widget.showTopBar && !widget.showSellerHero,
+          onLocationTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+                builder: (_) => const StoreSavedAddressPage()),
+          ),
+          onBellTap: () => Navigator.of(context).pushNamed('/notifications'),
+        ),
+        MkFolderTabs(selected: _homeTab, onSelected: _selectHomeTab),
+        MkHero(
+          showBanner: showPromos || showPeople,
+          theme: MkTabTheme.of(_homeTab),
+          textOnly: _homeTab == MkHomeTab.people,
+          onExplore: () => _selectHomeTab(MkHomeTab.products),
+          search: MkSearchField(
+            controller: _searchController,
+            onChanged: (value) => setState(() => _searchQuery = value),
+          ),
+        ),
+        if (showPromos) ...[
+          MkExploreByCategory(
+            selectedIndex: _categoryIndex,
+            onSelected: (i) => _selectTopCategory(i, catalogCategories),
+            onSubCategoryTap: (sub) =>
+                openStoreSearch(context, query: sub.label),
+          ),
+          const SizedBox(height: 34),
+          MkDealsAndOffers(
+            onCreatorOffer: () => openStoreSearch(context),
+            onBeauty: () => openStoreSearch(context, category: 'Beauty'),
+            onElectronics: () =>
+                openStoreSearch(context, category: 'Electronics'),
+            onBCoins: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const StoreBCoinsPage()),
+            ),
+          ),
+          const SizedBox(height: 32),
+          MkTrendySummer(
+            audienceIndex: _summerAudience,
+            onAudienceSelected: (i) => setState(() => _summerAudience = i),
+            onItemTap: (item) => openStoreSearch(context, query: item.label),
+            onExploreAll: () => openStoreSearch(context,
+                query:
+                    '${mkSummerAudiences[_summerAudience]} summer collection'),
+          ),
+          const SizedBox(height: 32),
+          MkPopularServices(
+            onTap: (svc) => openStoreSearch(context, query: svc.title),
+          ),
+          const SizedBox(height: 22),
+          MkBrowseByLifestyle(
+            onTap: (l) => openStoreSearch(context, query: l.label),
+          ),
+          const SizedBox(height: 18),
+          MkMeetCreators(onExplore: () => openStoreSearch(context)),
+          const SizedBox(height: 32),
+        ] else if (showPeople) ...[
+          const SizedBox(height: 32),
+          ..._peopleSections(context),
+        ] else
+          const SizedBox(height: 16),
+        ...[
+          MkListingTabs(
+            selected: _listingTab,
+            tabs: _listingTabs,
+            onSelected: (tab) => setState(() => _listingTab = tab),
+          ),
+          const SizedBox(height: 16),
+          if (catalogCategories.isNotEmpty) ...[
+            MkFilterChips(
+              categories: catalogCategories,
+              selected: _selectedCategory,
+              onSelected: (c) => setState(() => _selectedCategory = c),
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (store.catalogLoading && StoreMockState.catalog.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 28),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (StoreMockState.catalog.isEmpty && store.lastError != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  StoreEmptyState(
+                    icon: LucideIcons.cloudOff,
+                    title: "Couldn't load marketplace",
+                    body: '${store.lastError}',
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () =>
+                        StoreMockState.instance.refreshMarketplace(),
+                    icon: const Icon(LucideIcons.refreshCw, size: 16),
+                    label: const Text('Retry'),
+                  ),
+                ],
+              ),
+            )
+          else if (listing.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: StoreEmptyState(
+                icon: LucideIcons.store,
+                title: searching ? 'No matches' : 'Nothing here yet',
+                body: emptyBody,
+              ),
+            )
+          else
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: KeyedSubtree(
+                key: ValueKey(
+                    '${_homeTab.name}|${_listingTab.name}|${_selectedCategory ?? ''}'),
+                child: MkProductGrid(items: listing),
+              ),
+            ),
+          const SizedBox(height: 32),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_isMarketplace) return _buildFigmaHome(context);
     final store = StoreMockState.instance;
     final categories = _headerCategories();
     final selectedTab = switch (_selectedFilter) {
